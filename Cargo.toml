@@ -1,13 +1,21 @@
-[package]
-name = "lapis"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "crates/lapis-core",
+    "crates/lapis-cli",
+    "crates/lapis-tests",
+]
+default-members = ["crates/lapis-cli"]
+resolver = "3"
 
-[dependencies]
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+
+[workspace.dependencies]
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 futures = "0.3"
-reqwest = { version = "0.13", default-features = false, features = ["json"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 rmcp = "1.7"
 schemars = { version = "1.2", features = ["uuid1"] }
 serde = { version = "1", features = ["derive"] }

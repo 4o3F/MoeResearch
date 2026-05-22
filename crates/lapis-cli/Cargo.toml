@@ -1,0 +1,15 @@
+[package]
+name = "lapis-cli"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "lapis"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+lapis-core = { path = "../lapis-core" }
+tokio.workspace = true
+tracing.workspace = true

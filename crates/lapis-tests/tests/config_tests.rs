@@ -1,0 +1,25 @@
+use std::path::{Path, PathBuf};
+
+use lapis_core::config::loader::{load_config, load_config_from_str};
+
+#[test]
+fn loads_default_when_config_file_is_absent() {
+    let config = load_config(Some(Path::new("missing-lapis.toml"))).expect("default config");
+
+    assert_eq!(config.network.timeout_ms, 30_000);
+    assert_eq!(config.search.enabled_count(), 0);
+}
+
+#[test]
+fn rejects_plain_api_key_field() {
+    let input = r#"
+        [search.providers.exa]
+        enabled = true
+        base_url = "https://api.exa.ai"
+        api_key = "secret"
+    "#;
+
+    let err = load_config_from_str(input, PathBuf::from("lapis.toml")).unwrap_err();
+
+    assert!(err.to_string().contains("unknown field `api_key`"));
+}

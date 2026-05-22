@@ -1,0 +1,11 @@
+[package]
+name = "lapis-tests"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+lapis-core = { path = "../lapis-core" }
+serde_json.workspace = true
+tokio.workspace = true

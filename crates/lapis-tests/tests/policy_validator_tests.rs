@@ -1,0 +1,257 @@
+use lapis_core::error::Error;
+use lapis_core::net::policy::redact_header;
+use lapis_core::orchestrator::tool_policy::{SEARCH_TOOL_NAME, ToolPolicyGuard, search_model_tool};
+use lapis_core::orchestrator::validator::validate_output;
+use lapis_core::schema::common::{
+    AgentBudget, AspectSpec, EvidencePolicy, EvidenceRequirement, ModelSelector, OutputPolicy,
+    SearchSelector, ToolName,
+};
+use lapis_core::schema::model::ModelToolCall;
+use lapis_core::schema::report::{
+    AspectReport, Confidence, Evidence, Finding, FindingType, Importance, SourceType,
+};
+use serde_json::json;
+
+fn aspect_with_tools(allowed_tools: Vec<ToolName>) -> AspectSpec {
+    AspectSpec {
+        aspect_id: "market".to_owned(),
+        name: "Market".to_owned(),
+        role: "researcher".to_owned(),
+        research_question: "What changed?".to_owned(),
+        scope: vec![],
+        boundaries: vec![],
+        success_criteria: vec![],
+        required_evidence: EvidenceRequirement::default(),
+        allowed_tools,
+        model_override: None,
+        search_override: None,
+        budget_override: Some(AgentBudget::default()),
+    }
+}
+
+fn call(name: &str, arguments: serde_json::Value) -> ModelToolCall {
+    ModelToolCall {
+        id: "call-1".to_owned(),
+        name: name.to_owned(),
+        arguments,
+    }
+}
+
+fn validator_aspect() -> AspectSpec {
+    AspectSpec {
+        aspect_id: "aspect-1".to_owned(),
+        name: "Market".to_owned(),
+        role: "researcher".to_owned(),
+        research_question: "What matters?".to_owned(),
+        scope: vec!["market".to_owned()],
+        boundaries: Vec::new(),
+        success_criteria: Vec::new(),
+        required_evidence: EvidenceRequirement::default(),
+        allowed_tools: vec![ToolName("search".to_owned())],
+        model_override: None::<ModelSelector>,
+        search_override: None::<SearchSelector>,
+        budget_override: None::<AgentBudget>,
+    }
+}
+
+fn report() -> AspectReport {
+    AspectReport {
+        aspect_id: "aspect-1".to_owned(),
+        aspect_name: "Market".to_owned(),
+        question: "What matters?".to_owned(),
+        scope: vec!["market".to_owned()],
+        findings: vec![Finding {
+            id: "finding-1".to_owned(),
+            claim: "A supported claim".to_owned(),
+            finding_type: FindingType::Fact,
+            importance: Importance::High,
+            confidence: Confidence::High,
+            evidence_refs: vec!["evidence-1".to_owned()],
+            contradicted_by: Vec::new(),
+        }],
+        evidence: vec![Evidence {
+            id: "evidence-1".to_owned(),
+            source_title: "Source".to_owned(),
+            url: None,
+            provider: "fake".to_owned(),
+            query: "query".to_owned(),
+            snippet: "snippet".to_owned(),
+            summary: String::new(),
+            published_at: None,
+            retrieved_at: "2026-05-22T00:00:00Z".to_owned(),
+            supports_findings: vec!["finding-1".to_owned()],
+            source_type: SourceType::Documentation,
+            confidence: Confidence::High,
+        }],
+        assumptions: Vec::new(),
+        risks: Vec::new(),
+        counterarguments: Vec::new(),
+        open_questions: Vec::new(),
+        confidence: Confidence::High,
+        limitations: Vec::new(),
+    }
+}
+
+fn validate(
+    report: &AspectReport,
+) -> lapis_core::error::Result<(AspectReport, lapis_core::schema::report::ValidationStatus)> {
+    validate_output(
+        &serde_json::to_string(report).expect("serialize report"),
+        &validator_aspect(),
+        &EvidencePolicy::default(),
+        &OutputPolicy::default(),
+    )
+}
+
+#[test]
+fn accepts_valid_search_call() {
+    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
+        SEARCH_TOOL_NAME.to_owned(),
+    )]));
+
+    let args = guard
+        .validate_search_call(&call(
+            SEARCH_TOOL_NAME,
+            json!({ "query": "rust async runtime", "max_results": 3 }),
+        ))
+        .expect("valid search call");
+
+    assert_eq!(args.query, "rust async runtime");
+    assert_eq!(args.max_results, Some(3));
+}
+
+#[test]
+fn rejects_unknown_tool_and_disallowed_search() {
+    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
+        SEARCH_TOOL_NAME.to_owned(),
+    )]));
+    assert!(matches!(
+        guard.validate_search_call(&call("exa_search", json!({ "query": "test" }))),
+        Err(Error::ToolPolicyDenied { .. })
+    ));
+
+    let disallowed_guard = ToolPolicyGuard::new(&aspect_with_tools(vec![]));
+    assert!(matches!(
+        disallowed_guard.validate_search_call(&call(SEARCH_TOOL_NAME, json!({ "query": "test" }))),
+        Err(Error::ToolPolicyDenied { .. })
+    ));
+}
+
+#[test]
+fn rejects_empty_query_and_malformed_arguments() {
+    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
+        SEARCH_TOOL_NAME.to_owned(),
+    )]));
+
+    assert!(matches!(
+        guard.validate_search_call(&call(SEARCH_TOOL_NAME, json!({ "query": "   " }))),
+        Err(Error::ToolPolicyDenied { .. })
+    ));
+
+    assert!(matches!(
+        guard.validate_search_call(&call(SEARCH_TOOL_NAME, json!({ "max_results": 3 }))),
+        Err(Error::ToolPolicyDenied { .. })
+    ));
+
+    assert!(matches!(
+        guard.validate_search_call(&call(
+            SEARCH_TOOL_NAME,
+            json!({ "query": "test", "max_results": 0 })
+        )),
+        Err(Error::ToolPolicyDenied { .. })
+    ));
+}
+
+#[test]
+fn search_model_tool_uses_provider_neutral_schema() {
+    let tool = search_model_tool();
+
+    assert_eq!(tool.name, SEARCH_TOOL_NAME);
+    assert!(tool.input_schema.get("title").is_some());
+    assert!(tool.input_schema.to_string().contains("query"));
+}
+
+#[test]
+fn accepts_valid_report() {
+    let (validated, status) = validate(&report()).expect("valid report");
+
+    assert_eq!(validated.aspect_id, "aspect-1");
+    assert!(status.ok);
+    assert!(status.issues.is_empty());
+}
+
+#[test]
+fn rejects_malformed_json() {
+    let err = validate_output(
+        "{not json",
+        &validator_aspect(),
+        &EvidencePolicy::default(),
+        &OutputPolicy::default(),
+    )
+    .expect_err("malformed JSON must fail");
+
+    assert!(matches!(err, Error::SchemaValidationFailed { .. }));
+}
+
+#[test]
+fn rejects_wrong_aspect_id() {
+    let mut report = report();
+    report.aspect_id = "other".to_owned();
+
+    let err = validate(&report).expect_err("wrong aspect id must fail");
+
+    assert!(matches!(err, Error::SchemaValidationFailed { .. }));
+}
+
+#[test]
+fn rejects_missing_evidence_refs() {
+    let mut report = report();
+    report.findings[0].evidence_refs.clear();
+
+    let err = validate(&report).expect_err("missing evidence refs must fail");
+
+    assert!(matches!(err, Error::SchemaValidationFailed { .. }));
+}
+
+#[test]
+fn rejects_unknown_evidence_ref() {
+    let mut report = report();
+    report.findings[0].evidence_refs = vec!["missing".to_owned()];
+
+    let err = validate(&report).expect_err("unknown evidence ref must fail");
+
+    assert!(matches!(err, Error::SchemaValidationFailed { .. }));
+}
+
+#[test]
+fn rejects_too_many_findings() {
+    let mut report = report();
+    report.findings.push(report.findings[0].clone());
+    let output_policy = OutputPolicy {
+        max_findings_per_aspect: Some(1),
+        ..OutputPolicy::default()
+    };
+
+    let err = validate_output(
+        &serde_json::to_string(&report).expect("serialize report"),
+        &validator_aspect(),
+        &EvidencePolicy::default(),
+        &output_policy,
+    )
+    .expect_err("too many findings must fail");
+
+    assert!(matches!(err, Error::SchemaValidationFailed { .. }));
+}
+
+#[test]
+fn redacts_sensitive_headers() {
+    let authorization = redact_header("Authorization", "Bearer secret");
+    let api_key = redact_header("x-api-key", "secret");
+
+    assert_ne!(authorization, "Bearer secret");
+    assert_ne!(api_key, "secret");
+    assert_eq!(
+        redact_header("content-type", "application/json"),
+        "application/json"
+    );
+}
