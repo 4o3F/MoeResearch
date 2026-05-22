@@ -234,6 +234,15 @@ pub struct AspectResearchRequest {
     pub execution_policy: ExecutionPolicy,
 }
 
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+pub struct DeepResearchRequest {
+    pub schema_version: String,
+    pub request_id: String,
+    pub plan: ResearchPlan,
+    pub shared_context: ResearchContext,
+    pub execution_policy: ExecutionPolicy,
+}
+
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ResearchBudget {
     pub max_agents: usize,

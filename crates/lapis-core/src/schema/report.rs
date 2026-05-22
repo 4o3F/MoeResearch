@@ -157,6 +157,7 @@ pub struct TokenUsage {
 #[serde(rename_all = "snake_case")]
 pub enum TerminationReason {
     Completed,
+    PartialCompleted,
     BudgetExceeded,
     Timeout,
     ToolPolicyDenied,
