@@ -886,6 +886,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "lapis-core",
+ "rmcp",
  "serde_json",
  "tokio",
 ]

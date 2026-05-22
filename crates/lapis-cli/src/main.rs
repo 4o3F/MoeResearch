@@ -2,9 +2,12 @@
 #![allow(dead_code, clippy::struct_field_names, clippy::missing_errors_doc)]
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use lapis_core::logging::LogFormat;
+use lapis_core::net::NetworkClient;
+use lapis_core::net::reqwest_client::ReqwestNetworkClient;
 
 #[derive(Debug, Parser)]
 #[command(name = "lapis")]
@@ -38,7 +41,17 @@ async fn main() -> lapis_core::error::Result<()> {
                 model_providers = config.model.enabled_count(),
                 "lapis core initialized"
             );
-            Ok(())
+
+            let network: Arc<dyn NetworkClient> = Arc::new(ReqwestNetworkClient::new(
+                config.network.timeout_ms,
+                config.network.max_retries,
+                config.network.retry_backoff_ms,
+            )?);
+            let model_service = lapis_core::model::service::build_model_service(&config, &network)?;
+            let search_service =
+                lapis_core::search::service::build_search_service(&config, &network)?;
+
+            lapis_core::mcp::serve_stdio(model_service, search_service).await
         }
     }
 }

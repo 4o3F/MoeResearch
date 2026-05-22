@@ -14,14 +14,19 @@ pub fn init(format: LogFormat) -> Result<()> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("lapis=info"));
 
     match format {
-        LogFormat::Compact => tracing_subscriber::fmt().with_env_filter(filter).try_init(),
+        LogFormat::Compact => tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_env_filter(filter)
+            .try_init(),
         LogFormat::Pretty => tracing_subscriber::fmt()
             .pretty()
+            .with_writer(std::io::stderr)
             .with_env_filter(filter)
             .try_init(),
         LogFormat::Json => tracing_subscriber::fmt()
             .json()
             .flatten_event(true)
+            .with_writer(std::io::stderr)
             .with_env_filter(filter)
             .try_init(),
     }
