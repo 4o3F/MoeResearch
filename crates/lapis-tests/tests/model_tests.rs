@@ -193,14 +193,16 @@ async fn maps_text_response_and_usage() {
         headers: vec![],
         body: json!({
             "model": "gpt-test",
-            "choices": [{
-                "message": {
-                    "content": "hello"
-                }
+            "output": [{
+                "type": "message",
+                "content": [{
+                    "type": "output_text",
+                    "text": "hello"
+                }]
             }],
             "usage": {
-                "prompt_tokens": 3,
-                "completion_tokens": 5,
+                "input_tokens": 3,
+                "output_tokens": 5,
                 "total_tokens": 8
             }
         }),
@@ -227,17 +229,11 @@ async fn maps_tool_call_only_response_with_parsed_arguments() {
         status: 200,
         headers: vec![],
         body: json!({
-            "choices": [{
-                "message": {
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "call_1",
-                        "function": {
-                            "name": "search",
-                            "arguments": "{\"query\":\"lapis\"}"
-                        }
-                    }]
-                }
+            "output": [{
+                "type": "function_call",
+                "call_id": "call_1",
+                "name": "search",
+                "arguments": "{\"query\":\"lapis\"}"
             }]
         }),
     }]));
@@ -264,10 +260,12 @@ async fn missing_usage_maps_to_none() {
         status: 200,
         headers: vec![],
         body: json!({
-            "choices": [{
-                "message": {
-                    "content": "hello"
-                }
+            "output": [{
+                "type": "message",
+                "content": [{
+                    "type": "output_text",
+                    "text": "hello"
+                }]
             }]
         }),
     }]));
@@ -287,17 +285,11 @@ async fn malformed_tool_call_arguments_returns_error() {
         status: 200,
         headers: vec![],
         body: json!({
-            "choices": [{
-                "message": {
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "call_1",
-                        "function": {
-                            "name": "search",
-                            "arguments": "{bad"
-                        }
-                    }]
-                }
+            "output": [{
+                "type": "function_call",
+                "call_id": "call_1",
+                "name": "search",
+                "arguments": "{bad"
             }]
         }),
     }]));
@@ -311,15 +303,17 @@ async fn malformed_tool_call_arguments_returns_error() {
 }
 
 #[tokio::test]
-async fn request_uses_chat_completions_endpoint_and_openai_tool_schema() {
+async fn request_uses_responses_endpoint_and_openai_tool_schema() {
     let network = Arc::new(MockNetworkClient::new([NetworkResponse {
         status: 200,
         headers: vec![],
         body: json!({
-            "choices": [{
-                "message": {
-                    "content": "ok"
-                }
+            "output": [{
+                "type": "message",
+                "content": [{
+                    "type": "output_text",
+                    "text": "ok"
+                }]
             }]
         }),
     }]));
@@ -351,7 +345,7 @@ async fn request_uses_chat_completions_endpoint_and_openai_tool_schema() {
     assert_eq!(requests.len(), 1);
     let request = &requests[0];
     assert_eq!(request.method, "POST");
-    assert_eq!(request.url, "https://api.example.com/chat/completions");
+    assert_eq!(request.url, "https://api.example.com/responses");
     assert_eq!(request.timeout_ms, Some(1000));
     assert!(
         request
@@ -368,15 +362,13 @@ async fn request_uses_chat_completions_endpoint_and_openai_tool_schema() {
 
     let body = request.body.as_ref().expect("request body");
     assert_eq!(body["model"], "gpt-4o-mini");
-    assert_eq!(body["messages"][0]["role"], "user");
+    assert_eq!(body["input"][0]["role"], "user");
+    assert_eq!(body["input"][0]["content"], "hi");
     assert_eq!(body["tools"][0]["type"], "function");
-    assert_eq!(body["tools"][0]["function"]["name"], "search");
-    assert_eq!(
-        body["tools"][0]["function"]["description"],
-        "Search the web"
-    );
-    assert_eq!(body["tools"][0]["function"]["parameters"]["type"], "object");
+    assert_eq!(body["tools"][0]["name"], "search");
+    assert_eq!(body["tools"][0]["description"], "Search the web");
+    assert_eq!(body["tools"][0]["parameters"]["type"], "object");
     let temperature = body["temperature"].as_f64().expect("temperature");
     assert!((temperature - 0.2).abs() < 0.000_001);
-    assert_eq!(body["max_tokens"], 128);
+    assert_eq!(body["max_output_tokens"], 128);
 }

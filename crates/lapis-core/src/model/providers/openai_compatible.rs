@@ -63,25 +63,25 @@ impl OpenAiCompatibleProvider {
     }
 
     fn build_network_request(&self, request: ModelRequest) -> Result<NetworkRequest> {
-        let body = serde_json::to_value(OpenAiChatCompletionRequest {
+        let body = serde_json::to_value(OpenAiResponsesRequest {
             model: request.model.unwrap_or_else(|| "gpt-4o-mini".to_owned()),
-            messages: request
+            input: request
                 .messages
                 .into_iter()
-                .map(|message| OpenAiMessage {
+                .map(|message| OpenAiInputMessage {
                     role: map_role(message.role),
                     content: message.content,
                 })
                 .collect::<Vec<_>>(),
             tools: request.tools.into_iter().map(map_tool).collect::<Vec<_>>(),
             temperature: request.temperature,
-            max_tokens: request.max_tokens,
+            max_output_tokens: request.max_tokens,
         })
         .context(JsonSnafu)?;
 
         Ok(NetworkRequest {
             method: "POST".to_owned(),
-            url: format!("{}/chat/completions", self.base_url.trim_end_matches('/')),
+            url: format!("{}/responses", self.base_url.trim_end_matches('/')),
             headers: vec![
                 Header {
                     name: "authorization".to_owned(),
@@ -98,26 +98,36 @@ impl OpenAiCompatibleProvider {
     }
 
     fn map_response(&self, body: Value) -> Result<ModelResponse> {
-        let provider_response: OpenAiChatCompletionResponse =
+        let provider_response: OpenAiResponsesResponse =
             serde_json::from_value(body).context(JsonSnafu)?;
-        let choice = provider_response
-            .choices
-            .into_iter()
-            .next()
-            .ok_or_else(|| Error::SchemaValidationFailed {
-                message: "openai-compatible response did not include choices".to_owned(),
-            })?;
+        let mut content = Vec::new();
+        let mut tool_calls = Vec::new();
+
+        for output in provider_response.output {
+            match output {
+                OpenAiResponseOutput::Message { content: items, .. } => {
+                    content.extend(items.into_iter().map(|item| match item {
+                        OpenAiResponseContent::OutputText { text } => text,
+                    }));
+                }
+                OpenAiResponseOutput::FunctionCall {
+                    call_id,
+                    name,
+                    arguments,
+                    ..
+                } => tool_calls.push(map_tool_call(call_id, name, &arguments)?),
+            }
+        }
 
         Ok(ModelResponse {
             provider: self.name().to_owned(),
             model: provider_response.model,
-            content: choice.message.content,
-            tool_calls: choice
-                .message
-                .tool_calls
-                .into_iter()
-                .map(map_tool_call)
-                .collect::<Result<Vec<_>>>()?,
+            content: if content.is_empty() {
+                None
+            } else {
+                Some(content.join("\n"))
+            },
+            tool_calls,
             usage: provider_response.usage.as_ref().map(map_usage),
         })
     }
@@ -157,44 +167,42 @@ fn map_role(role: ModelMessageRole) -> &'static str {
 fn map_tool(tool: ModelTool) -> OpenAiTool {
     OpenAiTool {
         tool_type: "function",
-        function: OpenAiToolFunction {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.input_schema,
-        },
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.input_schema,
     }
 }
 
-fn map_tool_call(tool_call: OpenAiResponseToolCall) -> Result<ModelToolCall> {
+fn map_tool_call(call_id: String, name: String, arguments: &str) -> Result<ModelToolCall> {
     Ok(ModelToolCall {
-        id: tool_call.id,
-        name: tool_call.function.name,
-        arguments: serde_json::from_str(&tool_call.function.arguments).context(JsonSnafu)?,
+        id: call_id,
+        name,
+        arguments: serde_json::from_str(arguments).context(JsonSnafu)?,
     })
 }
 
 fn map_usage(usage: &OpenAiUsage) -> TokenUsage {
     TokenUsage {
-        input_tokens: usage.prompt_tokens,
-        output_tokens: usage.completion_tokens,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
         total_tokens: usage.total_tokens,
     }
 }
 
 #[derive(Serialize)]
-struct OpenAiChatCompletionRequest {
+struct OpenAiResponsesRequest {
     model: String,
-    messages: Vec<OpenAiMessage>,
+    input: Vec<OpenAiInputMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<OpenAiTool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    max_tokens: Option<u32>,
+    max_output_tokens: Option<u32>,
 }
 
 #[derive(Serialize)]
-struct OpenAiMessage {
+struct OpenAiInputMessage {
     role: &'static str,
     content: String,
 }
@@ -203,50 +211,42 @@ struct OpenAiMessage {
 struct OpenAiTool {
     #[serde(rename = "type")]
     tool_type: &'static str,
-    function: OpenAiToolFunction,
-}
-
-#[derive(Serialize)]
-struct OpenAiToolFunction {
     name: String,
     description: String,
     parameters: Value,
 }
 
 #[derive(Deserialize)]
-struct OpenAiChatCompletionResponse {
+struct OpenAiResponsesResponse {
     model: Option<String>,
-    choices: Vec<OpenAiChoice>,
+    #[serde(default)]
+    output: Vec<OpenAiResponseOutput>,
     usage: Option<OpenAiUsage>,
 }
 
 #[derive(Deserialize)]
-struct OpenAiChoice {
-    message: OpenAiResponseMessage,
+#[serde(tag = "type", rename_all = "snake_case")]
+enum OpenAiResponseOutput {
+    Message {
+        #[serde(default)]
+        content: Vec<OpenAiResponseContent>,
+    },
+    FunctionCall {
+        call_id: String,
+        name: String,
+        arguments: String,
+    },
 }
 
 #[derive(Deserialize)]
-struct OpenAiResponseMessage {
-    content: Option<String>,
-    #[serde(default)]
-    tool_calls: Vec<OpenAiResponseToolCall>,
-}
-
-#[derive(Deserialize)]
-struct OpenAiResponseToolCall {
-    id: String,
-    function: OpenAiResponseFunctionCall,
-}
-
-#[derive(Deserialize)]
-struct OpenAiResponseFunctionCall {
-    name: String,
-    arguments: String,
+#[serde(tag = "type", rename_all = "snake_case")]
+enum OpenAiResponseContent {
+    OutputText { text: String },
 }
 
 #[derive(Deserialize)]
 struct OpenAiUsage {
-    prompt_tokens: Option<u64>,
-    completion_tokens: Option<u64>,
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
     total_tokens: Option<u64>,
 }
