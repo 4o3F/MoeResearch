@@ -1,0 +1,42 @@
+# Copy this file to lapis.toml and adjust values for your environment.
+# Do not put API keys in this file; set the referenced environment variables instead.
+
+[logging]
+# Supported CLI log formats: compact, pretty, json.
+format = "json"
+
+[network]
+timeout_ms = 30000
+max_retries = 2
+retry_backoff_ms = 200
+user_agent = "lapis/0.1.0"
+
+[search]
+preferred_providers = ["exa", "grok"]
+
+[search.providers.exa]
+enabled = false
+base_url = "https://api.exa.ai"
+api_key_env = "EXA_API_KEY"
+timeout_ms = 30000
+
+[search.providers.grok]
+enabled = false
+base_url = "https://api.x.ai"
+api_key_env = "XAI_API_KEY"
+timeout_ms = 30000
+
+[model]
+default_provider = "openai-compatible"
+
+[model.providers.openai-compatible]
+enabled = false
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+timeout_ms = 30000
+
+[budget]
+max_agents = 5
+max_concurrent_agents = 2
+max_search_calls_per_agent = 4
+max_turns_per_agent = 6
