@@ -1,3 +1,54 @@
-fn main() {
-    println!("Hello, world!");
+#![warn(clippy::pedantic)]
+#![allow(dead_code, clippy::struct_field_names, clippy::missing_errors_doc)]
+
+mod config;
+mod error;
+mod logging;
+mod mcp;
+mod model;
+mod net;
+mod orchestrator;
+mod schema;
+mod search;
+
+use std::path::PathBuf;
+
+use crate::logging::LogFormat;
+use clap::{Parser, Subcommand};
+
+#[derive(Debug, Parser)]
+#[command(name = "lapis")]
+#[command(about = "Lapis Rust Core")]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    Serve {
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = LogFormat::Json)]
+        log_format: LogFormat,
+    },
+}
+
+#[tokio::main]
+async fn main() -> crate::error::Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Command::Serve { config, log_format } => {
+            crate::logging::init(log_format)?;
+            let config = crate::config::load_config(config.as_deref())?;
+            config.validate_env_keys()?;
+            tracing::info!(
+                search_providers = config.search.enabled_count(),
+                model_providers = config.model.enabled_count(),
+                "lapis core initialized"
+            );
+            Ok(())
+        }
+    }
 }
