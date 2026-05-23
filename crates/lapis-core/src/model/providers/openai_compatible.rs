@@ -64,7 +64,7 @@ impl OpenAiCompatibleProvider {
 
     fn build_network_request(&self, request: ModelRequest) -> Result<NetworkRequest> {
         let body = serde_json::to_value(OpenAiResponsesRequest {
-            model: request.model.unwrap_or_else(|| "gpt-4o-mini".to_owned()),
+            model: request.model.unwrap_or_else(|| "gpt-5.5".to_owned()),
             input: request
                 .messages
                 .into_iter()

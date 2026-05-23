@@ -1,5 +1,5 @@
 use lapis_core::error::Error;
-use lapis_core::net::policy::redact_header;
+use lapis_core::net::policy::RedactionPolicy;
 use lapis_core::orchestrator::tool_policy::{SEARCH_TOOL_NAME, ToolPolicyGuard, search_model_tool};
 use lapis_core::orchestrator::validator::validate_output;
 use lapis_core::schema::budget::AgentBudget;
@@ -254,13 +254,14 @@ fn rejects_too_many_findings() {
 
 #[test]
 fn redacts_sensitive_headers() {
-    let authorization = redact_header("Authorization", "Bearer secret");
-    let api_key = redact_header("x-api-key", "secret");
+    let policy = RedactionPolicy;
+    let authorization = policy.redact_header("Authorization", "Bearer secret");
+    let api_key = policy.redact_header("x-api-key", "secret");
 
     assert_ne!(authorization, "Bearer secret");
     assert_ne!(api_key, "secret");
     assert_eq!(
-        redact_header("content-type", "application/json"),
+        policy.redact_header("content-type", "application/json"),
         "application/json"
     );
 }

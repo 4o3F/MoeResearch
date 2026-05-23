@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::error::{Error, Result};
 use crate::net::client::NetworkClient;
-use crate::net::policy::redact_headers;
+use crate::net::policy::RedactionPolicy;
 use crate::schema::config::{NetworkConfig, NetworkLimits};
 use crate::schema::network::{Header, NetworkRequest, NetworkResponse};
 use reqwest::header::{HeaderName, HeaderValue};
@@ -70,15 +70,25 @@ impl ReqwestNetworkClient {
         )?;
         let host = url.host_str().unwrap_or("unknown").to_owned();
         let path = url.path().to_owned();
+        let redaction = RedactionPolicy;
 
         tracing::debug!(
             method = %method,
             host = %host,
             path = %path,
-            headers = ?redact_headers(&request.headers),
+            headers = ?redaction.redact_headers(&request.headers),
             timeout_ms,
             "sending outbound request"
         );
+        if let Some(body) = &request.body {
+            tracing::trace!(
+                method = %method,
+                host = %host,
+                path = %path,
+                body = ?redaction.redact_json_value(body),
+                "outbound request body"
+            );
+        }
 
         let mut builder = self
             .client
@@ -107,7 +117,7 @@ impl ReqwestNetworkClient {
             .await
             .map_err(|source| Self::transport_error(&source))?;
         let status = response.status();
-        let headers = response
+        let headers: Vec<Header> = response
             .headers()
             .iter()
             .map(|(name, value)| Header {
@@ -119,15 +129,24 @@ impl ReqwestNetworkClient {
             .text()
             .await
             .map_err(|source| Self::transport_error(&source))?;
-        let body = serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text));
 
         if !status.is_success() {
+            tracing::debug!(
+                status = status.as_u16(),
+                host = %host,
+                path = %path,
+                headers = ?redaction.redact_headers(&headers),
+                body = %redaction.redact_body_text(&text),
+                "outbound response returned non-success status"
+            );
             return Err(Error::HttpStatus {
                 status: status.as_u16(),
                 message: "provider returned non-success status".to_owned(),
                 retryable: is_retryable_status(status.as_u16()),
             });
         }
+
+        let body = serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text));
 
         Ok(NetworkResponse {
             status: status.as_u16(),

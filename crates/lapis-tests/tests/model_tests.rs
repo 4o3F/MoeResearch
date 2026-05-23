@@ -427,7 +427,7 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
     );
 
     let body = request.body.as_ref().expect("request body");
-    assert_eq!(body["model"], "gpt-4o-mini");
+    assert_eq!(body["model"], "gpt-5.5");
     assert_eq!(body["input"][0]["role"], "user");
     assert_eq!(body["input"][0]["content"], "hi");
     assert_eq!(body["tools"][0]["type"], "function");
