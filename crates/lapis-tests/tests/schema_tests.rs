@@ -5,8 +5,8 @@ use lapis_core::schema::policy::{
     ToolName,
 };
 use lapis_core::schema::research::{
-    AspectResearchRequest, AspectSpec, DeliverableSpec, ResearchConstraint, ResearchContext,
-    ResearchPlan,
+    AspectResearchRequest, AspectSpec, DeliverableSpec, PromptAssets, ResearchConstraint,
+    ResearchContext, ResearchPlan,
 };
 
 fn aspect() -> AspectSpec {
@@ -18,6 +18,7 @@ fn aspect() -> AspectSpec {
         scope: vec!["market sizing".to_owned()],
         boundaries: vec!["no private data".to_owned()],
         success_criteria: vec!["evidence-backed findings".to_owned()],
+        prompt_assets: prompt_assets(),
         required_evidence: EvidenceRequirement::default(),
         allowed_tools: vec![ToolName("search".to_owned())],
         model_override: None,
@@ -37,6 +38,12 @@ fn minimal_request() -> ModelRequest {
         tools: Vec::new(),
         temperature: None,
         max_tokens: None,
+    }
+}
+
+fn prompt_assets() -> PromptAssets {
+    PromptAssets {
+        aspect_agent_prompt_path: "prompts/layer2/aspect-agent.md".to_owned(),
     }
 }
 
@@ -63,6 +70,7 @@ fn research_plan_roundtrips_json() {
             scope: vec!["schema".to_owned()],
             boundaries: vec![],
             success_criteria: vec!["roundtrip".to_owned()],
+            prompt_assets: prompt_assets(),
             required_evidence: EvidenceRequirement::default(),
             allowed_tools: vec![ToolName("search".to_owned())],
             model_override: None,

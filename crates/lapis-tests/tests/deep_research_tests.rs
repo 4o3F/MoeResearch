@@ -20,7 +20,7 @@ use lapis_core::schema::report::{
     AspectReport, Confidence, Finding, FindingType, Importance, OpenQuestion, TerminationReason,
 };
 use lapis_core::schema::research::{
-    AspectSpec, DeepResearchRequest, DeliverableSpec, ResearchContext, ResearchPlan,
+    AspectSpec, DeepResearchRequest, DeliverableSpec, PromptAssets, ResearchContext, ResearchPlan,
 };
 use lapis_core::schema::search::{ProviderSearchRequest, SearchResponse, SearchResult};
 use lapis_core::search::provider::SearchProvider;
@@ -130,6 +130,12 @@ fn services(failing_aspects: &[&str]) -> Services {
     }
 }
 
+fn prompt_assets() -> PromptAssets {
+    PromptAssets {
+        aspect_agent_prompt_path: "prompts/layer2/aspect-agent.md".to_owned(),
+    }
+}
+
 fn deep_request(count: usize) -> DeepResearchRequest {
     DeepResearchRequest {
         schema_version: "m5".to_owned(),
@@ -188,6 +194,7 @@ fn aspect(index: usize) -> AspectSpec {
         scope: vec!["scope".to_owned()],
         boundaries: vec![],
         success_criteria: vec!["answer".to_owned()],
+        prompt_assets: prompt_assets(),
         required_evidence: EvidenceRequirement::default(),
         allowed_tools: vec![ToolName("search".to_owned())],
         model_override: None,
@@ -252,14 +259,30 @@ fn report_json(aspect_id: &str, aspect_name: &str, confidence: Confidence) -> St
 }
 
 fn aspect_field(messages: &[ModelMessage], label: &str) -> String {
+    let pointer = match label {
+        "Aspect ID" => "/aspect/aspect_id",
+        "Aspect name" => "/aspect/name",
+        _ => return String::new(),
+    };
+
     messages
         .iter()
         .find_map(|message| {
-            message.content.lines().find_map(|line| {
-                line.strip_prefix(label)
-                    .and_then(|value| value.strip_prefix(": "))
-                    .map(str::to_owned)
-            })
+            serde_json::from_str::<serde_json::Value>(&message.content)
+                .ok()
+                .and_then(|value| {
+                    value
+                        .pointer(pointer)
+                        .and_then(|field| field.as_str())
+                        .map(str::to_owned)
+                })
+                .or_else(|| {
+                    message.content.lines().find_map(|line| {
+                        line.strip_prefix(label)
+                            .and_then(|value| value.strip_prefix(": "))
+                            .map(str::to_owned)
+                    })
+                })
         })
         .unwrap_or_default()
 }

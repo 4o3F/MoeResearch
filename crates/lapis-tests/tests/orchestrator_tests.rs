@@ -21,7 +21,9 @@ use lapis_core::schema::policy::{
 use lapis_core::schema::report::{
     AspectReport, Confidence, Finding, FindingType, Importance, OpenQuestion,
 };
-use lapis_core::schema::research::{AspectResearchRequest, AspectSpec, ResearchContext};
+use lapis_core::schema::research::{
+    AspectResearchRequest, AspectSpec, PromptAssets, ResearchContext,
+};
 use lapis_core::schema::search::{ProviderSearchRequest, SearchResponse, SearchResult};
 use lapis_core::search::provider::SearchProvider;
 use lapis_core::search::service::SearchService;
@@ -114,6 +116,12 @@ fn services_with_delay(
     (model_service, search_service, model_calls, search_calls)
 }
 
+fn prompt_assets() -> PromptAssets {
+    PromptAssets {
+        aspect_agent_prompt_path: "prompts/layer2/aspect-agent.md".to_owned(),
+    }
+}
+
 fn aspect_request() -> AspectResearchRequest {
     AspectResearchRequest {
         schema_version: "m4".to_owned(),
@@ -126,6 +134,7 @@ fn aspect_request() -> AspectResearchRequest {
             scope: vec!["scope".to_owned()],
             boundaries: vec![],
             success_criteria: vec!["answer".to_owned()],
+            prompt_assets: prompt_assets(),
             required_evidence: EvidenceRequirement::default(),
             allowed_tools: vec![ToolName("search".to_owned())],
             model_override: None,
@@ -321,6 +330,54 @@ async fn rejects_invalid_request_fields() {
     .expect_err("invalid request");
 
     assert!(matches!(error, Error::InvalidInput { .. }));
+}
+
+#[tokio::test]
+async fn rejects_unsafe_prompt_asset_path() {
+    let mut request = aspect_request();
+    request.aspect.prompt_assets.aspect_agent_prompt_path = "../secret.md".to_owned();
+    let model_service = ModelService::new();
+    let search_service = SearchService::new();
+
+    let error = aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect_err("unsafe prompt path");
+
+    assert!(matches!(error, Error::InvalidInput { .. }));
+}
+
+#[tokio::test]
+async fn accepts_absolute_prompt_asset_path() {
+    let mut request = aspect_request();
+    request.aspect.prompt_assets.aspect_agent_prompt_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("prompts/layer2/aspect-agent.md")
+            .canonicalize()
+            .expect("absolute prompt path")
+            .display()
+            .to_string();
+    let (model_service, search_service, _model_calls, search_calls) = services(vec![
+        tool_response("search"),
+        final_response(valid_report_json()),
+    ]);
+
+    let result = aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect("valid absolute prompt path");
+
+    assert_eq!(result.aspect_report.aspect_id, "aspect-1");
+    assert_eq!(search_calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

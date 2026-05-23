@@ -34,6 +34,11 @@ pub struct ResearchConstraint {
     pub value: String,
 }
 
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+pub struct PromptAssets {
+    pub aspect_agent_prompt_path: String,
+}
+
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct AspectSpec {
     pub aspect_id: String,
@@ -43,6 +48,7 @@ pub struct AspectSpec {
     pub scope: Vec<String>,
     pub boundaries: Vec<String>,
     pub success_criteria: Vec<String>,
+    pub prompt_assets: PromptAssets,
     pub required_evidence: EvidenceRequirement,
     pub allowed_tools: Vec<ToolName>,
     pub model_override: Option<ModelSelector>,
@@ -110,6 +116,10 @@ impl AspectResearchRequest {
             });
         }
 
+        ensure_non_empty(
+            "aspect.prompt_assets.aspect_agent_prompt_path",
+            &self.aspect.prompt_assets.aspect_agent_prompt_path,
+        )?;
         self.search_policy.validate_for_search()?;
         self.budget.validate_against_config(ctx.budget_config)?;
         if let Some(timeout_ms) = self.execution_policy.timeout_ms
@@ -168,6 +178,10 @@ impl DeepResearchRequest {
             ensure_non_empty("aspect.aspect_id", &aspect.aspect_id)?;
             ensure_non_empty("aspect.name", &aspect.name)?;
             ensure_non_empty("aspect.research_question", &aspect.research_question)?;
+            ensure_non_empty(
+                "aspect.prompt_assets.aspect_agent_prompt_path",
+                &aspect.prompt_assets.aspect_agent_prompt_path,
+            )?;
             ensure_runtime_tools_allowed(&aspect.allowed_tools, ctx.supported_tool_name)?;
 
             if let Some(model_override) = &aspect.model_override

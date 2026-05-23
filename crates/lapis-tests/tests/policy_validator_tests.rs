@@ -10,8 +10,14 @@ use lapis_core::schema::policy::{
 use lapis_core::schema::report::{
     AspectReport, Confidence, Evidence, Finding, FindingType, Importance, SourceType,
 };
-use lapis_core::schema::research::AspectSpec;
+use lapis_core::schema::research::{AspectSpec, PromptAssets};
 use serde_json::json;
+
+fn prompt_assets() -> PromptAssets {
+    PromptAssets {
+        aspect_agent_prompt_path: "prompts/layer2/aspect-agent.md".to_owned(),
+    }
+}
 
 fn aspect_with_tools(allowed_tools: Vec<ToolName>) -> AspectSpec {
     AspectSpec {
@@ -22,6 +28,7 @@ fn aspect_with_tools(allowed_tools: Vec<ToolName>) -> AspectSpec {
         scope: vec![],
         boundaries: vec![],
         success_criteria: vec![],
+        prompt_assets: prompt_assets(),
         required_evidence: EvidenceRequirement::default(),
         allowed_tools,
         model_override: None,
@@ -47,6 +54,7 @@ fn validator_aspect() -> AspectSpec {
         scope: vec!["market".to_owned()],
         boundaries: Vec::new(),
         success_criteria: Vec::new(),
+        prompt_assets: prompt_assets(),
         required_evidence: EvidenceRequirement::default(),
         allowed_tools: vec![ToolName("search".to_owned())],
         model_override: None::<ModelSelector>,

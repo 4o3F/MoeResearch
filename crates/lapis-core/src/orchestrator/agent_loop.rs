@@ -1,3 +1,4 @@
+use std::path::{Component, Path};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -121,7 +122,7 @@ impl<'a> AgentRuntime<'a> {
             &self.request.output_policy,
         );
         let search_policy = self.effective_search_policy();
-        let mut state = RuntimeState::new(self.initial_messages(), self.new_trace_summary());
+        let mut state = RuntimeState::new(self.initial_messages()?, self.new_trace_summary());
 
         loop {
             let model_response = self.complete_model_turn(&mut state, &mut budget).await?;
@@ -269,41 +270,28 @@ impl<'a> AgentRuntime<'a> {
         })
     }
 
-    fn initial_messages(&self) -> Vec<ModelMessage> {
-        vec![
+    fn initial_messages(&self) -> Result<Vec<ModelMessage>> {
+        Ok(vec![
             ModelMessage {
                 role: ModelMessageRole::System,
-                content: self.system_prompt(),
+                content: self.system_prompt()?,
             },
             ModelMessage {
                 role: ModelMessageRole::User,
                 content: self.user_prompt(),
             },
-        ]
+        ])
     }
 
-    fn system_prompt(&self) -> String {
-        format!(
-            "You are an aspect research agent. Role: {}. Return only JSON matching AspectReport. Use only the search tool when evidence is needed.",
-            self.request.aspect.role
-        )
+    fn system_prompt(&self) -> Result<String> {
+        read_prompt_asset(&self.request.aspect.prompt_assets.aspect_agent_prompt_path)
     }
 
     fn user_prompt(&self) -> String {
-        let aspect = &self.request.aspect;
-        let context = &self.request.shared_context;
-        format!(
-            "Aspect ID: {}\nAspect name: {}\nQuestion: {}\nScope: {}\nBoundaries: {}\nSuccess criteria: {}\nShared context: {}\nKnown facts: {}\nExcluded assumptions: {}",
-            aspect.aspect_id,
-            aspect.name,
-            aspect.research_question,
-            aspect.scope.join("; "),
-            aspect.boundaries.join("; "),
-            aspect.success_criteria.join("; "),
-            context.summary,
-            context.known_facts.join("; "),
-            context.excluded_assumptions.join("; ")
-        )
+        match serde_json::to_string_pretty(self.request) {
+            Ok(request) => request,
+            Err(error) => json!({ "serialization_error": error.to_string() }).to_string(),
+        }
     }
 
     async fn complete_model(&self, messages: Vec<ModelMessage>) -> Result<ModelResponse> {
@@ -470,6 +458,60 @@ impl<'a> AgentRuntime<'a> {
 
 fn elapsed_ms(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+fn read_prompt_asset(path: &str) -> Result<String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err(Error::InvalidInput {
+            message: "prompt asset path must not be empty".to_owned(),
+        });
+    }
+
+    let path_ref = Path::new(path);
+    if !path_ref.is_absolute()
+        && path_ref
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(Error::InvalidInput {
+            message: "relative prompt asset path must not contain parent traversal".to_owned(),
+        });
+    }
+
+    if path_ref
+        .extension()
+        .and_then(|extension| extension.to_str())
+        != Some("md")
+    {
+        return Err(Error::InvalidInput {
+            message: "prompt asset path must point to a markdown file".to_owned(),
+        });
+    }
+
+    let resolved_path = if path_ref.is_absolute() || path_ref.exists() {
+        path_ref.to_path_buf()
+    } else {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(path_ref)
+    };
+
+    if !resolved_path.is_file() {
+        return Err(Error::InvalidInput {
+            message: format!(
+                "prompt asset path must point to a file: {}",
+                resolved_path.display()
+            ),
+        });
+    }
+
+    std::fs::read_to_string(&resolved_path).map_err(|source| Error::InvalidInput {
+        message: format!(
+            "unable to read prompt asset {}: {source}",
+            resolved_path.display()
+        ),
+    })
 }
 
 struct RuntimeDeadline {
