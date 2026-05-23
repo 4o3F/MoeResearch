@@ -1,15 +1,36 @@
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::error::{Error, Result};
 
-#[derive(Clone, Copy, Debug, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Limit<T> {
     Limited(T),
     Unlimited,
+}
+
+impl<T> JsonSchema for Limit<T>
+where
+    T: JsonSchema,
+{
+    fn schema_name() -> Cow<'static, str> {
+        format!("Limit_{}", T::schema_name()).into()
+    }
+
+    fn schema_id() -> Cow<'static, str> {
+        format!("{}::Limit<{}>", module_path!(), T::schema_id()).into()
+    }
+
+    fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "type": ["integer", "null"],
+            "minimum": -1,
+            "description": "null or -1 means unlimited; non-negative integers are finite limits"
+        })
+    }
 }
 
 pub type CountLimit = Limit<usize>;
@@ -170,5 +191,48 @@ impl Visitor<'_> for LimitVisitor {
         E: de::Error,
     {
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use schemars::schema_for;
+    use serde_json::json;
+
+    use super::{CountLimit, DurationLimitMs, Limit};
+
+    #[test]
+    fn count_limit_schema_matches_wire_format() {
+        let schema = schema_for!(CountLimit);
+        let schema = serde_json::to_value(&schema).expect("schema json");
+
+        assert_eq!(schema.get("type"), Some(&json!(["integer", "null"])));
+        assert_eq!(schema.get("minimum"), Some(&json!(-1)));
+    }
+
+    #[test]
+    fn duration_limit_schema_matches_wire_format() {
+        let schema = schema_for!(DurationLimitMs);
+        let schema = serde_json::to_value(&schema).expect("schema json");
+
+        assert_eq!(schema.get("type"), Some(&json!(["integer", "null"])));
+        assert_eq!(schema.get("minimum"), Some(&json!(-1)));
+    }
+
+    #[test]
+    fn limit_deserializes_schema_advertised_values() {
+        assert_eq!(
+            serde_json::from_value::<CountLimit>(json!(null)).expect("null limit"),
+            Limit::Unlimited
+        );
+        assert_eq!(
+            serde_json::from_value::<CountLimit>(json!(-1)).expect("unlimited limit"),
+            Limit::Unlimited
+        );
+        assert_eq!(
+            serde_json::from_value::<CountLimit>(json!(3)).expect("finite limit"),
+            Limit::Limited(3)
+        );
+        assert!(serde_json::from_value::<CountLimit>(json!(-2)).is_err());
     }
 }

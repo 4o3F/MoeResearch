@@ -320,6 +320,30 @@ fn public_tool_lookup_exposes_m6_contract_tools() {
     assert!(server.get_tool("search").is_none());
 }
 
+#[test]
+fn aspect_research_tool_schema_uses_limit_wire_format() {
+    let server = mcp_server(services(&[]));
+    let tool = server
+        .get_tool("aspect_research")
+        .expect("aspect research tool");
+    let schema = serde_json::Value::Object(tool.input_schema.as_ref().clone());
+    let limit = schema
+        .pointer("/$defs/Limit_uint")
+        .expect("count limit schema");
+    let duration_limit = schema
+        .pointer("/$defs/Limit_uint64")
+        .expect("duration limit schema");
+
+    assert_eq!(limit.get("type"), Some(&json!(["integer", "null"])));
+    assert_eq!(limit.get("minimum"), Some(&json!(-1)));
+    assert_eq!(
+        duration_limit.get("type"),
+        Some(&json!(["integer", "null"]))
+    );
+    assert_eq!(duration_limit.get("minimum"), Some(&json!(-1)));
+    assert!(!schema.to_string().contains("Limited"));
+}
+
 #[tokio::test]
 async fn aspect_research_success_returns_ok_envelope() {
     let services = services(&[]);
