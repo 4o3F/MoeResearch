@@ -1,30 +1,9 @@
+use std::collections::BTreeSet;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use super::report::Evidence;
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct Header {
-    pub name: String,
-    pub value: String,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct NetworkRequest {
-    pub method: String,
-    pub url: String,
-    pub headers: Vec<Header>,
-    pub body: Option<Value>,
-    pub timeout_ms: Option<u64>,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct NetworkResponse {
-    pub status: u16,
-    pub headers: Vec<Header>,
-    pub body: Value,
-}
+use crate::error::{Error, Result};
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ToolName(pub String);
@@ -113,6 +92,35 @@ impl Default for SearchPolicy {
     }
 }
 
+impl SearchPolicy {
+    pub(crate) fn validate_for_search(&self) -> Result<()> {
+        if self.max_results_per_query == 0 {
+            return Err(Error::InvalidInput {
+                message: "search policy max_results_per_query must be greater than zero".to_owned(),
+            });
+        }
+
+        let include = self
+            .include_domains
+            .iter()
+            .map(|domain| domain.to_ascii_lowercase())
+            .collect::<BTreeSet<_>>();
+
+        if let Some(domain) = self
+            .exclude_domains
+            .iter()
+            .map(|domain| domain.to_ascii_lowercase())
+            .find(|domain| include.contains(domain))
+        {
+            return Err(Error::InvalidInput {
+                message: format!("domain appears in both include and exclude lists: {domain}"),
+            });
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct EvidencePolicy {
     pub require_evidence_for_findings: bool,
@@ -151,14 +159,6 @@ impl Default for OutputPolicy {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct ResearchContext {
-    pub summary: String,
-    pub known_facts: Vec<String>,
-    pub excluded_assumptions: Vec<String>,
-    pub prior_sources: Vec<Evidence>,
-}
-
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ExecutionPolicy {
     pub allow_partial_results: bool,
@@ -172,115 +172,6 @@ impl Default for ExecutionPolicy {
             allow_partial_results: true,
             fail_fast: false,
             timeout_ms: Some(300_000),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct DeliverableSpec {
-    pub kind: String,
-    pub language: String,
-    pub expected_sections: Vec<String>,
-    pub notes: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct ResearchConstraint {
-    pub key: String,
-    pub value: String,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct AspectSpec {
-    pub aspect_id: String,
-    pub name: String,
-    pub role: String,
-    pub research_question: String,
-    pub scope: Vec<String>,
-    pub boundaries: Vec<String>,
-    pub success_criteria: Vec<String>,
-    pub required_evidence: EvidenceRequirement,
-    pub allowed_tools: Vec<ToolName>,
-    pub model_override: Option<ModelSelector>,
-    pub search_override: Option<SearchSelector>,
-    pub budget_override: Option<AgentBudget>,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct ResearchPlan {
-    pub plan_id: String,
-    pub user_question: String,
-    pub deliverable: DeliverableSpec,
-    pub constraints: Vec<ResearchConstraint>,
-    pub aspects: Vec<AspectSpec>,
-    pub budget: ResearchBudget,
-    pub model_policy: ModelPolicy,
-    pub search_policy: SearchPolicy,
-    pub evidence_policy: EvidencePolicy,
-    pub output_policy: OutputPolicy,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct AspectResearchRequest {
-    pub schema_version: String,
-    pub request_id: String,
-    pub aspect: AspectSpec,
-    pub shared_context: ResearchContext,
-    pub model_policy: ModelPolicy,
-    pub search_policy: SearchPolicy,
-    pub evidence_policy: EvidencePolicy,
-    pub output_policy: OutputPolicy,
-    pub budget: AgentBudget,
-    pub execution_policy: ExecutionPolicy,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct DeepResearchRequest {
-    pub schema_version: String,
-    pub request_id: String,
-    pub plan: ResearchPlan,
-    pub shared_context: ResearchContext,
-    pub execution_policy: ExecutionPolicy,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct ResearchBudget {
-    pub max_agents: usize,
-    pub max_concurrent_agents: usize,
-    pub max_total_model_calls: usize,
-    pub max_total_search_calls: usize,
-    pub total_timeout_ms: u64,
-    pub max_tokens: Option<u64>,
-}
-
-impl Default for ResearchBudget {
-    fn default() -> Self {
-        Self {
-            max_agents: 5,
-            max_concurrent_agents: 2,
-            max_total_model_calls: 30,
-            max_total_search_calls: 20,
-            total_timeout_ms: 900_000,
-            max_tokens: None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct AgentBudget {
-    pub max_turns: usize,
-    pub max_tool_calls: usize,
-    pub max_search_calls: usize,
-    pub timeout_ms: u64,
-}
-
-impl Default for AgentBudget {
-    fn default() -> Self {
-        Self {
-            max_turns: 6,
-            max_tool_calls: 8,
-            max_search_calls: 4,
-            timeout_ms: 180_000,
         }
     }
 }

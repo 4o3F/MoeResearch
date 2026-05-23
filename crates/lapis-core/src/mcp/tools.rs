@@ -5,9 +5,9 @@ use crate::mcp::server::LapisMcpServer;
 use crate::orchestrator::workflow::{
     aspect_research as run_aspect_research, deep_research as run_deep_research,
 };
-use crate::schema::common::{AspectResearchRequest, DeepResearchRequest};
 use crate::schema::mcp::{ToolEnvelope, ToolStatus, Warning};
 use crate::schema::report::{AspectResearchResult, DeepResearchResult, TraceSummary};
+use crate::schema::research::{AspectResearchRequest, DeepResearchRequest};
 
 #[tool_router(server_handler)]
 impl LapisMcpServer {
@@ -22,7 +22,14 @@ impl LapisMcpServer {
         let request_id = request.request_id.clone();
 
         Json(
-            match run_aspect_research(request, &self.model_service, &self.search_service).await {
+            match run_aspect_research(
+                request,
+                &self.model_service,
+                &self.search_service,
+                &self.budget_config,
+            )
+            .await
+            {
                 Ok(result) => aspect_success_envelope(schema_version, request_id, result),
                 Err(error) => failed_envelope(schema_version, request_id, &error),
             },
@@ -40,7 +47,14 @@ impl LapisMcpServer {
         let request_id = request.request_id.clone();
 
         Json(
-            match run_deep_research(request, &self.model_service, &self.search_service).await {
+            match run_deep_research(
+                request,
+                &self.model_service,
+                &self.search_service,
+                &self.budget_config,
+            )
+            .await
+            {
                 Ok(result) => deep_success_envelope(schema_version, request_id, result),
                 Err(error) => failed_envelope(schema_version, request_id, &error),
             },

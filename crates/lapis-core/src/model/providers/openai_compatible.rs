@@ -8,10 +8,10 @@ use snafu::ResultExt;
 use crate::error::{Error, JsonSnafu, Result};
 use crate::model::provider::ModelProvider;
 use crate::net::NetworkClient;
-use crate::schema::common::{Header, NetworkRequest};
 use crate::schema::model::{
     ModelMessageRole, ModelRequest, ModelResponse, ModelTool, ModelToolCall,
 };
+use crate::schema::network::{Header, NetworkRequest};
 use crate::schema::report::TokenUsage;
 
 pub struct OpenAiCompatibleProvider {

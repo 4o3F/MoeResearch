@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::time::Instant;
 
 use futures::{StreamExt, stream};
@@ -9,11 +9,14 @@ use crate::error::{Error, Result};
 use crate::model::service::ModelService;
 use crate::orchestrator::agent_loop::{AgentRuntime, AgentRuntimeOutput};
 use crate::orchestrator::tool_policy::SEARCH_TOOL_NAME;
-use crate::schema::common::{AspectResearchRequest, DeepResearchRequest, ResearchBudget};
+use crate::schema::config::BudgetConfig;
 use crate::schema::report::{
     AspectFailure, AspectReport, AspectResearchResult, Confidence, CoverageSummary,
     DeepResearchResult, Evidence, OpenQuestion, ResearchBudgetUsage, TerminationReason, TokenUsage,
     TraceSummary,
+};
+use crate::schema::research::{
+    AspectResearchRequest, DeepResearchRequest, WorkflowValidationContext,
 };
 use crate::search::service::SearchService;
 
@@ -23,8 +26,13 @@ pub async fn aspect_research(
     request: AspectResearchRequest,
     model_service: &ModelService,
     search_service: &SearchService,
+    budget_config: &BudgetConfig,
 ) -> Result<AspectResearchResult> {
-    validate_aspect_request(&request)?;
+    request.validate_for_execution(&WorkflowValidationContext {
+        budget_config,
+        supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
+        supported_tool_name: SEARCH_TOOL_NAME,
+    })?;
     AgentRuntime::new(model_service, search_service, &request)
         .run()
         .await
@@ -35,14 +43,19 @@ pub async fn deep_research(
     request: DeepResearchRequest,
     model_service: &ModelService,
     search_service: &SearchService,
+    budget_config: &BudgetConfig,
 ) -> Result<DeepResearchResult> {
-    validate_deep_request(&request)?;
+    request.validate_for_execution(&WorkflowValidationContext {
+        budget_config,
+        supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
+        supported_tool_name: SEARCH_TOOL_NAME,
+    })?;
 
     let started = Instant::now();
     let run_id = Uuid::new_v4().to_string();
-    let mut run = execute_aspects(&request, model_service, search_service).await;
+    let mut run = execute_aspects(&request, model_service, search_service, budget_config).await;
     run.budget_usage.elapsed_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
-    validate_research_budget_usage(&request.plan.budget, &run.budget_usage)?;
+    request.plan.budget.ensure_usage_within(&run.budget_usage)?;
     finalize_deep_result(request, run, run_id)
 }
 
@@ -63,16 +76,24 @@ async fn execute_aspects(
     request: &DeepResearchRequest,
     model_service: &ModelService,
     search_service: &SearchService,
+    budget_config: &BudgetConfig,
 ) -> DeepResearchRun {
     let mut run = DeepResearchRun::default();
     let mut results = stream::iter(aspect_requests(request).into_iter().map(
         |aspect_request| async move {
             let aspect_id = aspect_request.aspect.aspect_id.clone();
-            let result = aspect_research(aspect_request, model_service, search_service).await;
+            let result =
+                aspect_research(aspect_request, model_service, search_service, budget_config).await;
             (aspect_id, result)
         },
     ))
-    .buffer_unordered(request.plan.budget.max_concurrent_agents);
+    .buffer_unordered(
+        request
+            .plan
+            .budget
+            .max_concurrent_agents
+            .as_concurrency(request.plan.aspects.len()),
+    );
 
     while let Some((aspect_id, result)) = results.next().await {
         run.budget_usage.agents_started += 1;
@@ -211,215 +232,6 @@ fn deep_result(
             termination_reason: Some(termination_reason),
         },
     }
-}
-
-fn validate_deep_request(request: &DeepResearchRequest) -> Result<()> {
-    require_non_empty("schema_version", &request.schema_version)?;
-    require_non_empty("request_id", &request.request_id)?;
-    require_non_empty("plan.plan_id", &request.plan.plan_id)?;
-
-    if !SUPPORTED_SCHEMA_VERSIONS.contains(&request.schema_version.as_str()) {
-        return Err(Error::SchemaValidationFailed {
-            message: format!("unsupported schema version: {}", request.schema_version),
-        });
-    }
-
-    if request.plan.aspects.is_empty() {
-        return Err(Error::InvalidInput {
-            message: "plan.aspects must not be empty".to_owned(),
-        });
-    }
-
-    validate_research_budget(&request.plan.budget)?;
-
-    if request.plan.aspects.len() > request.plan.budget.max_agents {
-        return Err(Error::BudgetExceeded {
-            message: "plan aspect count exceeds max_agents".to_owned(),
-        });
-    }
-
-    if let Some(timeout_ms) = request.execution_policy.timeout_ms
-        && timeout_ms > request.plan.budget.total_timeout_ms
-    {
-        return Err(Error::BudgetExceeded {
-            message: "execution timeout must not exceed research budget timeout".to_owned(),
-        });
-    }
-
-    validate_domain_lists(
-        &request.plan.search_policy.include_domains,
-        &request.plan.search_policy.exclude_domains,
-    )?;
-
-    for aspect in &request.plan.aspects {
-        require_non_empty("aspect.aspect_id", &aspect.aspect_id)?;
-        require_non_empty("aspect.name", &aspect.name)?;
-        require_non_empty("aspect.research_question", &aspect.research_question)?;
-        validate_tools(&aspect.allowed_tools)?;
-
-        if let Some(model_override) = &aspect.model_override
-            && !request
-                .plan
-                .model_policy
-                .allowed_providers
-                .contains(&model_override.provider)
-        {
-            return Err(Error::ProviderUnavailable {
-                provider: model_override.provider.clone(),
-                message: "aspect model override is not allowed by policy".to_owned(),
-            });
-        }
-
-        if let Some(search_override) = &aspect.search_override
-            && let Some(provider) = search_override.providers.iter().find(|provider| {
-                !request
-                    .plan
-                    .search_policy
-                    .allowed_providers
-                    .contains(*provider)
-            })
-        {
-            return Err(Error::ProviderUnavailable {
-                provider: provider.clone(),
-                message: "aspect search override is not allowed by policy".to_owned(),
-            });
-        }
-
-        if let Some(budget) = &aspect.budget_override
-            && budget.timeout_ms > request.plan.budget.total_timeout_ms
-        {
-            return Err(Error::BudgetExceeded {
-                message: "aspect budget timeout exceeds research budget timeout".to_owned(),
-            });
-        }
-    }
-
-    Ok(())
-}
-
-fn validate_aspect_request(request: &AspectResearchRequest) -> Result<()> {
-    require_non_empty("schema_version", &request.schema_version)?;
-    require_non_empty("request_id", &request.request_id)?;
-    require_non_empty("aspect.aspect_id", &request.aspect.aspect_id)?;
-    require_non_empty("aspect.name", &request.aspect.name)?;
-    require_non_empty(
-        "aspect.research_question",
-        &request.aspect.research_question,
-    )?;
-
-    if !SUPPORTED_SCHEMA_VERSIONS.contains(&request.schema_version.as_str()) {
-        return Err(Error::SchemaValidationFailed {
-            message: format!("unsupported schema version: {}", request.schema_version),
-        });
-    }
-
-    if request.search_policy.max_results_per_query == 0 {
-        return Err(Error::InvalidInput {
-            message: "search_policy.max_results_per_query must be greater than 0".to_owned(),
-        });
-    }
-
-    validate_domain_lists(
-        &request.search_policy.include_domains,
-        &request.search_policy.exclude_domains,
-    )?;
-    validate_aspect_timeout(request)?;
-    validate_tools(&request.aspect.allowed_tools)
-}
-
-fn validate_research_budget(budget: &ResearchBudget) -> Result<()> {
-    if budget.max_agents == 0 {
-        return Err(Error::BudgetExceeded {
-            message: "research budget requires at least one agent".to_owned(),
-        });
-    }
-
-    if budget.max_concurrent_agents == 0 {
-        return Err(Error::BudgetExceeded {
-            message: "research budget requires non-zero concurrency".to_owned(),
-        });
-    }
-
-    if budget.total_timeout_ms == 0 {
-        return Err(Error::BudgetExceeded {
-            message: "research budget requires a non-zero timeout".to_owned(),
-        });
-    }
-
-    Ok(())
-}
-
-fn validate_research_budget_usage(
-    budget: &ResearchBudget,
-    usage: &ResearchBudgetUsage,
-) -> Result<()> {
-    if usage.model_calls_used > budget.max_total_model_calls {
-        return Err(Error::BudgetExceeded {
-            message: "research model call budget exhausted".to_owned(),
-        });
-    }
-
-    if usage.search_calls_used > budget.max_total_search_calls {
-        return Err(Error::BudgetExceeded {
-            message: "research search call budget exhausted".to_owned(),
-        });
-    }
-
-    if usage.elapsed_ms > budget.total_timeout_ms {
-        return Err(Error::BudgetExceeded {
-            message: "research timeout budget exhausted".to_owned(),
-        });
-    }
-
-    Ok(())
-}
-
-fn require_non_empty(field: &str, value: &str) -> Result<()> {
-    if value.trim().is_empty() {
-        return Err(Error::InvalidInput {
-            message: format!("{field} must not be empty"),
-        });
-    }
-    Ok(())
-}
-
-fn validate_domain_lists(include_domains: &[String], exclude_domains: &[String]) -> Result<()> {
-    let include = include_domains
-        .iter()
-        .map(|domain| domain.to_ascii_lowercase())
-        .collect::<BTreeSet<_>>();
-
-    if let Some(domain) = exclude_domains
-        .iter()
-        .map(|domain| domain.to_ascii_lowercase())
-        .find(|domain| include.contains(domain))
-    {
-        return Err(Error::InvalidInput {
-            message: format!("domain appears in both include and exclude lists: {domain}"),
-        });
-    }
-
-    Ok(())
-}
-
-fn validate_aspect_timeout(request: &AspectResearchRequest) -> Result<()> {
-    if let Some(timeout_ms) = request.execution_policy.timeout_ms
-        && timeout_ms > request.budget.timeout_ms
-    {
-        return Err(Error::BudgetExceeded {
-            message: "execution timeout must not exceed agent budget timeout".to_owned(),
-        });
-    }
-    Ok(())
-}
-
-fn validate_tools(tools: &[crate::schema::common::ToolName]) -> Result<()> {
-    if let Some(tool) = tools.iter().find(|tool| tool.0 != SEARCH_TOOL_NAME) {
-        return Err(Error::ToolPolicyDenied {
-            message: format!("unsupported tool for aspect runtime: {}", tool.0),
-        });
-    }
-    Ok(())
 }
 
 fn aspect_failure(aspect_id: &str, error: &Error) -> AspectFailure {

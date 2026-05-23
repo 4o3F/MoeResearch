@@ -9,15 +9,17 @@ use crate::model::service::ModelService;
 use crate::orchestrator::budget::AgentBudgetGuard;
 use crate::orchestrator::tool_policy::{ToolPolicyGuard, search_model_tool};
 use crate::orchestrator::validator::OutputValidator;
-use crate::schema::common::{AspectResearchRequest, SearchPolicy};
+use crate::schema::limit::{DurationLimitMs, Limit};
 use crate::schema::model::{
     ModelMessage, ModelMessageRole, ModelRequest, ModelResponse, ModelToolCall,
 };
+use crate::schema::policy::SearchPolicy;
 use crate::schema::report::{
     AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence,
     ProviderCallSummary, ProviderType, ProviderUsage, SearchQueryTrace, SourceType,
     TerminationReason, TokenUsage, ToolCallTrace, TraceSummary, ValidationStatus,
 };
+use crate::schema::research::AspectResearchRequest;
 use crate::schema::search::{SearchRequest, SearchResponse, SearchResult};
 use crate::search::service::SearchService;
 
@@ -109,9 +111,8 @@ impl<'a> AgentRuntime<'a> {
     }
 
     pub async fn run(&self) -> Result<AgentRuntimeOutput> {
-        let started = Instant::now();
         let effective_budget = self.effective_budget();
-        let effective_timeout_ms = effective_budget.timeout_ms;
+        let deadline = RuntimeDeadline::new(effective_budget.timeout_ms);
         let mut budget = AgentBudgetGuard::new(effective_budget)?;
         let tool_policy = ToolPolicyGuard::new(&self.request.aspect);
         let validator = OutputValidator::new(
@@ -124,7 +125,7 @@ impl<'a> AgentRuntime<'a> {
 
         loop {
             let model_response = self.complete_model_turn(&mut state, &mut budget).await?;
-            ensure_runtime_budget(started, effective_timeout_ms)?;
+            deadline.ensure_not_elapsed()?;
             if model_response.tool_calls.is_empty() {
                 let content = model_response.content.as_deref().ok_or_else(|| {
                     Error::SchemaValidationFailed {
@@ -145,17 +146,17 @@ impl<'a> AgentRuntime<'a> {
                         &mut state,
                     )
                     .await?;
-                ensure_runtime_budget(started, effective_timeout_ms)?;
+                deadline.ensure_not_elapsed()?;
                 tool_result_messages.push(message);
             }
             state.append_tool_result_messages(tool_result_messages);
         }
     }
 
-    fn effective_budget(&self) -> crate::schema::common::AgentBudget {
+    fn effective_budget(&self) -> crate::schema::budget::AgentBudget {
         let mut budget = self.request.budget.clone();
         if let Some(timeout_ms) = self.request.execution_policy.timeout_ms {
-            budget.timeout_ms = timeout_ms;
+            budget.timeout_ms = Limit::limited(timeout_ms);
         }
         budget
     }
@@ -339,8 +340,6 @@ impl<'a> AgentRuntime<'a> {
             freshness: policy.freshness.clone(),
             language: policy.language.clone(),
             region: policy.region.clone(),
-            include_domains: policy.include_domains.clone(),
-            exclude_domains: policy.exclude_domains.clone(),
         }
     }
 
@@ -473,13 +472,30 @@ fn elapsed_ms(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
-fn ensure_runtime_budget(started: Instant, timeout_ms: u64) -> Result<()> {
-    if timeout_ms > 0 && elapsed_ms(started.elapsed()) >= timeout_ms {
-        return Err(Error::BudgetExceeded {
-            message: "agent runtime budget timeout exhausted".to_owned(),
-        });
+struct RuntimeDeadline {
+    started: Instant,
+    timeout_ms: DurationLimitMs,
+}
+
+impl RuntimeDeadline {
+    fn new(timeout_ms: DurationLimitMs) -> Self {
+        Self {
+            started: Instant::now(),
+            timeout_ms,
+        }
     }
-    Ok(())
+
+    fn ensure_not_elapsed(&self) -> Result<()> {
+        if self
+            .timeout_ms
+            .is_elapsed(elapsed_ms(self.started.elapsed()))
+        {
+            return Err(Error::BudgetExceeded {
+                message: "agent runtime budget timeout exhausted".to_owned(),
+            });
+        }
+        Ok(())
+    }
 }
 
 fn now_rfc3339() -> String {

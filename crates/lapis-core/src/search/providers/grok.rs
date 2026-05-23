@@ -6,8 +6,8 @@ use snafu::ResultExt;
 
 use crate::error::{JsonSnafu, Result};
 use crate::net::NetworkClient;
-use crate::schema::common::{Header, NetworkRequest};
-use crate::schema::search::{SearchRequest, SearchResponse, SearchResult};
+use crate::schema::network::{Header, NetworkRequest};
+use crate::schema::search::{ProviderSearchRequest, SearchResponse, SearchResult};
 use crate::search::provider::SearchProvider;
 
 pub struct GrokSearchProvider {
@@ -39,7 +39,7 @@ impl SearchProvider for GrokSearchProvider {
         "grok"
     }
 
-    async fn search(&self, request: SearchRequest) -> Result<SearchResponse> {
+    async fn search(&self, request: ProviderSearchRequest) -> Result<SearchResponse> {
         let body = serde_json::to_value(GrokSearchRequest {
             query: request.query,
             max_results: request.max_results,

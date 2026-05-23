@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::net::NetworkClient;
-use crate::schema::common::SearchPolicy;
 use crate::schema::config::LapisConfig;
-use crate::schema::search::{SearchRequest, SearchResponse};
+use crate::schema::policy::SearchPolicy;
+use crate::schema::search::{ProviderSearchRequest, SearchRequest, SearchResponse};
 use crate::search::provider::SearchProvider;
 use crate::search::providers::{ExaSearchProvider, GrokSearchProvider};
 
@@ -40,15 +40,17 @@ impl SearchService {
         request: SearchRequest,
         policy: &SearchPolicy,
     ) -> Result<SearchResponse> {
+        request.validate_with_policy(policy)?;
         let provider_names = self.candidate_providers(policy);
         let mut last_error = None;
 
+        let provider_request = ProviderSearchRequest::from_policy(request, policy);
         for name in provider_names {
             let Some(provider) = self.providers.get(&name) else {
                 continue;
             };
 
-            match provider.search(request.clone()).await {
+            match provider.search(provider_request.clone()).await {
                 Ok(response) => return Ok(response),
                 Err(error) => {
                     tracing::warn!(provider = name, error = %error, "search provider failed");

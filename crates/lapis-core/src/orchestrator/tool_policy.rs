@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::{Error, Result},
     schema::{
-        common::AspectSpec,
         model::{ModelTool, ModelToolCall},
+        research::AspectSpec,
     },
 };
 

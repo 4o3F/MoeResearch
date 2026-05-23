@@ -2,14 +2,15 @@ use lapis_core::error::Error;
 use lapis_core::net::policy::redact_header;
 use lapis_core::orchestrator::tool_policy::{SEARCH_TOOL_NAME, ToolPolicyGuard, search_model_tool};
 use lapis_core::orchestrator::validator::validate_output;
-use lapis_core::schema::common::{
-    AgentBudget, AspectSpec, EvidencePolicy, EvidenceRequirement, ModelSelector, OutputPolicy,
-    SearchSelector, ToolName,
-};
+use lapis_core::schema::budget::AgentBudget;
 use lapis_core::schema::model::ModelToolCall;
+use lapis_core::schema::policy::{
+    EvidencePolicy, EvidenceRequirement, ModelSelector, OutputPolicy, SearchSelector, ToolName,
+};
 use lapis_core::schema::report::{
     AspectReport, Confidence, Evidence, Finding, FindingType, Importance, SourceType,
 };
+use lapis_core::schema::research::AspectSpec;
 use serde_json::json;
 
 fn aspect_with_tools(allowed_tools: Vec<ToolName>) -> AspectSpec {

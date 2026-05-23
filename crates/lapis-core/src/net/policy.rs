@@ -1,4 +1,4 @@
-use crate::schema::common::Header;
+use crate::schema::network::Header;
 
 const REDACTED: &str = "[REDACTED]";
 

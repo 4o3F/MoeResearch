@@ -12,17 +12,23 @@ use lapis_core::mcp::LapisMcpServer;
 use lapis_core::model::provider::ModelProvider;
 use lapis_core::model::service::ModelService;
 use lapis_core::orchestrator::workflow::deep_research;
-use lapis_core::schema::common::{
-    AgentBudget, AspectResearchRequest, AspectSpec, DeepResearchRequest, DeliverableSpec,
-    EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy,
-    ResearchBudget, ResearchContext, ResearchPlan, SearchPolicy, ToolName,
-};
+use lapis_core::schema::budget::{AgentBudget, ResearchBudget};
+use lapis_core::schema::config::BudgetConfig;
+use lapis_core::schema::limit::Limit;
 use lapis_core::schema::mcp::{ToolErrorCode, ToolStatus};
 use lapis_core::schema::model::{ModelMessage, ModelRequest, ModelResponse, ModelToolCall};
+use lapis_core::schema::policy::{
+    EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
+    ToolName,
+};
 use lapis_core::schema::report::{
     AspectReport, Confidence, Finding, FindingType, Importance, OpenQuestion,
 };
-use lapis_core::schema::search::{SearchRequest, SearchResponse, SearchResult};
+use lapis_core::schema::research::{
+    AspectResearchRequest, AspectSpec, DeepResearchRequest, DeliverableSpec, ResearchContext,
+    ResearchPlan,
+};
+use lapis_core::schema::search::{ProviderSearchRequest, SearchResponse, SearchResult};
 use lapis_core::search::provider::SearchProvider;
 use lapis_core::search::service::SearchService;
 use rmcp::ServerHandler;
@@ -67,7 +73,7 @@ impl SearchProvider for StaticSearchProvider {
         "searcher"
     }
 
-    async fn search(&self, _request: SearchRequest) -> Result<SearchResponse> {
+    async fn search(&self, _request: ProviderSearchRequest) -> Result<SearchResponse> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(SearchResponse {
             provider: "searcher".to_owned(),
@@ -151,12 +157,12 @@ fn deep_request(count: usize) -> DeepResearchRequest {
             constraints: vec![],
             aspects: (1..=count).map(aspect).collect(),
             budget: ResearchBudget {
-                max_agents: count,
-                max_concurrent_agents: 2,
-                max_total_model_calls: 20,
-                max_total_search_calls: 20,
-                total_timeout_ms: 180_000,
-                max_tokens: None,
+                max_agents: Limit::limited(count),
+                max_concurrent_agents: Limit::limited(2),
+                max_total_model_calls: Limit::limited(20),
+                max_total_search_calls: Limit::limited(20),
+                total_timeout_ms: Limit::limited(180_000),
+                max_tokens: Limit::unlimited(),
             },
             model_policy: model_policy(),
             search_policy: search_policy(),
@@ -278,7 +284,7 @@ fn aspect_field(messages: &[ModelMessage], label: &str) -> String {
 }
 
 fn mcp_server(services: Services) -> LapisMcpServer {
-    LapisMcpServer::new(services.model, services.search)
+    LapisMcpServer::new(services.model, services.search, BudgetConfig::default())
 }
 
 #[test]
@@ -366,11 +372,15 @@ async fn deep_research_all_failed_returns_failed_envelope_with_tool_error() {
         .await
         .0;
     let expected_services = services(&["aspect-1", "aspect-2"]);
-    let expected_error =
-        deep_research(request, &expected_services.model, &expected_services.search)
-            .await
-            .expect_err("deep error")
-            .to_tool_error();
+    let expected_error = deep_research(
+        request,
+        &expected_services.model,
+        &expected_services.search,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect_err("deep error")
+    .to_tool_error();
 
     assert_eq!(envelope.status, ToolStatus::Failed);
     assert!(envelope.data.is_none());

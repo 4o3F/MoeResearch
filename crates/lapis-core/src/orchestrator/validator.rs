@@ -3,8 +3,9 @@ use std::collections::HashSet;
 use crate::{
     error::{Error, Result},
     schema::{
-        common::{AspectSpec, EvidencePolicy, OutputPolicy},
+        policy::{EvidencePolicy, OutputPolicy},
         report::{AspectReport, ValidationIssue, ValidationStatus},
+        research::AspectSpec,
     },
 };
 

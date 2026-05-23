@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 
 use crate::error::{Error, Result};
-use crate::schema::common::{NetworkRequest, NetworkResponse};
+use crate::schema::network::{NetworkRequest, NetworkResponse};
 
 #[async_trait]
 pub trait NetworkClient: Send + Sync {

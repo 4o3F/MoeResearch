@@ -10,15 +10,19 @@ use lapis_core::model::service::ModelService;
 use lapis_core::orchestrator::agent_loop::AgentRuntime;
 use lapis_core::orchestrator::budget::AgentBudgetGuard;
 use lapis_core::orchestrator::workflow::aspect_research;
-use lapis_core::schema::common::{
-    AgentBudget, AspectResearchRequest, AspectSpec, EvidencePolicy, EvidenceRequirement,
-    ExecutionPolicy, ModelPolicy, OutputPolicy, ResearchContext, SearchPolicy, ToolName,
-};
+use lapis_core::schema::budget::AgentBudget;
+use lapis_core::schema::config::BudgetConfig;
+use lapis_core::schema::limit::Limit;
 use lapis_core::schema::model::{ModelRequest, ModelResponse, ModelToolCall};
+use lapis_core::schema::policy::{
+    EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
+    ToolName,
+};
 use lapis_core::schema::report::{
     AspectReport, Confidence, Finding, FindingType, Importance, OpenQuestion,
 };
-use lapis_core::schema::search::{SearchRequest, SearchResponse, SearchResult};
+use lapis_core::schema::research::{AspectResearchRequest, AspectSpec, ResearchContext};
+use lapis_core::schema::search::{ProviderSearchRequest, SearchResponse, SearchResult};
 use lapis_core::search::provider::SearchProvider;
 use lapis_core::search::service::SearchService;
 use serde_json::json;
@@ -60,7 +64,7 @@ impl SearchProvider for CountingSearchProvider {
         "searcher"
     }
 
-    async fn search(&self, _request: SearchRequest) -> Result<SearchResponse> {
+    async fn search(&self, _request: ProviderSearchRequest) -> Result<SearchResponse> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(SearchResponse {
             provider: "searcher".to_owned(),
@@ -206,11 +210,33 @@ fn valid_report_json() -> String {
 
 fn budget(max_turns: usize, max_tool_calls: usize, max_search_calls: usize) -> AgentBudget {
     AgentBudget {
-        max_turns,
-        max_tool_calls,
-        max_search_calls,
-        timeout_ms: 60_000,
+        max_turns: Limit::limited(max_turns),
+        max_tool_calls: Limit::limited(max_tool_calls),
+        max_search_calls: Limit::limited(max_search_calls),
+        timeout_ms: Limit::limited(60_000),
     }
+}
+
+#[test]
+fn accepts_minus_one_as_unlimited_agent_budget() {
+    let budget: AgentBudget = serde_json::from_value(json!({
+        "max_turns": -1,
+        "max_tool_calls": -1,
+        "max_search_calls": -1,
+        "timeout_ms": -1
+    }))
+    .expect("unlimited budget");
+    assert!(budget.max_turns.is_unlimited());
+    let mut guard = AgentBudgetGuard::new(budget).expect("valid unlimited budget");
+    for _ in 0..3 {
+        guard.consume_model_turn().expect("unlimited model turn");
+        guard.consume_tool_call().expect("unlimited tool call");
+        guard.consume_search_call().expect("unlimited search call");
+    }
+
+    assert_eq!(guard.usage().turns_used, 3);
+    assert_eq!(guard.usage().tool_calls_used, 3);
+    assert_eq!(guard.usage().search_calls_used, 3);
 }
 
 #[test]
@@ -258,14 +284,14 @@ fn rejects_zero_turns_zero_timeout_and_elapsed_timeout() {
     ));
 
     let mut zero_timeout = budget(1, 1, 1);
-    zero_timeout.timeout_ms = 0;
+    zero_timeout.timeout_ms = Limit::limited(0);
     assert!(matches!(
         AgentBudgetGuard::new(zero_timeout),
         Err(Error::BudgetExceeded { .. })
     ));
 
     let mut guard = AgentBudgetGuard::new(AgentBudget {
-        timeout_ms: 1,
+        timeout_ms: Limit::limited(1),
         ..budget(1, 1, 1)
     })
     .expect("valid budget");
@@ -285,9 +311,14 @@ async fn rejects_invalid_request_fields() {
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
-    let error = aspect_research(request, &model_service, &search_service)
-        .await
-        .expect_err("invalid request");
+    let error = aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect_err("invalid request");
 
     assert!(matches!(error, Error::InvalidInput { .. }));
 }
@@ -300,9 +331,14 @@ async fn rejects_conflicting_domains() {
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
-    let error = aspect_research(request, &model_service, &search_service)
-        .await
-        .expect_err("domain conflict");
+    let error = aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect_err("domain conflict");
 
     assert!(matches!(error, Error::InvalidInput { .. }));
 }
@@ -310,14 +346,19 @@ async fn rejects_conflicting_domains() {
 #[tokio::test]
 async fn rejects_execution_timeout_above_budget() {
     let mut request = aspect_request();
-    request.budget.timeout_ms = 100;
+    request.budget.timeout_ms = Limit::limited(100);
     request.execution_policy.timeout_ms = Some(101);
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
-    let error = aspect_research(request, &model_service, &search_service)
-        .await
-        .expect_err("timeout conflict");
+    let error = aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect_err("timeout conflict");
 
     assert!(matches!(error, Error::BudgetExceeded { .. }));
 }
@@ -330,9 +371,14 @@ async fn delegates_valid_request_to_runtime() {
         final_response(valid_report_json()),
     ]);
 
-    let result = aspect_research(request, &model_service, &search_service)
-        .await
-        .expect("aspect result");
+    let result = aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect("aspect result");
 
     assert_eq!(result.aspect_report.aspect_id, "aspect-1");
     assert_eq!(search_calls.load(Ordering::SeqCst), 1);
@@ -389,7 +435,7 @@ async fn tool_trace_summary_redacts_query_when_query_trace_is_enabled() {
 #[tokio::test]
 async fn budget_exhaustion_stops_before_actions() {
     let mut zero_turn_request = aspect_request();
-    zero_turn_request.budget.max_turns = 0;
+    zero_turn_request.budget.max_turns = Limit::limited(0);
     let (model_service, search_service, model_calls, search_calls) = services(vec![]);
 
     let error = AgentRuntime::new(&model_service, &search_service, &zero_turn_request)
@@ -402,7 +448,7 @@ async fn budget_exhaustion_stops_before_actions() {
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 
     let mut request = aspect_request();
-    request.budget.max_search_calls = 0;
+    request.budget.max_search_calls = Limit::limited(0);
     let (model_service, search_service, model_calls, search_calls) =
         services(vec![tool_response("search")]);
 
@@ -419,7 +465,7 @@ async fn budget_exhaustion_stops_before_actions() {
 #[tokio::test]
 async fn slow_final_model_call_exhausts_effective_timeout() {
     let mut request = aspect_request();
-    request.budget.timeout_ms = 60_000;
+    request.budget.timeout_ms = Limit::limited(60_000);
     request.execution_policy.timeout_ms = Some(1);
     let (model_service, search_service, model_calls, search_calls) = services_with_delay(
         vec![final_response(valid_report_json())],
@@ -439,7 +485,7 @@ async fn slow_final_model_call_exhausts_effective_timeout() {
 #[tokio::test]
 async fn lower_execution_timeout_is_enforced_before_search() {
     let mut request = aspect_request();
-    request.budget.timeout_ms = 60_000;
+    request.budget.timeout_ms = Limit::limited(60_000);
     request.execution_policy.timeout_ms = Some(1);
     let (model_service, search_service, model_calls, search_calls) = services_with_delay(
         vec![tool_response("search")],

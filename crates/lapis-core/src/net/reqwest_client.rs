@@ -3,7 +3,8 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 use crate::net::client::NetworkClient;
 use crate::net::policy::redact_headers;
-use crate::schema::common::{Header, NetworkRequest, NetworkResponse};
+use crate::schema::config::{NetworkConfig, NetworkLimits};
+use crate::schema::network::{Header, NetworkRequest, NetworkResponse};
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Method, Url};
 
@@ -12,10 +13,31 @@ pub struct ReqwestNetworkClient {
     default_timeout_ms: u64,
     max_retries: usize,
     retry_backoff_ms: u64,
+    limits: NetworkLimits,
 }
 
 impl ReqwestNetworkClient {
-    pub fn new(default_timeout_ms: u64, max_retries: usize, retry_backoff_ms: u64) -> Result<Self> {
+    pub fn from_config(config: &NetworkConfig) -> Result<Self> {
+        Self::new(
+            config.timeout_ms,
+            config.max_retries,
+            config.retry_backoff_ms,
+            config.limits.clone(),
+        )
+    }
+
+    pub fn new(
+        default_timeout_ms: u64,
+        max_retries: usize,
+        retry_backoff_ms: u64,
+        limits: NetworkLimits,
+    ) -> Result<Self> {
+        limits.validate_runtime_settings(
+            "network.timeout_ms",
+            default_timeout_ms,
+            max_retries,
+            retry_backoff_ms,
+        )?;
         let client = reqwest::Client::builder()
             .build()
             .map_err(|source| Self::transport_error(&source))?;
@@ -25,6 +47,7 @@ impl ReqwestNetworkClient {
             default_timeout_ms,
             max_retries,
             retry_backoff_ms,
+            limits,
         })
     }
 
@@ -39,6 +62,12 @@ impl ReqwestNetworkClient {
             message: "invalid outbound URL".to_owned(),
         })?;
         let timeout_ms = request.timeout_ms.unwrap_or(self.default_timeout_ms);
+        self.limits.validate_runtime_settings(
+            "request.timeout_ms",
+            timeout_ms,
+            self.max_retries,
+            self.retry_backoff_ms,
+        )?;
         let host = url.host_str().unwrap_or("unknown").to_owned();
         let path = url.path().to_owned();
 

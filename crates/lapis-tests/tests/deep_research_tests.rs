@@ -8,16 +8,21 @@ use lapis_core::error::{Error, Result};
 use lapis_core::model::provider::ModelProvider;
 use lapis_core::model::service::ModelService;
 use lapis_core::orchestrator::workflow::deep_research;
-use lapis_core::schema::common::{
-    AgentBudget, AspectSpec, DeepResearchRequest, DeliverableSpec, EvidencePolicy,
-    EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, ResearchBudget,
-    ResearchContext, ResearchPlan, SearchPolicy, ToolName,
-};
+use lapis_core::schema::budget::{AgentBudget, ResearchBudget};
+use lapis_core::schema::config::BudgetConfig;
+use lapis_core::schema::limit::Limit;
 use lapis_core::schema::model::{ModelMessage, ModelRequest, ModelResponse, ModelToolCall};
+use lapis_core::schema::policy::{
+    EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
+    ToolName,
+};
 use lapis_core::schema::report::{
     AspectReport, Confidence, Finding, FindingType, Importance, OpenQuestion, TerminationReason,
 };
-use lapis_core::schema::search::{SearchRequest, SearchResponse, SearchResult};
+use lapis_core::schema::research::{
+    AspectSpec, DeepResearchRequest, DeliverableSpec, ResearchContext, ResearchPlan,
+};
+use lapis_core::schema::search::{ProviderSearchRequest, SearchResponse, SearchResult};
 use lapis_core::search::provider::SearchProvider;
 use lapis_core::search::service::SearchService;
 use serde_json::json;
@@ -72,7 +77,7 @@ impl SearchProvider for StaticSearchProvider {
         "searcher"
     }
 
-    async fn search(&self, _request: SearchRequest) -> Result<SearchResponse> {
+    async fn search(&self, _request: ProviderSearchRequest) -> Result<SearchResponse> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(SearchResponse {
             provider: "searcher".to_owned(),
@@ -141,12 +146,12 @@ fn deep_request(count: usize) -> DeepResearchRequest {
             constraints: vec![],
             aspects: (1..=count).map(aspect).collect(),
             budget: ResearchBudget {
-                max_agents: count,
-                max_concurrent_agents: 2,
-                max_total_model_calls: 20,
-                max_total_search_calls: 20,
-                total_timeout_ms: 180_000,
-                max_tokens: None,
+                max_agents: Limit::limited(count),
+                max_concurrent_agents: Limit::limited(2),
+                max_total_model_calls: Limit::limited(20),
+                max_total_search_calls: Limit::limited(20),
+                total_timeout_ms: Limit::limited(180_000),
+                max_tokens: Limit::unlimited(),
             },
             model_policy: ModelPolicy {
                 default_provider: "model".to_owned(),
@@ -264,9 +269,14 @@ async fn completes_three_aspects_with_bounded_concurrency() {
     let request = deep_request(3);
     let services = services(&[]);
 
-    let result = deep_research(request, &services.model, &services.search)
-        .await
-        .expect("deep result");
+    let result = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect("deep result");
 
     assert_eq!(result.completed_aspects.len(), 3);
     assert!(result.failed_aspects.is_empty());
@@ -293,9 +303,14 @@ async fn returns_partial_result_after_single_aspect_failure() {
     let request = deep_request(3);
     let services = services(&["aspect-2"]);
 
-    let result = deep_research(request, &services.model, &services.search)
-        .await
-        .expect("partial result");
+    let result = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect("partial result");
 
     assert_eq!(result.completed_aspects.len(), 2);
     assert_eq!(result.failed_aspects.len(), 1);
@@ -311,9 +326,14 @@ async fn all_aspects_failed_returns_error() {
     let request = deep_request(2);
     let services = services(&["aspect-1", "aspect-2"]);
 
-    let error = deep_research(request, &services.model, &services.search)
-        .await
-        .expect_err("all failed");
+    let error = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect_err("all failed");
 
     assert!(matches!(error, Error::SchemaValidationFailed { .. }));
 }
@@ -324,9 +344,14 @@ async fn partial_results_disabled_returns_error() {
     request.execution_policy.allow_partial_results = false;
     let services = services(&["aspect-2"]);
 
-    let error = deep_research(request, &services.model, &services.search)
-        .await
-        .expect_err("partial disabled");
+    let error = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect_err("partial disabled");
 
     assert!(matches!(error, Error::SchemaValidationFailed { .. }));
 }
@@ -334,13 +359,18 @@ async fn partial_results_disabled_returns_error() {
 #[tokio::test]
 async fn fail_fast_stops_before_scheduling_remaining_aspects() {
     let mut request = deep_request(2);
-    request.plan.budget.max_concurrent_agents = 1;
+    request.plan.budget.max_concurrent_agents = Limit::limited(1);
     request.execution_policy.fail_fast = true;
     let services = services(&["aspect-1"]);
 
-    let error = deep_research(request, &services.model, &services.search)
-        .await
-        .expect_err("fail fast error");
+    let error = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect_err("fail fast error");
 
     assert!(matches!(error, Error::SchemaValidationFailed { .. }));
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
@@ -350,12 +380,68 @@ async fn fail_fast_stops_before_scheduling_remaining_aspects() {
 #[tokio::test]
 async fn rejects_plan_exceeding_max_agents() {
     let mut request = deep_request(3);
-    request.plan.budget.max_agents = 2;
+    request.plan.budget.max_agents = Limit::limited(2);
     let services = services(&[]);
 
-    let error = deep_research(request, &services.model, &services.search)
+    let error = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect_err("too many aspects");
+
+    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn rejects_research_budget_above_configured_limits() {
+    let request = deep_request(3);
+    let services = services(&[]);
+    let limits = BudgetConfig {
+        max_agents: Limit::limited(2),
+        ..BudgetConfig::default()
+    };
+
+    let error = deep_research(request, &services.model, &services.search, &limits)
         .await
-        .expect_err("too many aspects");
+        .expect_err("budget exceeds configured limits");
+
+    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn rejects_research_concurrency_above_configured_limits() {
+    let request = deep_request(3);
+    let services = services(&[]);
+    let limits = BudgetConfig {
+        max_concurrent_agents: Limit::limited(1),
+        ..BudgetConfig::default()
+    };
+
+    let error = deep_research(request, &services.model, &services.search, &limits)
+        .await
+        .expect_err("concurrency exceeds configured limits");
+
+    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn rejects_agent_budget_above_configured_limits() {
+    let request = deep_request(2);
+    let services = services(&[]);
+    let limits = BudgetConfig {
+        max_turns_per_agent: Limit::limited(5),
+        ..BudgetConfig::default()
+    };
+
+    let error = deep_research(request, &services.model, &services.search, &limits)
+        .await
+        .expect_err("agent budget exceeds configured limits");
 
     assert!(matches!(error, Error::BudgetExceeded { .. }));
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
@@ -364,12 +450,17 @@ async fn rejects_plan_exceeding_max_agents() {
 #[tokio::test]
 async fn global_search_budget_is_checked_after_aggregation() {
     let mut request = deep_request(2);
-    request.plan.budget.max_total_search_calls = 1;
+    request.plan.budget.max_total_search_calls = Limit::limited(1);
     let services = services(&[]);
 
-    let error = deep_research(request, &services.model, &services.search)
-        .await
-        .expect_err("global search budget");
+    let error = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &BudgetConfig::default(),
+    )
+    .await
+    .expect_err("global search budget");
 
     assert!(matches!(error, Error::BudgetExceeded { .. }));
     assert_eq!(services.search_calls.load(Ordering::SeqCst), 2);

@@ -5,9 +5,9 @@ use crate::error::{Error, Result};
 use crate::model::provider::ModelProvider;
 use crate::model::providers::OpenAiCompatibleProvider;
 use crate::net::NetworkClient;
-use crate::schema::common::ModelPolicy;
 use crate::schema::config::LapisConfig;
 use crate::schema::model::{ModelRequest, ModelResponse};
+use crate::schema::policy::ModelPolicy;
 
 #[derive(Default)]
 pub struct ModelService {
@@ -59,6 +59,7 @@ impl ModelService {
         if request.max_tokens.is_none() {
             request.max_tokens = policy.max_tokens;
         }
+        request.validate()?;
         provider.complete(request).await
     }
 }

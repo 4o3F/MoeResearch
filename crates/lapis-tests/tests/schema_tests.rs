@@ -1,9 +1,13 @@
-use lapis_core::schema::common::{
-    AgentBudget, AspectResearchRequest, AspectSpec, DeliverableSpec, EvidencePolicy,
-    EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, ResearchBudget,
-    ResearchConstraint, ResearchContext, ResearchPlan, SearchPolicy, ToolName,
-};
+use lapis_core::schema::budget::{AgentBudget, ResearchBudget};
 use lapis_core::schema::model::{ModelMessage, ModelMessageRole, ModelRequest};
+use lapis_core::schema::policy::{
+    EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
+    ToolName,
+};
+use lapis_core::schema::research::{
+    AspectResearchRequest, AspectSpec, DeliverableSpec, ResearchConstraint, ResearchContext,
+    ResearchPlan,
+};
 
 fn aspect() -> AspectSpec {
     AspectSpec {
@@ -117,6 +121,43 @@ fn model_message_role_uses_snake_case() {
         serde_json::from_str::<ModelMessageRole>("\"assistant\"").unwrap(),
         ModelMessageRole::Assistant
     );
+}
+
+#[test]
+fn research_budget_accepts_minus_one_as_unlimited() {
+    let budget: ResearchBudget = serde_json::from_value(serde_json::json!({
+        "max_agents": -1,
+        "max_concurrent_agents": -1,
+        "max_total_model_calls": -1,
+        "max_total_search_calls": -1,
+        "total_timeout_ms": -1,
+        "max_tokens": -1
+    }))
+    .expect("unlimited research budget");
+
+    assert!(budget.max_agents.is_unlimited());
+    assert!(budget.max_concurrent_agents.is_unlimited());
+    assert!(budget.max_total_model_calls.is_unlimited());
+    assert!(budget.max_total_search_calls.is_unlimited());
+    assert!(budget.total_timeout_ms.is_unlimited());
+    assert!(budget.max_tokens.is_unlimited());
+}
+
+#[test]
+fn budget_defaults_are_unlimited() {
+    let research = ResearchBudget::default();
+    assert!(research.max_agents.is_unlimited());
+    assert!(research.max_concurrent_agents.is_unlimited());
+    assert!(research.max_total_model_calls.is_unlimited());
+    assert!(research.max_total_search_calls.is_unlimited());
+    assert!(research.total_timeout_ms.is_unlimited());
+    assert!(research.max_tokens.is_unlimited());
+
+    let agent = AgentBudget::default();
+    assert!(agent.max_turns.is_unlimited());
+    assert!(agent.max_tool_calls.is_unlimited());
+    assert!(agent.max_search_calls.is_unlimited());
+    assert!(agent.timeout_ms.is_unlimited());
 }
 
 #[test]

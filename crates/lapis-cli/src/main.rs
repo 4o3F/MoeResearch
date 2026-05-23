@@ -35,23 +35,20 @@ async fn main() -> lapis_core::error::Result<()> {
         Command::Serve { config, log_format } => {
             lapis_core::logging::init(log_format)?;
             let config = lapis_core::config::load_config(config.as_deref())?;
-            config.validate_env_keys()?;
+            config.validate()?;
             tracing::info!(
                 search_providers = config.search.enabled_count(),
                 model_providers = config.model.enabled_count(),
                 "lapis core initialized"
             );
 
-            let network: Arc<dyn NetworkClient> = Arc::new(ReqwestNetworkClient::new(
-                config.network.timeout_ms,
-                config.network.max_retries,
-                config.network.retry_backoff_ms,
-            )?);
+            let network: Arc<dyn NetworkClient> =
+                Arc::new(ReqwestNetworkClient::from_config(&config.network)?);
             let model_service = lapis_core::model::service::build_model_service(&config, &network)?;
             let search_service =
                 lapis_core::search::service::build_search_service(&config, &network)?;
 
-            lapis_core::mcp::serve_stdio(model_service, search_service).await
+            lapis_core::mcp::serve_stdio(model_service, search_service, config.budget).await
         }
     }
 }

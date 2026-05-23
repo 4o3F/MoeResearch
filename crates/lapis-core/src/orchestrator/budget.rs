@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use crate::{
     error::{Error, Result},
-    schema::{common::AgentBudget, report::AgentBudgetUsage},
+    schema::{budget::AgentBudget, report::AgentBudgetUsage},
 };
 
 #[derive(Clone, Debug)]
@@ -16,18 +16,7 @@ pub struct AgentBudgetGuard {
 
 impl AgentBudgetGuard {
     pub fn new(budget: AgentBudget) -> Result<Self> {
-        if budget.max_turns == 0 {
-            return Err(Error::BudgetExceeded {
-                message: "agent budget requires at least one model turn".to_owned(),
-            });
-        }
-
-        if budget.timeout_ms == 0 {
-            return Err(Error::BudgetExceeded {
-                message: "agent budget requires a non-zero timeout".to_owned(),
-            });
-        }
-
+        budget.ensure_runnable()?;
         Ok(Self {
             budget,
             start_time: Instant::now(),
@@ -40,7 +29,7 @@ impl AgentBudgetGuard {
     pub fn consume_model_turn(&mut self) -> Result<()> {
         self.check_timeout()?;
 
-        if self.turns_used >= self.budget.max_turns {
+        if !self.budget.max_turns.permits_next(self.turns_used) {
             return Err(Error::BudgetExceeded {
                 message: "agent model turn budget exhausted".to_owned(),
             });
@@ -53,7 +42,11 @@ impl AgentBudgetGuard {
     pub fn consume_tool_call(&mut self) -> Result<()> {
         self.check_timeout()?;
 
-        if self.tool_calls_used >= self.budget.max_tool_calls {
+        if !self
+            .budget
+            .max_tool_calls
+            .permits_next(self.tool_calls_used)
+        {
             return Err(Error::BudgetExceeded {
                 message: "agent tool call budget exhausted".to_owned(),
             });
@@ -66,7 +59,11 @@ impl AgentBudgetGuard {
     pub fn consume_search_call(&mut self) -> Result<()> {
         self.check_timeout()?;
 
-        if self.search_calls_used >= self.budget.max_search_calls {
+        if !self
+            .budget
+            .max_search_calls
+            .permits_next(self.search_calls_used)
+        {
             return Err(Error::BudgetExceeded {
                 message: "agent search call budget exhausted".to_owned(),
             });
@@ -94,7 +91,7 @@ impl AgentBudgetGuard {
     }
 
     fn check_timeout(&self) -> Result<()> {
-        if self.elapsed_ms() >= self.budget.timeout_ms {
+        if self.budget.timeout_ms.is_elapsed(self.elapsed_ms()) {
             return Err(Error::BudgetExceeded {
                 message: "agent timeout budget exhausted".to_owned(),
             });

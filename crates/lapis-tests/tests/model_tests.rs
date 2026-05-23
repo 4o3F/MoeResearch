@@ -6,10 +6,11 @@ use lapis_core::model::provider::ModelProvider;
 use lapis_core::model::providers::OpenAiCompatibleProvider;
 use lapis_core::model::service::ModelService;
 use lapis_core::net::client::MockNetworkClient;
-use lapis_core::schema::common::{ModelPolicy, NetworkResponse};
 use lapis_core::schema::model::{
     ModelMessage, ModelMessageRole, ModelRequest, ModelResponse, ModelTool,
 };
+use lapis_core::schema::network::NetworkResponse;
+use lapis_core::schema::policy::ModelPolicy;
 use serde_json::json;
 
 struct StaticProvider(&'static str);
@@ -172,6 +173,71 @@ async fn applies_policy_defaults_before_dispatch() {
     assert_eq!(request.model.as_deref(), Some("model-a"));
     assert_eq!(request.temperature, Some(0.7));
     assert_eq!(request.max_tokens, Some(128));
+}
+
+#[tokio::test]
+async fn validates_request_after_policy_defaults() {
+    let seen = Arc::new(std::sync::Mutex::new(None));
+    let mut service = ModelService::new();
+    service.register(CapturingProvider { seen: seen.clone() });
+    let policy = ModelPolicy {
+        default_provider: "alpha".to_owned(),
+        allowed_providers: vec!["alpha".to_owned()],
+        temperature: Some(3.0),
+        max_tokens: Some(128),
+        ..ModelPolicy::default()
+    };
+
+    let error = service
+        .complete(request(""), &policy)
+        .await
+        .expect_err("invalid model request");
+
+    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+    assert!(seen.lock().expect("request lock").is_none());
+}
+
+#[tokio::test]
+async fn rejects_zero_policy_max_tokens_before_dispatch() {
+    let seen = Arc::new(std::sync::Mutex::new(None));
+    let mut service = ModelService::new();
+    service.register(CapturingProvider { seen: seen.clone() });
+    let policy = ModelPolicy {
+        default_provider: "alpha".to_owned(),
+        allowed_providers: vec!["alpha".to_owned()],
+        max_tokens: Some(0),
+        ..ModelPolicy::default()
+    };
+
+    let error = service
+        .complete(request(""), &policy)
+        .await
+        .expect_err("invalid model request");
+
+    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+    assert!(seen.lock().expect("request lock").is_none());
+}
+
+#[tokio::test]
+async fn rejects_empty_model_messages_before_dispatch() {
+    let seen = Arc::new(std::sync::Mutex::new(None));
+    let mut service = ModelService::new();
+    service.register(CapturingProvider { seen: seen.clone() });
+    let policy = ModelPolicy {
+        default_provider: "alpha".to_owned(),
+        allowed_providers: vec!["alpha".to_owned()],
+        ..ModelPolicy::default()
+    };
+    let mut invalid = request("");
+    invalid.messages = vec![];
+
+    let error = service
+        .complete(invalid, &policy)
+        .await
+        .expect_err("invalid model request");
+
+    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+    assert!(seen.lock().expect("request lock").is_none());
 }
 
 #[test]
