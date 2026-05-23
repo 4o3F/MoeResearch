@@ -71,6 +71,7 @@ fn provider(network: Arc<MockNetworkClient>) -> OpenAiCompatibleProvider {
         "https://api.example.com".to_owned(),
         "secret".to_owned(),
         None,
+        "configured-model".to_owned(),
     )
 }
 
@@ -346,6 +347,39 @@ async fn missing_usage_maps_to_none() {
 }
 
 #[tokio::test]
+async fn ignores_reasoning_output_items() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [
+                {
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "summary": []
+                },
+                {
+                    "type": "message",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "hello"
+                    }]
+                }
+            ]
+        }),
+    }]));
+    let provider = provider(network);
+
+    let response = provider
+        .complete(request_with_messages(vec![user_message("hi")]))
+        .await
+        .expect("model response");
+
+    assert_eq!(response.content, Some("hello".to_owned()));
+    assert!(response.tool_calls.is_empty());
+}
+
+#[tokio::test]
 async fn malformed_tool_call_arguments_returns_error() {
     let network = Arc::new(MockNetworkClient::new([NetworkResponse {
         status: 200,
@@ -388,6 +422,7 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
         "https://api.example.com/".to_owned(),
         "secret".to_owned(),
         Some(1000),
+        "configured-model".to_owned(),
     );
     let mut request = request_with_messages(vec![user_message("hi")]);
     request.model = None;
@@ -427,7 +462,7 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
     );
 
     let body = request.body.as_ref().expect("request body");
-    assert_eq!(body["model"], "gpt-5.5");
+    assert_eq!(body["model"], "configured-model");
     assert_eq!(body["input"][0]["role"], "user");
     assert_eq!(body["input"][0]["content"], "hi");
     assert_eq!(body["tools"][0]["type"], "function");

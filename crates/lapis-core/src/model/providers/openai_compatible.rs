@@ -19,6 +19,7 @@ pub struct OpenAiCompatibleProvider {
     base_url: String,
     api_key: String,
     timeout_ms: Option<u64>,
+    model: String,
 }
 
 impl OpenAiCompatibleProvider {
@@ -27,12 +28,14 @@ impl OpenAiCompatibleProvider {
         base_url: String,
         api_key: String,
         timeout_ms: Option<u64>,
+        model: String,
     ) -> Self {
         Self {
             network,
             base_url,
             api_key,
             timeout_ms,
+            model,
         }
     }
 
@@ -64,7 +67,7 @@ impl OpenAiCompatibleProvider {
 
     fn build_network_request(&self, request: ModelRequest) -> Result<NetworkRequest> {
         let body = serde_json::to_value(OpenAiResponsesRequest {
-            model: request.model.unwrap_or_else(|| "gpt-5.5".to_owned()),
+            model: request.model.unwrap_or_else(|| self.model.clone()),
             input: request
                 .messages
                 .into_iter()
@@ -116,6 +119,7 @@ impl OpenAiCompatibleProvider {
                     arguments,
                     ..
                 } => tool_calls.push(map_tool_call(call_id, name, &arguments)?),
+                OpenAiResponseOutput::Reasoning {} => {}
             }
         }
 
@@ -236,6 +240,7 @@ enum OpenAiResponseOutput {
         name: String,
         arguments: String,
     },
+    Reasoning {},
 }
 
 #[derive(Deserialize)]

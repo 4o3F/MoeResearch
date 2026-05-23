@@ -106,11 +106,23 @@ pub fn build_model_service(
                         message: format!("environment variable {api_key_env} is not set"),
                     })?;
 
+                let Some(model) = provider
+                    .model
+                    .as_ref()
+                    .map(|model| model.trim())
+                    .filter(|model| !model.is_empty())
+                else {
+                    return Err(Error::ConfigInvalid {
+                        message: format!("model.providers.{name}.model must be set"),
+                    });
+                };
+
                 service.register(OpenAiCompatibleProvider::new(
                     network.clone(),
                     provider.base_url.clone(),
                     api_key,
                     provider.timeout_ms.or(Some(config.network.timeout_ms)),
+                    model.to_owned(),
                 ));
             }
             _ => {

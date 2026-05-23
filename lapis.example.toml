@@ -24,12 +24,14 @@ enabled = false
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
 timeout_ms = 30000
+model = ""
 
 [search.providers.grok]
 enabled = false
 base_url = "https://api.x.ai"
 api_key_env = "XAI_API_KEY"
 timeout_ms = 30000
+model = "grok-4.20-fast"
 
 [model]
 default_provider = "openai-compatible"
@@ -39,6 +41,7 @@ enabled = false
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
 timeout_ms = 30000
+model = "gpt-5.5"
 
 [budget]
 # Set a budget value to -1 to make that limit unlimited.

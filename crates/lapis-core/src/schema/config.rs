@@ -224,6 +224,10 @@ impl SearchConfig {
     fn validate_with(&self, context: &ProviderValidationContext<'_>) -> Result<()> {
         for (name, provider) in &self.providers {
             provider.validate_with(name, context)?;
+            match name.as_str() {
+                "grok" => provider.validate_model(context.kind, name)?,
+                _ => {}
+            }
         }
         Ok(())
     }
@@ -246,6 +250,7 @@ impl Default for SearchConfig {
                 base_url: "https://api.exa.ai".to_owned(),
                 api_key_env: Some("EXA_API_KEY".to_owned()),
                 timeout_ms: None,
+                model: None,
             },
         );
         providers.insert(
@@ -255,6 +260,7 @@ impl Default for SearchConfig {
                 base_url: "https://api.x.ai".to_owned(),
                 api_key_env: Some("XAI_API_KEY".to_owned()),
                 timeout_ms: None,
+                model: None,
             },
         );
 
@@ -283,6 +289,10 @@ impl ModelConfig {
     fn validate_with(&self, context: &ProviderValidationContext<'_>) -> Result<()> {
         for (name, provider) in &self.providers {
             provider.validate_with(name, context)?;
+            match name.as_str() {
+                "openai-compatible" => provider.validate_model(context.kind, name)?,
+                _ => {}
+            }
         }
         Ok(())
     }
@@ -305,6 +315,7 @@ impl Default for ModelConfig {
                 base_url: "https://api.openai.com/v1".to_owned(),
                 api_key_env: Some("OPENAI_API_KEY".to_owned()),
                 timeout_ms: None,
+                model: None,
             },
         );
 
@@ -322,6 +333,7 @@ pub struct ProviderEndpoint {
     pub base_url: String,
     pub api_key_env: Option<String>,
     pub timeout_ms: Option<u64>,
+    pub model: Option<String>,
 }
 
 struct ProviderValidationContext<'a> {
@@ -366,6 +378,26 @@ impl ProviderEndpoint {
             return Err(Error::ProviderUnavailable {
                 provider: format!("{kind}:{name}"),
                 message: format!("environment variable {env_name} is not set"),
+            });
+        }
+
+        Ok(())
+    }
+
+    fn validate_model(&self, kind: &str, name: &str) -> Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+
+        let Some(model) = self.model.as_ref().map(|model| model.trim()) else {
+            return Err(Error::ConfigInvalid {
+                message: format!("{kind}.providers.{name}.model must be set"),
+            });
+        };
+
+        if model.is_empty() {
+            return Err(Error::ConfigInvalid {
+                message: format!("{kind}.providers.{name}.model must not be empty"),
             });
         }
 

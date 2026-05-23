@@ -147,3 +147,65 @@ fn rejects_plain_api_key_field() {
 
     assert!(err.to_string().contains("unknown field `api_key`"));
 }
+
+#[test]
+fn rejects_enabled_model_provider_without_model() {
+    let input = r#"
+        [model.providers.openai-compatible]
+        enabled = true
+        base_url = "https://api.openai.com/v1"
+        api_key_env = "PATH"
+    "#;
+
+    let err = load_config_from_str(input, PathBuf::from("lapis.toml")).unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("model.providers.openai-compatible.model must be set")
+    );
+}
+
+#[test]
+fn rejects_enabled_grok_search_provider_without_model() {
+    let input = r#"
+        [search.providers.grok]
+        enabled = true
+        base_url = "https://api.x.ai"
+        api_key_env = "PATH"
+    "#;
+
+    let err = load_config_from_str(input, PathBuf::from("lapis.toml")).unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("search.providers.grok.model must be set")
+    );
+}
+
+#[test]
+fn accepts_provider_model_config() {
+    let input = r#"
+        [search.providers.grok]
+        enabled = true
+        base_url = "https://api.x.ai"
+        api_key_env = "PATH"
+        model = "grok-4.20-fast"
+
+        [model.providers.openai-compatible]
+        enabled = true
+        base_url = "https://api.openai.com/v1"
+        api_key_env = "PATH"
+        model = "gpt-5.5"
+    "#;
+
+    let config = load_config_from_str(input, PathBuf::from("lapis.toml")).expect("config");
+
+    assert_eq!(
+        config.search.providers["grok"].model.as_deref(),
+        Some("grok-4.20-fast")
+    );
+    assert_eq!(
+        config.model.providers["openai-compatible"].model.as_deref(),
+        Some("gpt-5.5")
+    );
+}
