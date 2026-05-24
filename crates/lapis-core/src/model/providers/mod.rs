@@ -1,3 +1,3 @@
-mod openai_compatible;
+mod openai;
 
-pub use openai_compatible::OpenAiCompatibleProvider;
+pub use openai::OpenAiProvider;

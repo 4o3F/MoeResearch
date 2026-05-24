@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use lapis_core::error::{Error, Result};
 use lapis_core::model::provider::ModelProvider;
-use lapis_core::model::providers::OpenAiCompatibleProvider;
+use lapis_core::model::providers::OpenAiProvider;
 use lapis_core::model::service::ModelService;
 use lapis_core::net::client::MockNetworkClient;
 use lapis_core::schema::model::{
@@ -65,8 +65,8 @@ fn request(provider: &str) -> ModelRequest {
     }
 }
 
-fn provider(network: Arc<MockNetworkClient>) -> OpenAiCompatibleProvider {
-    OpenAiCompatibleProvider::new(
+fn provider(network: Arc<MockNetworkClient>) -> OpenAiProvider {
+    OpenAiProvider::new(
         network,
         "https://api.example.com".to_owned(),
         "secret".to_owned(),
@@ -77,7 +77,7 @@ fn provider(network: Arc<MockNetworkClient>) -> OpenAiCompatibleProvider {
 
 fn request_with_messages(messages: Vec<ModelMessage>) -> ModelRequest {
     ModelRequest {
-        provider: "openai-compatible".to_owned(),
+        provider: "openai".to_owned(),
         model: Some("gpt-test".to_owned()),
         messages,
         tools: vec![],
@@ -281,7 +281,7 @@ async fn maps_text_response_and_usage() {
         .await
         .expect("model response");
 
-    assert_eq!(response.provider, "openai-compatible");
+    assert_eq!(response.provider, "openai");
     assert_eq!(response.model, Some("gpt-test".to_owned()));
     assert_eq!(response.content, Some("hello".to_owned()));
     let usage = response.usage.expect("usage");
@@ -417,7 +417,7 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
             }]
         }),
     }]));
-    let provider = OpenAiCompatibleProvider::new(
+    let provider = OpenAiProvider::new(
         network.clone(),
         "https://api.example.com/".to_owned(),
         "secret".to_owned(),
@@ -463,6 +463,7 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
 
     let body = request.body.as_ref().expect("request body");
     assert_eq!(body["model"], "configured-model");
+    assert_eq!(body["stream"], false);
     assert_eq!(body["input"][0]["role"], "user");
     assert_eq!(body["input"][0]["content"], "hi");
     assert_eq!(body["tools"][0]["type"], "function");

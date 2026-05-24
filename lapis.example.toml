@@ -34,9 +34,9 @@ timeout_ms = 30000
 model = "grok-4.20-fast"
 
 [model]
-default_provider = "openai-compatible"
+default_provider = "openai"
 
-[model.providers.openai-compatible]
+[model.providers.openai]
 enabled = false
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"

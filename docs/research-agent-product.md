@@ -49,7 +49,7 @@ Lapis 的产品目标包括：
 - **证据可追溯**：重要结论必须保留来源、摘要和置信度。
 - **多视角综合**：支持市场、用户、竞品、技术、商业、风险等不同视角并行分析。
 - **可控编排**：Claude Code Skill 作为主分析者，负责拆解、分配、验收和最终汇总。
-- **模型可替换**：Reasoning Layer 不绑定 GPT，可通过配置选择 OpenAI-compatible、Anthropic-compatible 或其他模型 API provider。
+- **模型可替换**：Reasoning Layer 不绑定 GPT，可通过配置选择 `openai`、Anthropic-compatible 或其他模型 API provider。
 - **搜索可扩展**：Retrieval Layer 搜索 API provider 可独立替换或扩展，不影响上层 Agent 编排。
 - **Rust 核心可靠性**：MCP、模型 Agent 编排、模型 provider 和搜索 provider 层由 Rust 构建，保证边界清晰、类型明确和可维护性。
 
@@ -113,7 +113,7 @@ Orchestration Layer 必须保留最终判断权。Reasoning Layer 的模型 Agen
 
 ### 6.2 Layer 2：Reasoning Layer
 
-Reasoning Layer 是由 Rust 编排的模型 Agent 层。每个 Agent 被分配一个明确的分析方面，并通过配置选择具体模型 API provider。该层不限制为 GPT，可以接入 OpenAI-compatible API、Anthropic-compatible API、本地模型网关或未来新增的模型服务。每个 Agent 在其分析方面内调用 Retrieval Layer 搜索服务进行信息获取。
+Reasoning Layer 是由 Rust 编排的模型 Agent 层。每个 Agent 被分配一个明确的分析方面，并通过配置选择具体模型 API provider。该层不限制为 GPT，可以接入 OpenAI Responses API、Anthropic-compatible API、本地模型网关或未来新增的模型服务。每个 Agent 在其分析方面内调用 Retrieval Layer 搜索服务进行信息获取。
 
 可能的 Agent 类型：
 
@@ -338,7 +338,7 @@ MVP 阶段采用单 Rust crate、module-first 的结构。`schema`、`mcp`、`or
 │   │   ├── provider.rs
 │   │   └── providers
 │   │       ├── mod.rs
-│   │       ├── openai_compatible.rs
+│   │       ├── openai.rs
 │   │       └── anthropic_compatible.rs
 │   ├── search
 │   │   ├── mod.rs
@@ -450,26 +450,21 @@ trait ModelProvider {
 Provider 配置示例：
 
 ```toml
-[model_providers.openai]
+[model]
+default_provider = "openai"
+
+[model.providers.openai]
 enabled = true
-kind = "openai-compatible"
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
-default_model = "gpt-4o"
-
-[model_providers.local]
-enabled = false
-kind = "openai-compatible"
-base_url = "http://localhost:11434/v1"
-api_key_env = "LOCAL_MODEL_API_KEY"
-default_model = "local-model"
+model = "gpt-4o"
 ```
 
 配置原则：
 
 - API key 只通过环境变量名、用户级配置或 secret provider 引用，不写入仓库。
-- `base_url` 必须可配置，以支持官方 API、代理网关、本地模型和 OpenAI-compatible 服务。
-- `kind` 用于声明协议适配器，例如 `openai-compatible`、`anthropic-compatible` 或未来新增格式。
+- `base_url` 必须可配置，以支持官方 API 和代理网关。
+- 当前 OpenAI 模型 provider 配置 key 为 `openai`。
 - Agent 只依赖统一 `ModelProvider` 接口，不直接依赖具体 provider SDK。
 
 ### 10.4 Search Provider 层
@@ -601,19 +596,22 @@ trait SearchProvider {
 搜索 provider 配置示例：
 
 ```toml
-[search_providers.exa]
+[search]
+preferred_providers = ["exa", "grok"]
+
+[search.providers.exa]
 enabled = true
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
 timeout_ms = 30000
-priority = 10
+model = ""
 
-[search_providers.grok]
+[search.providers.grok]
 enabled = true
 base_url = "https://api.x.ai"
-api_key_env = "GROK_API_KEY"
+api_key_env = "XAI_API_KEY"
 timeout_ms = 30000
-priority = 20
+model = "grok-4.20-fast"
 ```
 
 ### 12.2 Model Provider
@@ -631,23 +629,15 @@ priority = 20
 模型 provider 配置示例：
 
 ```toml
-[model_providers.default]
+[model]
+default_provider = "openai"
+
+[model.providers.openai]
 enabled = true
-kind = "openai-compatible"
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
-default_model = "gpt-4o"
+model = "gpt-4o"
 timeout_ms = 60000
-priority = 10
-
-[model_providers.analysis_high_context]
-enabled = false
-kind = "anthropic-compatible"
-base_url = "https://api.anthropic.com"
-api_key_env = "ANTHROPIC_API_KEY"
-default_model = "claude-sonnet"
-timeout_ms = 60000
-priority = 20
 ```
 
 ## 13. 证据与报告模型

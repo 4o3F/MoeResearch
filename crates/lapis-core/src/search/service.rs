@@ -120,12 +120,26 @@ pub fn build_search_service(
                 api_key,
                 provider.timeout_ms.or(Some(config.network.timeout_ms)),
             )),
-            "grok" => service.register(GrokSearchProvider::new(
-                network.clone(),
-                provider.base_url.clone(),
-                api_key,
-                provider.timeout_ms.or(Some(config.network.timeout_ms)),
-            )),
+            "grok" => {
+                let Some(model) = provider
+                    .model
+                    .as_ref()
+                    .map(|model| model.trim())
+                    .filter(|model| !model.is_empty())
+                else {
+                    return Err(Error::ConfigInvalid {
+                        message: format!("search.providers.{name}.model must be set"),
+                    });
+                };
+
+                service.register(GrokSearchProvider::new(
+                    network.clone(),
+                    provider.base_url.clone(),
+                    api_key,
+                    provider.timeout_ms.or(Some(config.network.timeout_ms)),
+                    model.to_owned(),
+                ));
+            }
             _ => {
                 tracing::warn!(provider = name, "unknown search provider ignored");
             }

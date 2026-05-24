@@ -290,7 +290,7 @@ impl ModelConfig {
         for (name, provider) in &self.providers {
             provider.validate_with(name, context)?;
             match name.as_str() {
-                "openai-compatible" => provider.validate_model(context.kind, name)?,
+                "openai" => provider.validate_model(context.kind, name)?,
                 _ => {}
             }
         }
@@ -309,7 +309,7 @@ impl Default for ModelConfig {
     fn default() -> Self {
         let mut providers = BTreeMap::new();
         providers.insert(
-            "openai-compatible".to_owned(),
+            "openai".to_owned(),
             ProviderEndpoint {
                 enabled: false,
                 base_url: "https://api.openai.com/v1".to_owned(),
@@ -321,7 +321,7 @@ impl Default for ModelConfig {
 
         Self {
             providers,
-            default_provider: "openai-compatible".to_owned(),
+            default_provider: "openai".to_owned(),
         }
     }
 }

@@ -55,9 +55,9 @@ pub struct ModelPolicy {
 impl Default for ModelPolicy {
     fn default() -> Self {
         Self {
-            default_provider: "openai-compatible".to_owned(),
+            default_provider: "openai".to_owned(),
             default_model: None,
-            allowed_providers: vec!["openai-compatible".to_owned()],
+            allowed_providers: vec!["openai".to_owned()],
             temperature: Some(0.2),
             max_tokens: None,
             require_tool_call_support: true,

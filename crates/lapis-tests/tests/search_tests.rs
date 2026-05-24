@@ -169,13 +169,23 @@ async fn maps_grok_response_to_standard_search_response() {
         status: 200,
         headers: vec![],
         body: json!({
-            "results": [{
-                "title": "Grok result",
-                "url": "https://example.com/grok",
-                "snippet": "snippet",
-                "summary": "summary",
-                "published_at": "2026-01-01"
-            }]
+            "output": [
+                { "type": "web_search_call", "status": "completed" },
+                {
+                    "type": "message",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "Result from source",
+                        "annotations": [{
+                            "type": "url_citation",
+                            "url": "https://example.com/grok",
+                            "title": "Grok result",
+                            "start_index": 0,
+                            "end_index": 6
+                        }]
+                    }]
+                }
+            ]
         }),
     }]));
     let provider = GrokSearchProvider::new(
@@ -183,6 +193,7 @@ async fn maps_grok_response_to_standard_search_response() {
         "https://api.x.ai".to_owned(),
         "key".to_owned(),
         None,
+        "configured-grok-model".to_owned(),
     );
 
     let response = provider
@@ -195,4 +206,274 @@ async fn maps_grok_response_to_standard_search_response() {
 
     assert_eq!(response.provider, "grok");
     assert_eq!(response.results[0].title, "Grok result");
+    assert_eq!(
+        response.results[0].url.as_deref(),
+        Some("https://example.com/grok")
+    );
+    assert_eq!(response.results[0].snippet, "Result");
+    assert_eq!(
+        response.results[0].summary.as_deref(),
+        Some("Result from source")
+    );
+    assert_eq!(response.results[0].published_at, None);
+}
+
+#[tokio::test]
+async fn grok_search_uses_responses_web_search_request() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "output": [] }),
+    }]));
+    let provider = GrokSearchProvider::new(
+        network.clone(),
+        "https://api.x.ai/".to_owned(),
+        "key".to_owned(),
+        Some(1000),
+        "configured-grok-model".to_owned(),
+    );
+    let policy = SearchPolicy {
+        include_domains: vec!["example.com".to_owned()],
+        exclude_domains: vec!["blocked.com".to_owned()],
+        language: Some("en".to_owned()),
+        region: Some("US".to_owned()),
+        ..SearchPolicy::default()
+    };
+
+    provider
+        .search(ProviderSearchRequest::from_policy(
+            SearchRequest::from_query("lapis", 2),
+            &policy,
+        ))
+        .await
+        .expect("grok response");
+
+    let requests = network.requests();
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.url, "https://api.x.ai/responses");
+    assert_eq!(request.timeout_ms, Some(1000));
+    assert!(
+        request
+            .headers
+            .iter()
+            .any(|header| { header.name == "authorization" && header.value == "Bearer key" })
+    );
+    assert!(
+        request
+            .headers
+            .iter()
+            .any(|header| { header.name == "content-type" && header.value == "application/json" })
+    );
+
+    let body = request.body.as_ref().expect("request body");
+    assert_eq!(body["model"], "configured-grok-model");
+    assert_eq!(body["stream"], false);
+    assert_eq!(body["input"][0]["role"], "user");
+    assert_eq!(body["tools"][0]["type"], "web_search");
+    assert_eq!(body["tools"][0]["search_context_size"], "low");
+    assert_eq!(
+        body["tools"][0]["filters"]["allowed_domains"],
+        json!(["example.com"])
+    );
+    let prompt = body["input"][0]["content"].as_str().expect("prompt");
+    assert!(prompt.contains("Search the web for: lapis"));
+    assert!(prompt.contains("Maximum results: 2"));
+    assert!(prompt.contains("Language: en"));
+    assert!(prompt.contains("Region: US"));
+    assert!(prompt.contains("Exclude domains: blocked.com"));
+}
+
+#[tokio::test]
+async fn grok_search_uses_annotation_local_text_for_snippets() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [{
+                "type": "message",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": "First block without citation",
+                        "annotations": []
+                    },
+                    {
+                        "type": "output_text",
+                        "text": "Second block cited",
+                        "annotations": [{
+                            "type": "url_citation",
+                            "url": "https://example.com/second",
+                            "title": "Second",
+                            "start_index": 0,
+                            "end_index": 6
+                        }]
+                    }
+                ]
+            }]
+        }),
+    }]));
+    let provider = GrokSearchProvider::new(
+        network,
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    let response = provider
+        .search(ProviderSearchRequest::from_policy(
+            SearchRequest::from_query("lapis", 1),
+            &SearchPolicy::default(),
+        ))
+        .await
+        .expect("grok response");
+
+    assert_eq!(response.results[0].snippet, "Second");
+    assert_eq!(
+        response.results[0].summary.as_deref(),
+        Some("First block without citation\nSecond block cited")
+    );
+}
+
+#[tokio::test]
+async fn grok_search_ignores_unknown_content_and_annotations() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [{
+                "type": "message",
+                "content": [
+                    { "type": "input_text", "text": "ignored" },
+                    {
+                        "type": "output_text",
+                        "text": "Known text",
+                        "annotations": [
+                            { "type": "file_citation", "file_id": "file_1" },
+                            {
+                                "type": "url_citation",
+                                "url": "https://example.com/known",
+                                "start_index": 0,
+                                "end_index": 5
+                            }
+                        ]
+                    }
+                ]
+            }]
+        }),
+    }]));
+    let provider = GrokSearchProvider::new(
+        network,
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    let response = provider
+        .search(ProviderSearchRequest::from_policy(
+            SearchRequest::from_query("lapis", 1),
+            &SearchPolicy::default(),
+        ))
+        .await
+        .expect("grok response");
+
+    assert_eq!(response.results[0].title, "https://example.com/known");
+    assert_eq!(response.results[0].snippet, "Known");
+}
+
+#[tokio::test]
+async fn grok_search_dedupes_citations_and_limits_results() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [{
+                "type": "message",
+                "content": [{
+                    "type": "output_text",
+                    "text": "Alpha Beta Gamma",
+                    "annotations": [
+                        {
+                            "type": "url_citation",
+                            "url": "https://example.com/alpha",
+                            "title": "Alpha",
+                            "start_index": 0,
+                            "end_index": 5
+                        },
+                        {
+                            "type": "url_citation",
+                            "url": "https://example.com/alpha",
+                            "title": "Alpha duplicate",
+                            "start_index": 0,
+                            "end_index": 5
+                        },
+                        {
+                            "type": "url_citation",
+                            "url": "https://example.com/beta",
+                            "title": "Beta",
+                            "start_index": 6,
+                            "end_index": 10
+                        }
+                    ]
+                }]
+            }]
+        }),
+    }]));
+    let provider = GrokSearchProvider::new(
+        network,
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    let response = provider
+        .search(ProviderSearchRequest::from_policy(
+            SearchRequest::from_query("lapis", 1),
+            &SearchPolicy::default(),
+        ))
+        .await
+        .expect("grok response");
+
+    assert_eq!(response.results.len(), 1);
+    assert_eq!(
+        response.results[0].url.as_deref(),
+        Some("https://example.com/alpha")
+    );
+}
+
+#[tokio::test]
+async fn grok_search_rejects_non_success_status() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 429,
+        headers: vec![],
+        body: json!({ "error": "rate limit" }),
+    }]));
+    let provider = GrokSearchProvider::new(
+        network,
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    let error = provider
+        .search(ProviderSearchRequest::from_policy(
+            SearchRequest::from_query("lapis", 1),
+            &SearchPolicy::default(),
+        ))
+        .await
+        .expect_err("grok status error");
+
+    assert!(matches!(
+        error,
+        Error::HttpStatus {
+            status: 429,
+            retryable: true,
+            ..
+        }
+    ));
 }

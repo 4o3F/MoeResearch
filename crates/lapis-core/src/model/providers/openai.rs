@@ -14,7 +14,7 @@ use crate::schema::model::{
 use crate::schema::network::{Header, NetworkRequest};
 use crate::schema::report::TokenUsage;
 
-pub struct OpenAiCompatibleProvider {
+pub struct OpenAiProvider {
     network: Arc<dyn NetworkClient>,
     base_url: String,
     api_key: String,
@@ -22,7 +22,7 @@ pub struct OpenAiCompatibleProvider {
     model: String,
 }
 
-impl OpenAiCompatibleProvider {
+impl OpenAiProvider {
     pub fn new(
         network: Arc<dyn NetworkClient>,
         base_url: String,
@@ -42,7 +42,7 @@ impl OpenAiCompatibleProvider {
     fn validate_request(&self, request: &ModelRequest) -> Result<()> {
         if self.base_url.trim().is_empty() {
             return Err(Error::ConfigInvalid {
-                message: "openai-compatible base_url is empty".to_owned(),
+                message: "openai base_url is empty".to_owned(),
             });
         }
 
@@ -79,6 +79,7 @@ impl OpenAiCompatibleProvider {
             tools: request.tools.into_iter().map(map_tool).collect::<Vec<_>>(),
             temperature: request.temperature,
             max_output_tokens: request.max_tokens,
+            stream: false,
         })
         .context(JsonSnafu)?;
 
@@ -138,9 +139,9 @@ impl OpenAiCompatibleProvider {
 }
 
 #[async_trait]
-impl ModelProvider for OpenAiCompatibleProvider {
+impl ModelProvider for OpenAiProvider {
     fn name(&self) -> &'static str {
-        "openai-compatible"
+        "openai"
     }
 
     async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
@@ -151,7 +152,7 @@ impl ModelProvider for OpenAiCompatibleProvider {
         if !(200..300).contains(&response.status) {
             return Err(Error::HttpStatus {
                 status: response.status,
-                message: "openai-compatible model provider returned non-success status".to_owned(),
+                message: "openai model provider returned non-success status".to_owned(),
                 retryable: response.status == 429 || response.status >= 500,
             });
         }
@@ -203,6 +204,7 @@ struct OpenAiResponsesRequest {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_output_tokens: Option<u32>,
+    stream: bool,
 }
 
 #[derive(Serialize)]

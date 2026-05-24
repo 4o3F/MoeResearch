@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::model::provider::ModelProvider;
-use crate::model::providers::OpenAiCompatibleProvider;
+use crate::model::providers::OpenAiProvider;
 use crate::net::NetworkClient;
 use crate::schema::config::LapisConfig;
 use crate::schema::model::{ModelRequest, ModelResponse};
@@ -93,7 +93,7 @@ pub fn build_model_service(
         }
 
         match name.as_str() {
-            "openai-compatible" => {
+            "openai" => {
                 let Some(api_key_env) = provider.api_key_env.as_ref() else {
                     return Err(Error::ProviderUnavailable {
                         provider: name.clone(),
@@ -117,7 +117,7 @@ pub fn build_model_service(
                     });
                 };
 
-                service.register(OpenAiCompatibleProvider::new(
+                service.register(OpenAiProvider::new(
                     network.clone(),
                     provider.base_url.clone(),
                     api_key,

@@ -151,7 +151,7 @@ fn rejects_plain_api_key_field() {
 #[test]
 fn rejects_enabled_model_provider_without_model() {
     let input = r#"
-        [model.providers.openai-compatible]
+        [model.providers.openai]
         enabled = true
         base_url = "https://api.openai.com/v1"
         api_key_env = "PATH"
@@ -161,7 +161,7 @@ fn rejects_enabled_model_provider_without_model() {
 
     assert!(
         err.to_string()
-            .contains("model.providers.openai-compatible.model must be set")
+            .contains("model.providers.openai.model must be set")
     );
 }
 
@@ -191,7 +191,7 @@ fn accepts_provider_model_config() {
         api_key_env = "PATH"
         model = "grok-4.20-fast"
 
-        [model.providers.openai-compatible]
+        [model.providers.openai]
         enabled = true
         base_url = "https://api.openai.com/v1"
         api_key_env = "PATH"
@@ -205,7 +205,7 @@ fn accepts_provider_model_config() {
         Some("grok-4.20-fast")
     );
     assert_eq!(
-        config.model.providers["openai-compatible"].model.as_deref(),
+        config.model.providers["openai"].model.as_deref(),
         Some("gpt-5.5")
     );
 }
