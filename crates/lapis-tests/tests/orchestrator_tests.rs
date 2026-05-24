@@ -19,7 +19,7 @@ use lapis_core::schema::policy::{
     ToolName,
 };
 use lapis_core::schema::report::{
-    AspectReport, Confidence, Finding, FindingType, Importance, OpenQuestion,
+    AspectReport, Confidence, Finding, FindingType, Importance, OpenQuestion, TerminationReason,
 };
 use lapis_core::schema::research::{
     AspectResearchRequest, AspectSpec, PromptAssets, ResearchContext,
@@ -60,6 +60,11 @@ struct CountingSearchProvider {
     calls: Arc<AtomicUsize>,
 }
 
+struct SequenceSearchProvider {
+    calls: Arc<AtomicUsize>,
+    responses: Mutex<VecDeque<Result<SearchResponse>>>,
+}
+
 #[async_trait]
 impl SearchProvider for CountingSearchProvider {
     fn name(&self) -> &'static str {
@@ -68,16 +73,38 @@ impl SearchProvider for CountingSearchProvider {
 
     async fn search(&self, _request: ProviderSearchRequest) -> Result<SearchResponse> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(SearchResponse {
-            provider: "searcher".to_owned(),
-            results: vec![SearchResult {
-                title: "Source".to_owned(),
-                url: Some("https://example.test/source".to_owned()),
-                snippet: "snippet".to_owned(),
-                summary: Some("summary".to_owned()),
-                published_at: None,
-            }],
-        })
+        Ok(search_response())
+    }
+}
+
+#[async_trait]
+impl SearchProvider for SequenceSearchProvider {
+    fn name(&self) -> &'static str {
+        "searcher"
+    }
+
+    async fn search(&self, _request: ProviderSearchRequest) -> Result<SearchResponse> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.responses
+            .lock()
+            .expect("responses lock")
+            .pop_front()
+            .ok_or_else(|| Error::Internal {
+                message: "missing fake search response".to_owned(),
+            })?
+    }
+}
+
+fn search_response() -> SearchResponse {
+    SearchResponse {
+        provider: "searcher".to_owned(),
+        results: vec![SearchResult {
+            title: "Source".to_owned(),
+            url: Some("https://example.test/source".to_owned()),
+            snippet: "snippet".to_owned(),
+            summary: Some("summary".to_owned()),
+            published_at: None,
+        }],
     }
 }
 
@@ -283,6 +310,14 @@ fn rejects_exhausted_model_tool_and_search_budgets() {
         search_guard.consume_search_call(),
         Err(Error::BudgetExceeded { .. })
     ));
+
+    let mut search_tool_guard = AgentBudgetGuard::new(budget(1, 1, 0)).expect("valid budget");
+    assert!(matches!(
+        search_tool_guard.consume_search_tool_call(),
+        Err(Error::BudgetExceeded { .. })
+    ));
+    assert_eq!(search_tool_guard.usage().tool_calls_used, 0);
+    assert_eq!(search_tool_guard.usage().search_calls_used, 0);
 }
 
 #[test]
@@ -329,7 +364,7 @@ async fn rejects_invalid_request_fields() {
     .await
     .expect_err("invalid request");
 
-    assert!(matches!(error, Error::InvalidInput { .. }));
+    assert!(matches!(error.error, Error::InvalidInput { .. }));
 }
 
 #[tokio::test]
@@ -348,7 +383,7 @@ async fn rejects_unsafe_prompt_asset_path() {
     .await
     .expect_err("unsafe prompt path");
 
-    assert!(matches!(error, Error::InvalidInput { .. }));
+    assert!(matches!(error.error, Error::InvalidInput { .. }));
 }
 
 #[tokio::test]
@@ -397,7 +432,7 @@ async fn rejects_conflicting_domains() {
     .await
     .expect_err("domain conflict");
 
-    assert!(matches!(error, Error::InvalidInput { .. }));
+    assert!(matches!(error.error, Error::InvalidInput { .. }));
 }
 
 #[tokio::test]
@@ -417,7 +452,7 @@ async fn rejects_execution_timeout_above_budget() {
     .await
     .expect_err("timeout conflict");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(error.error, Error::BudgetExceeded { .. }));
 }
 
 #[tokio::test]
@@ -490,6 +525,153 @@ async fn tool_trace_summary_redacts_query_when_query_trace_is_enabled() {
 }
 
 #[tokio::test]
+async fn search_trace_includes_structured_sources_when_allowed() {
+    let mut request = aspect_request();
+    request.evidence_policy.include_query_trace = true;
+    request.evidence_policy.include_source_urls = true;
+    let (model_service, search_service, _model_calls, _search_calls) = services(vec![
+        tool_response("search"),
+        final_response(valid_report_json()),
+    ]);
+
+    let output = AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect("runtime output");
+
+    assert_eq!(output.search_queries[0].query, "private query");
+    assert_eq!(output.search_queries[0].result_count, 1);
+    assert_eq!(output.search_queries[0].sources[0].title, "Source");
+    assert_eq!(
+        output.search_queries[0].sources[0].url.as_deref(),
+        Some("https://example.test/source")
+    );
+    assert_eq!(output.tool_calls[0].tool_call_id.as_deref(), Some("call-1"));
+    let search = output.tool_calls[0].search.as_ref().expect("search trace");
+    assert_eq!(search.provider, "searcher");
+    assert_eq!(search.query, "private query");
+    assert_eq!(search.result_count, 1);
+    assert_eq!(search.sources[0].title, "Source");
+    assert_eq!(
+        search.sources[0].url.as_deref(),
+        Some("https://example.test/source")
+    );
+}
+
+#[tokio::test]
+async fn structured_search_trace_respects_redaction_policies() {
+    let request = aspect_request();
+    let (model_service, search_service, _model_calls, _search_calls) = services(vec![
+        tool_response("search"),
+        final_response(valid_report_json()),
+    ]);
+
+    let output = AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect("runtime output");
+
+    assert_eq!(output.search_queries[0].query, "[redacted]");
+    assert_eq!(output.search_queries[0].sources[0].title, "Source");
+    assert!(output.search_queries[0].sources[0].url.is_none());
+    let search = output.tool_calls[0].search.as_ref().expect("search trace");
+    assert_eq!(search.query, "[redacted]");
+    assert_eq!(search.sources[0].title, "Source");
+    assert!(search.sources[0].url.is_none());
+    assert!(!output.tool_calls[0].input_summary.contains("private query"));
+}
+
+#[tokio::test]
+async fn budget_failure_preserves_completed_partial_trace() {
+    let mut request = aspect_request();
+    request.evidence_policy.include_query_trace = true;
+    request.evidence_policy.include_source_urls = true;
+    request.budget.max_search_calls = Limit::limited(2);
+    let (model_service, search_service, _model_calls, search_calls) = services(vec![
+        tool_response("search"),
+        tool_response("search"),
+        tool_response("search"),
+    ]);
+
+    let failure = AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect_err("budget failure");
+
+    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
+    assert_eq!(search_calls.load(Ordering::SeqCst), 2);
+    let partial = failure.partial_trace.expect("partial trace");
+    assert_eq!(partial.search_queries.len(), 2);
+    assert_eq!(partial.tool_calls.len(), 2);
+    assert_eq!(partial.provider_usage.search_calls, 2);
+    assert_eq!(partial.budget_usage.tool_calls_used, 2);
+    assert_eq!(partial.budget_usage.search_calls_used, 2);
+    assert_eq!(partial.evidence_count, 2);
+    assert_eq!(
+        partial.trace_summary.termination_reason,
+        Some(TerminationReason::BudgetExceeded)
+    );
+    assert_eq!(partial.search_queries[0].sources[0].title, "Source");
+    assert_eq!(
+        partial.tool_calls[0]
+            .search
+            .as_ref()
+            .expect("search trace")
+            .query,
+        "private query"
+    );
+}
+
+#[tokio::test]
+async fn provider_failure_preserves_prior_partial_trace() {
+    let mut request = aspect_request();
+    request.evidence_policy.include_query_trace = true;
+    request.evidence_policy.include_source_urls = true;
+
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let search_calls = Arc::new(AtomicUsize::new(0));
+    let mut model_service = ModelService::new();
+    model_service.register(SequenceModelProvider {
+        calls: model_calls,
+        responses: Mutex::new(vec![tool_response("search"), tool_response("search")].into()),
+        delay: None,
+    });
+    let mut search_service = SearchService::new();
+    search_service.register(SequenceSearchProvider {
+        calls: search_calls.clone(),
+        responses: Mutex::new(
+            vec![
+                Ok(search_response()),
+                Err(Error::NetworkFailed {
+                    message: "provider unavailable".to_owned(),
+                }),
+            ]
+            .into(),
+        ),
+    });
+
+    let failure = AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect_err("provider failure");
+
+    assert!(matches!(failure.error, Error::NetworkFailed { .. }));
+    assert_eq!(search_calls.load(Ordering::SeqCst), 2);
+    let partial = failure.partial_trace.expect("partial trace");
+    assert_eq!(partial.search_queries.len(), 1);
+    assert_eq!(partial.tool_calls.len(), 1);
+    assert_eq!(partial.provider_usage.search_calls, 1);
+    assert_eq!(partial.budget_usage.tool_calls_used, 2);
+    assert_eq!(partial.budget_usage.search_calls_used, 2);
+    assert_eq!(partial.evidence_count, 1);
+    assert_eq!(
+        partial.trace_summary.termination_reason,
+        Some(TerminationReason::ProviderError)
+    );
+    assert_eq!(partial.search_queries[0].sources[0].title, "Source");
+}
+
+#[tokio::test]
 async fn budget_exhaustion_stops_before_actions() {
     let mut zero_turn_request = aspect_request();
     zero_turn_request.budget.max_turns = Limit::limited(0);
@@ -500,7 +682,7 @@ async fn budget_exhaustion_stops_before_actions() {
         .await
         .expect_err("budget error");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(error.error, Error::BudgetExceeded { .. }));
     assert_eq!(model_calls.load(Ordering::SeqCst), 0);
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 
@@ -514,7 +696,7 @@ async fn budget_exhaustion_stops_before_actions() {
         .await
         .expect_err("search budget error");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(error.error, Error::BudgetExceeded { .. }));
     assert_eq!(model_calls.load(Ordering::SeqCst), 1);
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 }
@@ -534,7 +716,7 @@ async fn slow_final_model_call_exhausts_effective_timeout() {
         .await
         .expect_err("execution timeout error");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(error.error, Error::BudgetExceeded { .. }));
     assert_eq!(model_calls.load(Ordering::SeqCst), 1);
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 }
@@ -554,7 +736,7 @@ async fn lower_execution_timeout_is_enforced_before_search() {
         .await
         .expect_err("execution timeout error");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(error.error, Error::BudgetExceeded { .. }));
     assert_eq!(model_calls.load(Ordering::SeqCst), 1);
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 }
@@ -570,7 +752,7 @@ async fn invalid_tool_stops_without_search() {
         .await
         .expect_err("tool policy error");
 
-    assert!(matches!(error, Error::ToolPolicyDenied { .. }));
+    assert!(matches!(error.error, Error::ToolPolicyDenied { .. }));
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 }
 
@@ -585,5 +767,5 @@ async fn invalid_final_output_returns_schema_failure() {
         .await
         .expect_err("schema error");
 
-    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+    assert!(matches!(error.error, Error::SchemaValidationFailed { .. }));
 }

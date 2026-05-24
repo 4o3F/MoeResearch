@@ -1,8 +1,8 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -15,14 +15,15 @@ use lapis_core::orchestrator::workflow::deep_research;
 use lapis_core::schema::budget::{AgentBudget, ResearchBudget};
 use lapis_core::schema::config::BudgetConfig;
 use lapis_core::schema::limit::Limit;
-use lapis_core::schema::mcp::{ToolErrorCode, ToolStatus};
+use lapis_core::schema::mcp::{ToolEnvelope, ToolErrorCode, ToolStatus};
 use lapis_core::schema::model::{ModelMessage, ModelRequest, ModelResponse, ModelToolCall};
 use lapis_core::schema::policy::{
     EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
     ToolName,
 };
 use lapis_core::schema::report::{
-    AspectReport, Confidence, Finding, FindingType, Importance, OpenQuestion,
+    AspectReport, AspectResearchResult, Confidence, Finding, FindingType, Importance, OpenQuestion,
+    TerminationReason,
 };
 use lapis_core::schema::research::{
     AspectResearchRequest, AspectSpec, DeepResearchRequest, DeliverableSpec, PromptAssets,
@@ -33,11 +34,17 @@ use lapis_core::search::provider::SearchProvider;
 use lapis_core::search::service::SearchService;
 use rmcp::ServerHandler;
 use rmcp::handler::server::wrapper::Parameters;
+use rmcp::schemars::schema_for;
 use serde_json::json;
 
 struct AdaptiveModelProvider {
     failing_aspects: BTreeSet<String>,
     calls: Arc<AtomicUsize>,
+}
+
+struct SequenceModelProvider {
+    calls: Arc<AtomicUsize>,
+    responses: Mutex<VecDeque<ModelResponse>>,
 }
 
 #[async_trait]
@@ -60,6 +67,24 @@ impl ModelProvider for AdaptiveModelProvider {
         }
 
         Ok(final_response(report_json(&aspect_id, &aspect_name)))
+    }
+}
+
+#[async_trait]
+impl ModelProvider for SequenceModelProvider {
+    fn name(&self) -> &'static str {
+        "model"
+    }
+
+    async fn complete(&self, _request: ModelRequest) -> Result<ModelResponse> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.responses
+            .lock()
+            .expect("responses lock")
+            .pop_front()
+            .ok_or_else(|| Error::Internal {
+                message: "missing fake model response".to_owned(),
+            })
     }
 }
 
@@ -105,6 +130,27 @@ fn services(failing_aspects: &[&str]) -> Services {
             .map(|aspect| (*aspect).to_owned())
             .collect(),
         calls: model_calls.clone(),
+    });
+    let mut search = SearchService::new();
+    search.register(StaticSearchProvider {
+        calls: search_calls.clone(),
+    });
+
+    Services {
+        model,
+        search,
+        model_calls,
+        search_calls,
+    }
+}
+
+fn sequence_services(responses: Vec<ModelResponse>) -> Services {
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let search_calls = Arc::new(AtomicUsize::new(0));
+    let mut model = ModelService::new();
+    model.register(SequenceModelProvider {
+        calls: model_calls.clone(),
+        responses: Mutex::new(responses.into()),
     });
     let mut search = SearchService::new();
     search.register(StaticSearchProvider {
@@ -344,6 +390,20 @@ fn aspect_research_tool_schema_uses_limit_wire_format() {
     assert!(!schema.to_string().contains("Limited"));
 }
 
+#[test]
+fn tool_envelope_schema_exposes_partial_trace() {
+    let schema = schema_for!(ToolEnvelope<AspectResearchResult>);
+    let schema = serde_json::to_value(&schema).expect("schema json");
+    let properties = schema
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("schema properties");
+
+    assert!(properties.contains_key("trace_summary"));
+    assert!(properties.contains_key("partial_trace"));
+    assert!(!schema.to_string().contains("partialTrace"));
+}
+
 #[tokio::test]
 async fn aspect_research_success_returns_ok_envelope() {
     let services = services(&[]);
@@ -359,6 +419,7 @@ async fn aspect_research_success_returns_ok_envelope() {
     assert!(envelope.data.is_some());
     assert!(envelope.error.is_none());
     assert!(envelope.run_id.is_some());
+    assert!(envelope.partial_trace.is_none());
     assert_eq!(model_calls.load(Ordering::SeqCst), 2);
     assert_eq!(search_calls.load(Ordering::SeqCst), 1);
 }
@@ -374,9 +435,60 @@ async fn aspect_research_invalid_input_returns_failed_envelope() {
 
     assert_eq!(envelope.status, ToolStatus::Failed);
     assert!(envelope.data.is_none());
+    assert!(envelope.trace_summary.is_none());
+    assert!(envelope.partial_trace.is_none());
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::InvalidInput);
     assert!(!error.retryable);
+}
+
+#[tokio::test]
+async fn aspect_research_budget_failure_envelope_includes_partial_trace() {
+    let mut request = aspect_request();
+    request.evidence_policy.include_query_trace = true;
+    request.evidence_policy.include_source_urls = true;
+    request.budget.max_search_calls = Limit::limited(2);
+    let services = sequence_services(vec![tool_response(), tool_response(), tool_response()]);
+    let search_calls = services.search_calls.clone();
+
+    let envelope = mcp_server(services)
+        .aspect_research(Parameters(request))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    assert!(envelope.data.is_none());
+    assert_eq!(
+        envelope.error.expect("tool error").code,
+        ToolErrorCode::BudgetExceeded
+    );
+    assert!(envelope.trace_summary.is_some());
+    assert!(envelope.run_id.is_some());
+    assert_eq!(search_calls.load(Ordering::SeqCst), 2);
+    let partial = envelope.partial_trace.expect("partial trace");
+    assert_eq!(partial.search_queries.len(), 2);
+    assert_eq!(partial.tool_calls.len(), 2);
+    assert_eq!(partial.provider_usage.search_calls, 2);
+    assert_eq!(partial.budget_usage.tool_calls_used, 2);
+    assert_eq!(partial.budget_usage.search_calls_used, 2);
+    assert_eq!(
+        partial.trace_summary.termination_reason,
+        Some(TerminationReason::BudgetExceeded)
+    );
+    assert_eq!(partial.search_queries[0].query, "private query");
+    assert_eq!(partial.search_queries[0].sources[0].title, "Shared Source");
+    assert_eq!(
+        partial.search_queries[0].sources[0].url.as_deref(),
+        Some("https://example.test/shared")
+    );
+    assert_eq!(
+        partial.tool_calls[0]
+            .search
+            .as_ref()
+            .expect("search trace")
+            .provider,
+        "searcher"
+    );
 }
 
 #[tokio::test]

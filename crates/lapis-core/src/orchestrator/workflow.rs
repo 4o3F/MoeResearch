@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::model::service::ModelService;
-use crate::orchestrator::agent_loop::{AgentRuntime, AgentRuntimeOutput};
+use crate::orchestrator::agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
 use crate::orchestrator::tool_policy::SEARCH_TOOL_NAME;
 use crate::schema::config::BudgetConfig;
 use crate::schema::report::{
@@ -27,12 +27,17 @@ pub async fn aspect_research(
     model_service: &ModelService,
     search_service: &SearchService,
     budget_config: &BudgetConfig,
-) -> Result<AspectResearchResult> {
-    request.validate_for_execution(&WorkflowValidationContext {
-        budget_config,
-        supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
-        supported_tool_name: SEARCH_TOOL_NAME,
-    })?;
+) -> Result<AspectResearchResult, AgentRuntimeFailure> {
+    request
+        .validate_for_execution(&WorkflowValidationContext {
+            budget_config,
+            supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
+            supported_tool_name: SEARCH_TOOL_NAME,
+        })
+        .map_err(|error| AgentRuntimeFailure {
+            error,
+            partial_trace: None,
+        })?;
     AgentRuntime::new(model_service, search_service, &request)
         .run()
         .await
@@ -83,7 +88,9 @@ async fn execute_aspects(
         |aspect_request| async move {
             let aspect_id = aspect_request.aspect.aspect_id.clone();
             let result =
-                aspect_research(aspect_request, model_service, search_service, budget_config).await;
+                aspect_research(aspect_request, model_service, search_service, budget_config)
+                    .await
+                    .map_err(|failure| failure.error);
             (aspect_id, result)
         },
     ))

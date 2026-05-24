@@ -111,22 +111,56 @@ pub struct TraceSummary {
     pub termination_reason: Option<TerminationReason>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+pub struct SearchSourceTrace {
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+pub struct SearchToolCallTrace {
+    pub provider: String,
+    pub query: String,
+    pub result_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<SearchSourceTrace>,
+}
+
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct SearchQueryTrace {
     pub provider: String,
     pub query: String,
     pub result_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<SearchSourceTrace>,
     pub started_at: String,
     pub duration_ms: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct ToolCallTrace {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
     pub tool_name: String,
     pub input_summary: String,
     pub output_summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<SearchToolCallTrace>,
     pub started_at: String,
     pub duration_ms: u64,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+pub struct PartialTrace {
+    pub trace_summary: TraceSummary,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub search_queries: Vec<SearchQueryTrace>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ToolCallTrace>,
+    pub provider_usage: ProviderUsage,
+    pub budget_usage: AgentBudgetUsage,
+    pub evidence_count: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]

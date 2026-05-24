@@ -6,7 +6,7 @@ use crate::orchestrator::workflow::{
     aspect_research as run_aspect_research, deep_research as run_deep_research,
 };
 use crate::schema::mcp::{ToolEnvelope, ToolStatus, Warning};
-use crate::schema::report::{AspectResearchResult, DeepResearchResult, TraceSummary};
+use crate::schema::report::{AspectResearchResult, DeepResearchResult, PartialTrace, TraceSummary};
 use crate::schema::research::{AspectResearchRequest, DeepResearchRequest};
 
 #[tool_router(server_handler)]
@@ -31,7 +31,12 @@ impl LapisMcpServer {
             .await
             {
                 Ok(result) => aspect_success_envelope(schema_version, request_id, result),
-                Err(error) => failed_envelope(schema_version, request_id, &error),
+                Err(failure) => failed_envelope(
+                    schema_version,
+                    request_id,
+                    &failure.error,
+                    failure.partial_trace,
+                ),
             },
         )
     }
@@ -56,7 +61,7 @@ impl LapisMcpServer {
             .await
             {
                 Ok(result) => deep_success_envelope(schema_version, request_id, result),
-                Err(error) => failed_envelope(schema_version, request_id, &error),
+                Err(error) => failed_envelope(schema_version, request_id, &error, None),
             },
         )
     }
@@ -77,6 +82,7 @@ fn aspect_success_envelope(
         warnings: Vec::new(),
         error: None,
         trace_summary: Some(trace_summary),
+        partial_trace: None,
     }
 }
 
@@ -102,6 +108,7 @@ fn deep_success_envelope(
         warnings: Vec::new(),
         error: None,
         trace_summary: Some(trace_summary),
+        partial_trace: None,
     }
 }
 
@@ -109,16 +116,22 @@ fn failed_envelope<T>(
     schema_version: String,
     request_id: String,
     error: &Error,
+    partial_trace: Option<PartialTrace>,
 ) -> ToolEnvelope<T> {
+    let trace_summary = partial_trace
+        .as_ref()
+        .map(|partial| partial.trace_summary.clone());
+    let run_id = trace_summary.as_ref().and_then(non_empty_trace_id);
     ToolEnvelope {
         schema_version,
         request_id,
-        run_id: None,
+        run_id,
         status: ToolStatus::Failed,
         data: None,
         warnings: Vec::<Warning>::new(),
         error: Some(error.to_tool_error()),
-        trace_summary: None,
+        trace_summary,
+        partial_trace,
     }
 }
 

@@ -16,9 +16,10 @@ use crate::schema::model::{
 };
 use crate::schema::policy::SearchPolicy;
 use crate::schema::report::{
-    AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence,
-    ProviderCallSummary, ProviderType, ProviderUsage, SearchQueryTrace, SourceType,
-    TerminationReason, TokenUsage, ToolCallTrace, TraceSummary, ValidationStatus,
+    AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, PartialTrace,
+    ProviderCallSummary, ProviderType, ProviderUsage, SearchQueryTrace, SearchSourceTrace,
+    SearchToolCallTrace, SourceType, TerminationReason, TokenUsage, ToolCallTrace, TraceSummary,
+    ValidationStatus,
 };
 use crate::schema::research::AspectResearchRequest;
 use crate::schema::search::{SearchRequest, SearchResponse, SearchResult};
@@ -42,6 +43,12 @@ pub struct AgentRuntimeOutput {
     pub budget_usage: AgentBudgetUsage,
     pub validation_status: ValidationStatus,
     pub trace_summary: TraceSummary,
+}
+
+#[derive(Debug)]
+pub struct AgentRuntimeFailure {
+    pub error: Error,
+    pub partial_trace: Option<PartialTrace>,
 }
 
 impl AgentRuntimeOutput {
@@ -111,10 +118,10 @@ impl<'a> AgentRuntime<'a> {
         }
     }
 
-    pub async fn run(&self) -> Result<AgentRuntimeOutput> {
+    pub async fn run(&self) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
         let effective_budget = self.effective_budget();
         let deadline = RuntimeDeadline::new(effective_budget.timeout_ms);
-        let mut budget = AgentBudgetGuard::new(effective_budget)?;
+        let mut budget = AgentBudgetGuard::new(effective_budget).map_err(Self::untraced_failure)?;
         let tool_policy = ToolPolicyGuard::new(&self.request.aspect);
         let validator = OutputValidator::new(
             &self.request.aspect,
@@ -122,23 +129,35 @@ impl<'a> AgentRuntime<'a> {
             &self.request.output_policy,
         );
         let search_policy = self.effective_search_policy();
-        let mut state = RuntimeState::new(self.initial_messages()?, self.new_trace_summary());
+        let mut state = RuntimeState::new(
+            self.initial_messages().map_err(Self::untraced_failure)?,
+            self.new_trace_summary(),
+        );
 
         loop {
-            let model_response = self.complete_model_turn(&mut state, &mut budget).await?;
-            deadline.ensure_not_elapsed()?;
+            let model_response = match self.complete_model_turn(&mut state, &mut budget).await {
+                Ok(response) => response,
+                Err(error) => return Err(Self::failure(error, state, &budget)),
+            };
+            if let Err(error) = deadline.ensure_not_elapsed() {
+                return Err(Self::failure(error, state, &budget));
+            }
             if model_response.tool_calls.is_empty() {
-                let content = model_response.content.as_deref().ok_or_else(|| {
+                let content = match model_response.content.as_deref().ok_or_else(|| {
                     Error::SchemaValidationFailed {
                         message: "model final response must include content".to_owned(),
                     }
-                })?;
-                return Self::finish(content, state, &budget, &validator);
+                }) {
+                    Ok(content) => content,
+                    Err(error) => return Err(Self::failure(error, state, &budget)),
+                };
+                return Self::finish(content, state, &budget, &validator)
+                    .map_err(|failure| *failure);
             }
 
             let mut tool_result_messages = Vec::new();
             for tool_call in &model_response.tool_calls {
-                let message = self
+                let message = match self
                     .execute_tool_call(
                         tool_call,
                         &tool_policy,
@@ -146,8 +165,14 @@ impl<'a> AgentRuntime<'a> {
                         &search_policy,
                         &mut state,
                     )
-                    .await?;
-                deadline.ensure_not_elapsed()?;
+                    .await
+                {
+                    Ok(message) => message,
+                    Err(error) => return Err(Self::failure(error, state, &budget)),
+                };
+                if let Err(error) = deadline.ensure_not_elapsed() {
+                    return Err(Self::failure(error, state, &budget));
+                }
                 tool_result_messages.push(message);
             }
             state.append_tool_result_messages(tool_result_messages);
@@ -197,8 +222,7 @@ impl<'a> AgentRuntime<'a> {
         state: &mut RuntimeState,
     ) -> Result<String> {
         let args = tool_policy.validate_search_call(tool_call)?;
-        budget.consume_tool_call()?;
-        budget.consume_search_call()?;
+        budget.consume_search_tool_call()?;
 
         let max_results = args
             .max_results
@@ -227,19 +251,28 @@ impl<'a> AgentRuntime<'a> {
             state.evidence.len(),
             state.search_queries.len() + 1,
         );
-        let result_count = new_evidence.len();
+        let result_count = response.results.len();
+        let sources = self.source_traces_from_response(&response);
         state.evidence.extend(new_evidence);
         state.search_queries.push(SearchQueryTrace {
             provider: response.provider.clone(),
             query: self.public_query(&args.query),
             result_count,
+            sources: sources.clone(),
             started_at: search_started_at.clone(),
             duration_ms: search_duration,
         });
         state.tool_calls.push(ToolCallTrace {
+            tool_call_id: Some(tool_call.id.clone()),
             tool_name: tool_call.name.clone(),
             input_summary: Self::tool_input_summary(max_results),
             output_summary: format!("{result_count} result(s) from {}", response.provider),
+            search: Some(SearchToolCallTrace {
+                provider: response.provider.clone(),
+                query: self.public_query(&args.query),
+                result_count,
+                sources,
+            }),
             started_at: search_started_at,
             duration_ms: search_duration,
         });
@@ -252,9 +285,15 @@ impl<'a> AgentRuntime<'a> {
         mut state: RuntimeState,
         budget: &AgentBudgetGuard,
         validator: &OutputValidator<'_>,
-    ) -> Result<AgentRuntimeOutput> {
-        let content = Self::final_content_with_evidence(content, &state.evidence)?;
-        let (aspect_report, validation_status) = validator.validate_content(&content)?;
+    ) -> std::result::Result<AgentRuntimeOutput, Box<AgentRuntimeFailure>> {
+        let content = match Self::final_content_with_evidence(content, &state.evidence) {
+            Ok(content) => content,
+            Err(error) => return Err(Box::new(Self::failure(error, state, budget))),
+        };
+        let (aspect_report, validation_status) = match validator.validate_content(&content) {
+            Ok(result) => result,
+            Err(error) => return Err(Box::new(Self::failure(error, state, budget))),
+        };
         state.trace_summary.finished_at = Some(now_rfc3339());
         state.trace_summary.termination_reason = Some(TerminationReason::Completed);
 
@@ -437,6 +476,64 @@ impl<'a> AgentRuntime<'a> {
             .summary
             .clone()
             .unwrap_or_else(|| self.public_snippet(result))
+    }
+
+    fn source_traces_from_response(&self, response: &SearchResponse) -> Vec<SearchSourceTrace> {
+        response
+            .results
+            .iter()
+            .map(|result| SearchSourceTrace {
+                title: result.title.clone(),
+                url: if self.request.evidence_policy.include_source_urls {
+                    result.url.clone()
+                } else {
+                    None
+                },
+            })
+            .collect()
+    }
+
+    fn untraced_failure(error: Error) -> AgentRuntimeFailure {
+        AgentRuntimeFailure {
+            error,
+            partial_trace: None,
+        }
+    }
+
+    fn failure(
+        error: Error,
+        mut state: RuntimeState,
+        budget: &AgentBudgetGuard,
+    ) -> AgentRuntimeFailure {
+        state.trace_summary.finished_at = Some(now_rfc3339());
+        state.trace_summary.termination_reason = Some(Self::termination_reason_for_error(&error));
+        let partial_trace = PartialTrace {
+            trace_summary: state.trace_summary,
+            search_queries: state.search_queries,
+            tool_calls: state.tool_calls,
+            provider_usage: state.provider_usage,
+            budget_usage: budget.usage(),
+            evidence_count: state.evidence.len(),
+        };
+        AgentRuntimeFailure {
+            error,
+            partial_trace: Some(partial_trace),
+        }
+    }
+
+    fn termination_reason_for_error(error: &Error) -> TerminationReason {
+        match error {
+            Error::BudgetExceeded { message } if message.contains("timeout") => {
+                TerminationReason::Timeout
+            }
+            Error::BudgetExceeded { .. } => TerminationReason::BudgetExceeded,
+            Error::Timeout { .. } => TerminationReason::Timeout,
+            Error::ToolPolicyDenied { .. } => TerminationReason::ToolPolicyDenied,
+            Error::SchemaValidationFailed { .. } | Error::Json { .. } => {
+                TerminationReason::SchemaValidationFailed
+            }
+            _ => TerminationReason::ProviderError,
+        }
     }
 
     fn tool_input_summary(max_results: usize) -> String {
