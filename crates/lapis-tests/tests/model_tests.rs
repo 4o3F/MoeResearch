@@ -7,7 +7,7 @@ use lapis_core::model::providers::OpenAiProvider;
 use lapis_core::model::service::ModelService;
 use lapis_core::net::client::MockNetworkClient;
 use lapis_core::schema::model::{
-    ModelMessage, ModelMessageRole, ModelRequest, ModelResponse, ModelTool,
+    ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse, ModelTool, ModelToolCall,
 };
 use lapis_core::schema::network::NetworkResponse;
 use lapis_core::schema::policy::ModelPolicy;
@@ -29,8 +29,10 @@ impl ModelProvider for StaticProvider {
         Ok(ModelResponse {
             provider: self.0.to_owned(),
             model: None,
+            response_id: None,
             content: Some("content".to_owned()),
             tool_calls: vec![],
+            output_items: vec![],
             usage: None,
         })
     }
@@ -47,8 +49,10 @@ impl ModelProvider for CapturingProvider {
         Ok(ModelResponse {
             provider: request.provider,
             model: request.model,
+            response_id: None,
             content: Some("content".to_owned()),
             tool_calls: vec![],
+            output_items: vec![],
             usage: None,
         })
     }
@@ -58,7 +62,8 @@ fn request(provider: &str) -> ModelRequest {
     ModelRequest {
         provider: provider.to_owned(),
         model: None,
-        messages: vec![user_message("hello")],
+        previous_response_id: None,
+        input: vec![user_message("hello")],
         tools: vec![],
         temperature: None,
         max_tokens: None,
@@ -75,22 +80,20 @@ fn provider(network: Arc<MockNetworkClient>) -> OpenAiProvider {
     )
 }
 
-fn request_with_messages(messages: Vec<ModelMessage>) -> ModelRequest {
+fn request_with_input(input: Vec<ModelInputItem>) -> ModelRequest {
     ModelRequest {
         provider: "openai".to_owned(),
         model: Some("gpt-test".to_owned()),
-        messages,
+        previous_response_id: None,
+        input,
         tools: vec![],
         temperature: None,
         max_tokens: None,
     }
 }
 
-fn user_message(content: &str) -> ModelMessage {
-    ModelMessage {
-        role: ModelMessageRole::User,
-        content: content.to_owned(),
-    }
+fn user_message(content: &str) -> ModelInputItem {
+    ModelInputItem::message(ModelMessageRole::User, content)
 }
 
 #[tokio::test]
@@ -230,7 +233,7 @@ async fn rejects_empty_model_messages_before_dispatch() {
         ..ModelPolicy::default()
     };
     let mut invalid = request("");
-    invalid.messages = vec![];
+    invalid.input = vec![];
 
     let error = service
         .complete(invalid, &policy)
@@ -259,6 +262,7 @@ async fn maps_text_response_and_usage() {
         status: 200,
         headers: vec![],
         body: json!({
+            "id": "resp_1",
             "model": "gpt-test",
             "output": [{
                 "type": "message",
@@ -277,17 +281,46 @@ async fn maps_text_response_and_usage() {
     let provider = provider(network);
 
     let response = provider
-        .complete(request_with_messages(vec![user_message("hi")]))
+        .complete(request_with_input(vec![user_message("hi")]))
         .await
         .expect("model response");
 
     assert_eq!(response.provider, "openai");
     assert_eq!(response.model, Some("gpt-test".to_owned()));
+    assert_eq!(response.response_id, Some("resp_1".to_owned()));
     assert_eq!(response.content, Some("hello".to_owned()));
     let usage = response.usage.expect("usage");
     assert_eq!(usage.input_tokens, Some(3));
     assert_eq!(usage.output_tokens, Some(5));
     assert_eq!(usage.total_tokens, Some(8));
+}
+
+#[tokio::test]
+async fn unstored_response_id_maps_to_none_for_stateless_replay() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "id": "resp_1",
+            "store": false,
+            "output": [{
+                "type": "message",
+                "content": [{
+                    "type": "output_text",
+                    "text": "hello"
+                }]
+            }]
+        }),
+    }]));
+    let provider = provider(network);
+
+    let response = provider
+        .complete(request_with_input(vec![user_message("hi")]))
+        .await
+        .expect("model response");
+
+    assert_eq!(response.response_id, None);
+    assert_eq!(response.content, Some("hello".to_owned()));
 }
 
 #[tokio::test]
@@ -307,7 +340,7 @@ async fn maps_tool_call_only_response_with_parsed_arguments() {
     let provider = provider(network);
 
     let response = provider
-        .complete(request_with_messages(vec![user_message("search")]))
+        .complete(request_with_input(vec![user_message("search")]))
         .await
         .expect("tool call response");
 
@@ -319,6 +352,54 @@ async fn maps_tool_call_only_response_with_parsed_arguments() {
         response.tool_calls[0].arguments,
         json!({ "query": "lapis" })
     );
+    assert_eq!(
+        response.output_items,
+        vec![ModelInputItem::tool_call(response.tool_calls[0].clone())]
+    );
+}
+
+#[tokio::test]
+async fn maps_mixed_message_and_tool_call_output_items_in_order() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "I will search."
+                    }]
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "call_1",
+                    "name": "search",
+                    "arguments": "{\"query\":\"lapis\"}"
+                }
+            ]
+        }),
+    }]));
+    let provider = provider(network);
+
+    let response = provider
+        .complete(request_with_input(vec![user_message("search")]))
+        .await
+        .expect("mixed response");
+
+    assert_eq!(response.content, Some("I will search.".to_owned()));
+    assert_eq!(response.tool_calls.len(), 1);
+    assert_eq!(response.output_items.len(), 2);
+    assert!(matches!(
+        &response.output_items[0],
+        ModelInputItem::Message(message)
+            if message.role == ModelMessageRole::Assistant && message.content == "I will search."
+    ));
+    assert!(matches!(
+        &response.output_items[1],
+        ModelInputItem::ToolCall(call) if call.id == "call_1" && call.name == "search"
+    ));
 }
 
 #[tokio::test]
@@ -339,7 +420,7 @@ async fn missing_usage_maps_to_none() {
     let provider = provider(network);
 
     let response = provider
-        .complete(request_with_messages(vec![user_message("hi")]))
+        .complete(request_with_input(vec![user_message("hi")]))
         .await
         .expect("model response");
 
@@ -371,7 +452,7 @@ async fn ignores_reasoning_output_items() {
     let provider = provider(network);
 
     let response = provider
-        .complete(request_with_messages(vec![user_message("hi")]))
+        .complete(request_with_input(vec![user_message("hi")]))
         .await
         .expect("model response");
 
@@ -396,7 +477,7 @@ async fn malformed_tool_call_arguments_returns_error() {
     let provider = provider(network);
 
     let error = provider
-        .complete(request_with_messages(vec![user_message("search")]))
+        .complete(request_with_input(vec![user_message("search")]))
         .await;
 
     assert!(error.is_err());
@@ -424,7 +505,7 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
         Some(1000),
         "configured-model".to_owned(),
     );
-    let mut request = request_with_messages(vec![user_message("hi")]);
+    let mut request = request_with_input(vec![user_message("hi")]);
     request.model = None;
     request.tools = vec![ModelTool {
         name: "search".to_owned(),
@@ -473,4 +554,51 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
     let temperature = body["temperature"].as_f64().expect("temperature");
     assert!((temperature - 0.2).abs() < 0.000_001);
     assert_eq!(body["max_output_tokens"], 128);
+}
+
+#[tokio::test]
+async fn request_serializes_function_call_output_items() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [{
+                "type": "message",
+                "content": [{
+                    "type": "output_text",
+                    "text": "ok"
+                }]
+            }]
+        }),
+    }]));
+    let provider = provider(network.clone());
+    let tool_call = ModelToolCall {
+        id: "call_1".to_owned(),
+        name: "search".to_owned(),
+        arguments: json!({ "query": "lapis" }),
+    };
+    let mut request = request_with_input(vec![
+        user_message("search"),
+        ModelInputItem::tool_call(tool_call),
+        ModelInputItem::tool_output("call_1", r#"{"result_count":1}"#),
+    ]);
+    request.previous_response_id = Some("resp_1".to_owned());
+
+    provider.complete(request).await.expect("model response");
+
+    let requests = network.requests();
+    let body = requests[0].body.as_ref().expect("request body");
+    assert_eq!(body["previous_response_id"], "resp_1");
+    assert_eq!(body["input"][0]["role"], "user");
+    assert_eq!(body["input"][0]["content"], "search");
+    assert_eq!(body["input"][1]["type"], "function_call");
+    assert_eq!(body["input"][1]["call_id"], "call_1");
+    assert_eq!(body["input"][1]["name"], "search");
+    assert_eq!(
+        body["input"][1]["arguments"],
+        serde_json::to_string(&json!({ "query": "lapis" })).expect("arguments json")
+    );
+    assert_eq!(body["input"][2]["type"], "function_call_output");
+    assert_eq!(body["input"][2]["call_id"], "call_1");
+    assert_eq!(body["input"][2]["output"], r#"{"result_count":1}"#);
 }

@@ -13,7 +13,7 @@ use lapis_core::orchestrator::workflow::aspect_research;
 use lapis_core::schema::budget::AgentBudget;
 use lapis_core::schema::config::BudgetConfig;
 use lapis_core::schema::limit::Limit;
-use lapis_core::schema::model::{ModelRequest, ModelResponse, ModelToolCall};
+use lapis_core::schema::model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
 use lapis_core::schema::policy::{
     EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
     ToolName,
@@ -35,6 +35,12 @@ struct SequenceModelProvider {
     delay: Option<Duration>,
 }
 
+struct CapturingSequenceModelProvider {
+    calls: Arc<AtomicUsize>,
+    responses: Mutex<VecDeque<ModelResponse>>,
+    requests: Arc<Mutex<Vec<ModelRequest>>>,
+}
+
 #[async_trait]
 impl ModelProvider for SequenceModelProvider {
     fn name(&self) -> &'static str {
@@ -46,6 +52,25 @@ impl ModelProvider for SequenceModelProvider {
         if let Some(delay) = self.delay {
             tokio::time::sleep(delay).await;
         }
+        self.responses
+            .lock()
+            .expect("responses lock")
+            .pop_front()
+            .ok_or_else(|| Error::Internal {
+                message: "missing fake model response".to_owned(),
+            })
+    }
+}
+
+#[async_trait]
+impl ModelProvider for CapturingSequenceModelProvider {
+    fn name(&self) -> &'static str {
+        "model"
+    }
+
+    async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.requests.lock().expect("requests lock").push(request);
         self.responses
             .lock()
             .expect("responses lock")
@@ -195,25 +220,42 @@ fn aspect_request() -> AspectResearchRequest {
 }
 
 fn tool_response(name: &str) -> ModelResponse {
+    let tool_call = ModelToolCall {
+        id: "call-1".to_owned(),
+        name: name.to_owned(),
+        arguments: json!({"query": "private query", "max_results": 1}),
+    };
     ModelResponse {
         provider: "model".to_owned(),
         model: None,
+        response_id: None,
         content: None,
-        tool_calls: vec![ModelToolCall {
-            id: "call-1".to_owned(),
-            name: name.to_owned(),
-            arguments: json!({"query": "private query", "max_results": 1}),
-        }],
+        tool_calls: vec![tool_call.clone()],
+        output_items: vec![ModelInputItem::tool_call(tool_call)],
         usage: None,
     }
+}
+
+fn tool_response_without_output_items(name: &str) -> ModelResponse {
+    let mut response = tool_response(name);
+    response.output_items.clear();
+    response
+}
+
+fn tool_response_with_response_id(name: &str, response_id: &str) -> ModelResponse {
+    let mut response = tool_response(name);
+    response.response_id = Some(response_id.to_owned());
+    response
 }
 
 fn final_response(content: String) -> ModelResponse {
     ModelResponse {
         provider: "model".to_owned(),
         model: None,
+        response_id: None,
         content: Some(content),
         tool_calls: vec![],
+        output_items: vec![],
         usage: None,
     }
 }
@@ -522,6 +564,202 @@ async fn tool_trace_summary_redacts_query_when_query_trace_is_enabled() {
         "search query accepted, max_results=1"
     );
     assert!(!output.tool_calls[0].input_summary.contains("private query"));
+}
+
+#[tokio::test]
+async fn model_tool_outputs_use_ordered_responses_items() {
+    let request = aspect_request();
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let search_calls = Arc::new(AtomicUsize::new(0));
+    let captured_requests = Arc::new(Mutex::new(Vec::new()));
+    let mut model_service = ModelService::new();
+    model_service.register(CapturingSequenceModelProvider {
+        calls: model_calls.clone(),
+        responses: Mutex::new(
+            vec![tool_response("search"), final_response(valid_report_json())].into(),
+        ),
+        requests: captured_requests.clone(),
+    });
+    let mut search_service = SearchService::new();
+    search_service.register(CountingSearchProvider {
+        calls: search_calls.clone(),
+    });
+
+    AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect("agent output");
+
+    assert_eq!(model_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(search_calls.load(Ordering::SeqCst), 1);
+    let requests = captured_requests.lock().expect("requests lock").clone();
+    assert_eq!(requests.len(), 2);
+    let second_input = &requests[1].input;
+    assert!(second_input.iter().any(|item| {
+        matches!(
+            item,
+            ModelInputItem::ToolCall(call)
+                if call.id == "call-1" && call.name == "search"
+        )
+    }));
+    assert!(second_input.iter().any(|item| {
+        matches!(
+            item,
+            ModelInputItem::ToolOutput(output)
+                if output.call_id == "call-1" && output.output.contains("\"tool\":\"search\"")
+        )
+    }));
+    assert!(!second_input.iter().any(|item| {
+        matches!(
+            item,
+            ModelInputItem::Message(message)
+                if message.content == "Tool calls accepted and executed."
+        )
+    }));
+}
+
+#[tokio::test]
+async fn model_tool_outputs_fallback_replays_tool_calls() {
+    let request = aspect_request();
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let search_calls = Arc::new(AtomicUsize::new(0));
+    let captured_requests = Arc::new(Mutex::new(Vec::new()));
+    let mut model_service = ModelService::new();
+    model_service.register(CapturingSequenceModelProvider {
+        calls: model_calls.clone(),
+        responses: Mutex::new(
+            vec![
+                tool_response_without_output_items("search"),
+                final_response(valid_report_json()),
+            ]
+            .into(),
+        ),
+        requests: captured_requests.clone(),
+    });
+    let mut search_service = SearchService::new();
+    search_service.register(CountingSearchProvider {
+        calls: search_calls.clone(),
+    });
+
+    AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect("agent output");
+
+    let requests = captured_requests.lock().expect("requests lock").clone();
+    let second_input = &requests[1].input;
+    assert!(second_input.iter().any(|item| {
+        matches!(
+            item,
+            ModelInputItem::ToolCall(call)
+                if call.id == "call-1" && call.name == "search"
+        )
+    }));
+    assert!(second_input.iter().any(|item| {
+        matches!(
+            item,
+            ModelInputItem::ToolOutput(output) if output.call_id == "call-1"
+        )
+    }));
+}
+
+#[tokio::test]
+async fn model_tool_outputs_use_previous_response_id_when_available() {
+    let request = aspect_request();
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let search_calls = Arc::new(AtomicUsize::new(0));
+    let captured_requests = Arc::new(Mutex::new(Vec::new()));
+    let mut model_service = ModelService::new();
+    model_service.register(CapturingSequenceModelProvider {
+        calls: model_calls.clone(),
+        responses: Mutex::new(
+            vec![
+                tool_response_with_response_id("search", "resp_1"),
+                final_response(valid_report_json()),
+            ]
+            .into(),
+        ),
+        requests: captured_requests.clone(),
+    });
+    let mut search_service = SearchService::new();
+    search_service.register(CountingSearchProvider {
+        calls: search_calls.clone(),
+    });
+
+    AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect("agent output");
+
+    assert_eq!(model_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(search_calls.load(Ordering::SeqCst), 1);
+    let requests = captured_requests.lock().expect("requests lock").clone();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[1].previous_response_id.as_deref(), Some("resp_1"));
+    assert_eq!(requests[1].input.len(), 1);
+    assert!(matches!(
+        &requests[1].input[0],
+        ModelInputItem::ToolOutput(output)
+            if output.call_id == "call-1" && output.output.contains("\"tool\":\"search\"")
+    ));
+}
+
+#[tokio::test]
+async fn model_tool_outputs_can_fall_back_after_previous_response_id() {
+    let request = aspect_request();
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let search_calls = Arc::new(AtomicUsize::new(0));
+    let captured_requests = Arc::new(Mutex::new(Vec::new()));
+    let mut model_service = ModelService::new();
+    model_service.register(CapturingSequenceModelProvider {
+        calls: model_calls.clone(),
+        responses: Mutex::new(
+            vec![
+                tool_response_with_response_id("search", "resp_1"),
+                tool_response_without_output_items("search"),
+                final_response(valid_report_json()),
+            ]
+            .into(),
+        ),
+        requests: captured_requests.clone(),
+    });
+    let mut search_service = SearchService::new();
+    search_service.register(CountingSearchProvider {
+        calls: search_calls.clone(),
+    });
+
+    AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect("agent output");
+
+    assert_eq!(model_calls.load(Ordering::SeqCst), 3);
+    assert_eq!(search_calls.load(Ordering::SeqCst), 2);
+    let requests = captured_requests.lock().expect("requests lock").clone();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[1].previous_response_id.as_deref(), Some("resp_1"));
+    assert_eq!(requests[1].input.len(), 1);
+    assert_eq!(requests[2].previous_response_id, None);
+    assert!(requests[2]
+        .input
+        .iter()
+        .any(|item| matches!(item, ModelInputItem::Message(message) if message.content.contains("aspect-1"))));
+    assert_eq!(
+        requests[2]
+            .input
+            .iter()
+            .filter(|item| matches!(item, ModelInputItem::ToolCall(_)))
+            .count(),
+        2
+    );
+    assert_eq!(
+        requests[2]
+            .input
+            .iter()
+            .filter(|item| matches!(item, ModelInputItem::ToolOutput(_)))
+            .count(),
+        2
+    );
 }
 
 #[tokio::test]

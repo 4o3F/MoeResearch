@@ -1,5 +1,5 @@
 use lapis_core::schema::budget::{AgentBudget, ResearchBudget};
-use lapis_core::schema::model::{ModelMessage, ModelMessageRole, ModelRequest};
+use lapis_core::schema::model::{ModelInputItem, ModelMessageRole, ModelRequest};
 use lapis_core::schema::policy::{
     EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
     ToolName,
@@ -31,10 +31,8 @@ fn minimal_request() -> ModelRequest {
     ModelRequest {
         provider: String::new(),
         model: None,
-        messages: vec![ModelMessage {
-            role: ModelMessageRole::User,
-            content: "hello".to_string(),
-        }],
+        previous_response_id: None,
+        input: vec![ModelInputItem::message(ModelMessageRole::User, "hello")],
         tools: Vec::new(),
         temperature: None,
         max_tokens: None,

@@ -16,7 +16,7 @@ use lapis_core::schema::budget::{AgentBudget, ResearchBudget};
 use lapis_core::schema::config::BudgetConfig;
 use lapis_core::schema::limit::Limit;
 use lapis_core::schema::mcp::{ToolEnvelope, ToolErrorCode, ToolStatus};
-use lapis_core::schema::model::{ModelMessage, ModelRequest, ModelResponse, ModelToolCall};
+use lapis_core::schema::model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
 use lapis_core::schema::policy::{
     EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
     ToolName,
@@ -55,10 +55,10 @@ impl ModelProvider for AdaptiveModelProvider {
 
     async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        let aspect_id = aspect_field(&request.messages, "Aspect ID");
-        let aspect_name = aspect_field(&request.messages, "Aspect name");
+        let aspect_id = aspect_field(&request.input, "Aspect ID");
+        let aspect_name = aspect_field(&request.input, "Aspect name");
 
-        if request.messages.len() <= 2 {
+        if !has_tool_output(&request.input) {
             return Ok(tool_response());
         }
 
@@ -269,15 +269,18 @@ fn search_policy() -> SearchPolicy {
 }
 
 fn tool_response() -> ModelResponse {
+    let tool_call = ModelToolCall {
+        id: "call-1".to_owned(),
+        name: "search".to_owned(),
+        arguments: json!({"query": "private query", "max_results": 1}),
+    };
     ModelResponse {
         provider: "model".to_owned(),
         model: None,
+        response_id: None,
         content: None,
-        tool_calls: vec![ModelToolCall {
-            id: "call-1".to_owned(),
-            name: "search".to_owned(),
-            arguments: json!({"query": "private query", "max_results": 1}),
-        }],
+        tool_calls: vec![tool_call.clone()],
+        output_items: vec![ModelInputItem::tool_call(tool_call)],
         usage: None,
     }
 }
@@ -286,8 +289,10 @@ fn final_response(content: String) -> ModelResponse {
     ModelResponse {
         provider: "model".to_owned(),
         model: None,
+        response_id: None,
         content: Some(content),
         tool_calls: vec![],
+        output_items: vec![],
         usage: None,
     }
 }
@@ -323,16 +328,26 @@ fn report_json(aspect_id: &str, aspect_name: &str) -> String {
     .expect("report json")
 }
 
-fn aspect_field(messages: &[ModelMessage], label: &str) -> String {
+fn has_tool_output(input: &[ModelInputItem]) -> bool {
+    input
+        .iter()
+        .any(|item| matches!(item, ModelInputItem::ToolOutput(_)))
+}
+
+fn aspect_field(input: &[ModelInputItem], label: &str) -> String {
     let pointer = match label {
         "Aspect ID" => "/aspect/aspect_id",
         "Aspect name" => "/aspect/name",
         _ => return String::new(),
     };
 
-    messages
+    input
         .iter()
-        .find_map(|message| {
+        .find_map(|item| {
+            let ModelInputItem::Message(message) = item else {
+                return None;
+            };
+
             serde_json::from_str::<serde_json::Value>(&message.content)
                 .ok()
                 .and_then(|value| {

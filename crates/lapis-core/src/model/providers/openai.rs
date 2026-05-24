@@ -9,7 +9,7 @@ use crate::error::{Error, JsonSnafu, Result};
 use crate::model::provider::ModelProvider;
 use crate::net::NetworkClient;
 use crate::schema::model::{
-    ModelMessageRole, ModelRequest, ModelResponse, ModelTool, ModelToolCall,
+    ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse, ModelTool, ModelToolCall,
 };
 use crate::schema::network::{Header, NetworkRequest};
 use crate::schema::report::TokenUsage;
@@ -56,9 +56,9 @@ impl OpenAiProvider {
             });
         }
 
-        if request.messages.is_empty() {
+        if request.input.is_empty() {
             return Err(Error::InvalidInput {
-                message: "model request must include at least one message".to_owned(),
+                message: "model request must include at least one input item".to_owned(),
             });
         }
 
@@ -66,16 +66,15 @@ impl OpenAiProvider {
     }
 
     fn build_network_request(&self, request: ModelRequest) -> Result<NetworkRequest> {
+        let input = request
+            .input
+            .into_iter()
+            .map(map_input_item)
+            .collect::<Result<Vec<_>>>()?;
         let body = serde_json::to_value(OpenAiResponsesRequest {
             model: request.model.unwrap_or_else(|| self.model.clone()),
-            input: request
-                .messages
-                .into_iter()
-                .map(|message| OpenAiInputMessage {
-                    role: map_role(message.role),
-                    content: message.content,
-                })
-                .collect::<Vec<_>>(),
+            previous_response_id: request.previous_response_id,
+            input,
             tools: request.tools.into_iter().map(map_tool).collect::<Vec<_>>(),
             temperature: request.temperature,
             max_output_tokens: request.max_tokens,
@@ -106,33 +105,57 @@ impl OpenAiProvider {
             serde_json::from_value(body).context(JsonSnafu)?;
         let mut content = Vec::new();
         let mut tool_calls = Vec::new();
+        let mut output_items = Vec::new();
 
         for output in provider_response.output {
             match output {
                 OpenAiResponseOutput::Message { content: items, .. } => {
-                    content.extend(items.into_iter().map(|item| match item {
-                        OpenAiResponseContent::OutputText { text } => text,
-                    }));
+                    let message = items
+                        .into_iter()
+                        .map(|item| match item {
+                            OpenAiResponseContent::OutputText { text } => text,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !message.is_empty() {
+                        content.push(message.clone());
+                        output_items.push(ModelInputItem::message(
+                            ModelMessageRole::Assistant,
+                            message,
+                        ));
+                    }
                 }
                 OpenAiResponseOutput::FunctionCall {
                     call_id,
                     name,
                     arguments,
                     ..
-                } => tool_calls.push(map_tool_call(call_id, name, &arguments)?),
+                } => {
+                    let tool_call = map_tool_call(call_id, name, &arguments)?;
+                    output_items.push(ModelInputItem::tool_call(tool_call.clone()));
+                    tool_calls.push(tool_call);
+                }
                 OpenAiResponseOutput::Reasoning {} => {}
             }
         }
 
+        let response_id = if provider_response.store == Some(false) {
+            None
+        } else {
+            provider_response.id
+        };
+
         Ok(ModelResponse {
             provider: self.name().to_owned(),
             model: provider_response.model,
+            response_id,
             content: if content.is_empty() {
                 None
             } else {
                 Some(content.join("\n"))
             },
             tool_calls,
+            output_items,
             usage: provider_response.usage.as_ref().map(map_usage),
         })
     }
@@ -178,6 +201,31 @@ fn map_tool(tool: ModelTool) -> OpenAiTool {
     }
 }
 
+fn map_input_item(item: ModelInputItem) -> Result<OpenAiInputItem> {
+    match item {
+        ModelInputItem::Message(message) => Ok(OpenAiInputItem::Message(OpenAiInputMessage {
+            role: map_role(message.role),
+            content: message.content,
+        })),
+        ModelInputItem::ToolCall(call) => {
+            let arguments = serde_json::to_string(&call.arguments).context(JsonSnafu)?;
+            Ok(OpenAiInputItem::FunctionCall(OpenAiFunctionCallInput {
+                item_type: "function_call",
+                call_id: call.id,
+                name: call.name,
+                arguments,
+            }))
+        }
+        ModelInputItem::ToolOutput(output) => Ok(OpenAiInputItem::FunctionCallOutput(
+            OpenAiFunctionCallOutputInput {
+                item_type: "function_call_output",
+                call_id: output.call_id,
+                output: output.output,
+            },
+        )),
+    }
+}
+
 fn map_tool_call(call_id: String, name: String, arguments: &str) -> Result<ModelToolCall> {
     Ok(ModelToolCall {
         id: call_id,
@@ -197,7 +245,9 @@ fn map_usage(usage: &OpenAiUsage) -> TokenUsage {
 #[derive(Serialize)]
 struct OpenAiResponsesRequest {
     model: String,
-    input: Vec<OpenAiInputMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous_response_id: Option<String>,
+    input: Vec<OpenAiInputItem>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<OpenAiTool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -208,9 +258,34 @@ struct OpenAiResponsesRequest {
 }
 
 #[derive(Serialize)]
+#[serde(untagged)]
+enum OpenAiInputItem {
+    Message(OpenAiInputMessage),
+    FunctionCall(OpenAiFunctionCallInput),
+    FunctionCallOutput(OpenAiFunctionCallOutputInput),
+}
+
+#[derive(Serialize)]
 struct OpenAiInputMessage {
     role: &'static str,
     content: String,
+}
+
+#[derive(Serialize)]
+struct OpenAiFunctionCallInput {
+    #[serde(rename = "type")]
+    item_type: &'static str,
+    call_id: String,
+    name: String,
+    arguments: String,
+}
+
+#[derive(Serialize)]
+struct OpenAiFunctionCallOutputInput {
+    #[serde(rename = "type")]
+    item_type: &'static str,
+    call_id: String,
+    output: String,
 }
 
 #[derive(Serialize)]
@@ -224,7 +299,9 @@ struct OpenAiTool {
 
 #[derive(Deserialize)]
 struct OpenAiResponsesResponse {
+    id: Option<String>,
     model: Option<String>,
+    store: Option<bool>,
     #[serde(default)]
     output: Vec<OpenAiResponseOutput>,
     usage: Option<OpenAiUsage>,

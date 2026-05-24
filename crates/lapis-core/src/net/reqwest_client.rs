@@ -85,8 +85,8 @@ impl ReqwestNetworkClient {
                 method = %method,
                 host = %host,
                 path = %path,
-                body = ?redaction.redact_json_value(body),
-                "outbound request body"
+                body_bytes = body.to_string().len(),
+                "outbound request body metadata"
             );
         }
 

@@ -12,7 +12,7 @@ use crate::orchestrator::tool_policy::{ToolPolicyGuard, search_model_tool};
 use crate::orchestrator::validator::OutputValidator;
 use crate::schema::limit::{DurationLimitMs, Limit};
 use crate::schema::model::{
-    ModelMessage, ModelMessageRole, ModelRequest, ModelResponse, ModelToolCall,
+    ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse, ModelToolCall, ModelToolOutput,
 };
 use crate::schema::policy::SearchPolicy;
 use crate::schema::report::{
@@ -68,7 +68,9 @@ impl AgentRuntimeOutput {
 }
 
 struct RuntimeState {
-    messages: Vec<ModelMessage>,
+    input: Vec<ModelInputItem>,
+    replay_input: Vec<ModelInputItem>,
+    previous_response_id: Option<String>,
     evidence: Vec<Evidence>,
     search_queries: Vec<SearchQueryTrace>,
     tool_calls: Vec<ToolCallTrace>,
@@ -77,9 +79,11 @@ struct RuntimeState {
 }
 
 impl RuntimeState {
-    fn new(messages: Vec<ModelMessage>, trace_summary: TraceSummary) -> Self {
+    fn new(input: Vec<ModelInputItem>, trace_summary: TraceSummary) -> Self {
         Self {
-            messages,
+            replay_input: input.clone(),
+            input,
+            previous_response_id: None,
             evidence: Vec::new(),
             search_queries: Vec::new(),
             tool_calls: Vec::new(),
@@ -88,19 +92,39 @@ impl RuntimeState {
         }
     }
 
-    fn append_tool_result_messages(&mut self, tool_result_messages: Vec<String>) {
-        self.messages.push(ModelMessage {
-            role: ModelMessageRole::Assistant,
-            content: "Tool calls accepted and executed.".to_owned(),
-        });
-        self.messages.extend(
-            tool_result_messages
-                .into_iter()
-                .map(|content| ModelMessage {
-                    role: ModelMessageRole::User,
-                    content,
-                }),
-        );
+    fn append_model_output_and_tool_outputs(
+        &mut self,
+        response: &ModelResponse,
+        tool_outputs: Vec<ModelToolOutput>,
+    ) {
+        let output_items = Self::replayable_output_items(response);
+        let tool_output_items = tool_outputs
+            .into_iter()
+            .map(ModelInputItem::ToolOutput)
+            .collect::<Vec<_>>();
+        self.replay_input.extend(output_items);
+        self.replay_input.extend(tool_output_items.clone());
+
+        if let Some(response_id) = &response.response_id {
+            self.previous_response_id = Some(response_id.clone());
+            self.input = tool_output_items;
+        } else {
+            self.previous_response_id = None;
+            self.input.clone_from(&self.replay_input);
+        }
+    }
+
+    fn replayable_output_items(response: &ModelResponse) -> Vec<ModelInputItem> {
+        if response.output_items.is_empty() {
+            response
+                .tool_calls
+                .iter()
+                .cloned()
+                .map(ModelInputItem::ToolCall)
+                .collect()
+        } else {
+            response.output_items.clone()
+        }
     }
 }
 
@@ -130,7 +154,7 @@ impl<'a> AgentRuntime<'a> {
         );
         let search_policy = self.effective_search_policy();
         let mut state = RuntimeState::new(
-            self.initial_messages().map_err(Self::untraced_failure)?,
+            self.initial_input().map_err(Self::untraced_failure)?,
             self.new_trace_summary(),
         );
 
@@ -155,9 +179,9 @@ impl<'a> AgentRuntime<'a> {
                     .map_err(|failure| *failure);
             }
 
-            let mut tool_result_messages = Vec::new();
+            let mut tool_outputs = Vec::new();
             for tool_call in &model_response.tool_calls {
-                let message = match self
+                let output = match self
                     .execute_tool_call(
                         tool_call,
                         &tool_policy,
@@ -167,15 +191,15 @@ impl<'a> AgentRuntime<'a> {
                     )
                     .await
                 {
-                    Ok(message) => message,
+                    Ok(output) => output,
                     Err(error) => return Err(Self::failure(error, state, &budget)),
                 };
                 if let Err(error) = deadline.ensure_not_elapsed() {
                     return Err(Self::failure(error, state, &budget));
                 }
-                tool_result_messages.push(message);
+                tool_outputs.push(output);
             }
-            state.append_tool_result_messages(tool_result_messages);
+            state.append_model_output_and_tool_outputs(&model_response, tool_outputs);
         }
     }
 
@@ -194,7 +218,9 @@ impl<'a> AgentRuntime<'a> {
     ) -> Result<ModelResponse> {
         budget.consume_model_turn()?;
         let model_started = Instant::now();
-        let model_response = self.complete_model(state.messages.clone()).await?;
+        let model_response = self
+            .complete_model(state.previous_response_id.clone(), state.input.clone())
+            .await?;
         let model_duration = elapsed_ms(model_started.elapsed());
 
         state.provider_usage.model_calls += 1;
@@ -220,7 +246,7 @@ impl<'a> AgentRuntime<'a> {
         budget: &mut AgentBudgetGuard,
         search_policy: &SearchPolicy,
         state: &mut RuntimeState,
-    ) -> Result<String> {
+    ) -> Result<ModelToolOutput> {
         let args = tool_policy.validate_search_call(tool_call)?;
         budget.consume_search_tool_call()?;
 
@@ -277,7 +303,10 @@ impl<'a> AgentRuntime<'a> {
             duration_ms: search_duration,
         });
 
-        Ok(self.search_result_message(&args.query, &response, &state.evidence))
+        Ok(ModelToolOutput::new(
+            tool_call.id.clone(),
+            self.search_result_message(&args.query, &response, &state.evidence),
+        ))
     }
 
     fn finish(
@@ -309,16 +338,10 @@ impl<'a> AgentRuntime<'a> {
         })
     }
 
-    fn initial_messages(&self) -> Result<Vec<ModelMessage>> {
+    fn initial_input(&self) -> Result<Vec<ModelInputItem>> {
         Ok(vec![
-            ModelMessage {
-                role: ModelMessageRole::System,
-                content: self.system_prompt()?,
-            },
-            ModelMessage {
-                role: ModelMessageRole::User,
-                content: self.user_prompt(),
-            },
+            ModelInputItem::message(ModelMessageRole::System, self.system_prompt()?),
+            ModelInputItem::message(ModelMessageRole::User, self.user_prompt()),
         ])
     }
 
@@ -333,12 +356,17 @@ impl<'a> AgentRuntime<'a> {
         }
     }
 
-    async fn complete_model(&self, messages: Vec<ModelMessage>) -> Result<ModelResponse> {
+    async fn complete_model(
+        &self,
+        previous_response_id: Option<String>,
+        input: Vec<ModelInputItem>,
+    ) -> Result<ModelResponse> {
         let model_override = self.request.aspect.model_override.as_ref();
         let request = ModelRequest {
             provider: model_override.map_or_else(String::new, |selector| selector.provider.clone()),
             model: model_override.and_then(|selector| selector.model.clone()),
-            messages,
+            previous_response_id,
+            input,
             tools: vec![search_model_tool()],
             temperature: self.request.model_policy.temperature,
             max_tokens: self.request.model_policy.max_tokens,
