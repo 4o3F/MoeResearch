@@ -50,8 +50,24 @@ impl<'a> OutputValidator<'a> {
             return Ok((result, ValidationStatus { ok: true, issues }));
         }
 
+        // Surface the first issue's code, the path it occurred at, and the
+        // human-readable message. Including the path means a
+        // `mutated_evidence_provenance` failure now reports exactly which
+        // evidence index and which field diverged, so an operator can
+        // immediately compare the model output to the search tool output
+        // without grepping through the entire wire trace.
+        let first = &issues[0];
+        let path_suffix = first
+            .path
+            .as_deref()
+            .map(|path| format!(" at {path}"))
+            .unwrap_or_default();
         Err(Error::SchemaValidationFailed {
-            message: format!("final output failed validation: {}", issues[0].code),
+            message: format!(
+                "final output failed validation: {code}{path_suffix} ({message})",
+                code = first.code,
+                message = first.message,
+            ),
         })
     }
 
@@ -231,11 +247,18 @@ fn validate_selected_evidence(
             continue;
         };
 
-        if !provenance_matches(evidence, candidate) {
+        let mismatches = provenance_mismatch_fields(evidence, candidate);
+        if !mismatches.is_empty() {
+            // Name every field that diverged so log readers see the full
+            // diff in one event instead of having to retry to find the
+            // next mismatch.
+            let fields = mismatches.join(", ");
             issues.push(issue(
                 "mutated_evidence_provenance",
-                "selected evidence provenance must match search tool output",
-                format!("evidence[{index}]"),
+                &format!(
+                    "selected evidence provenance must match search tool output; mismatched fields: {fields}"
+                ),
+                format!("evidence[{index}].{}", mismatches[0]),
             ));
         }
 
@@ -279,15 +302,45 @@ fn validate_selected_evidence(
     issues
 }
 
-fn provenance_matches(selected: &Evidence, candidate: &Evidence) -> bool {
-    selected.source_title == candidate.source_title
-        && selected.url == candidate.url
-        && selected.provider == candidate.provider
-        && selected.query == candidate.query
-        && selected.snippet == candidate.snippet
-        && selected.summary == candidate.summary
-        && selected.published_at == candidate.published_at
-        && selected.retrieved_at == candidate.retrieved_at
+/// Compares a selected evidence object against its search-tool candidate
+/// and returns the names of every provenance field that diverges, in
+/// declaration order.
+///
+/// Returning a list (instead of a bool) lets the validator surface every
+/// divergence in a single error message — so the operator sees, e.g.,
+/// `mismatched fields: summary, snippet` rather than having to fix one
+/// field, re-run, and rediscover the next one. The order matches the
+/// schema declaration so a stable diff appears in logs.
+fn provenance_mismatch_fields(
+    selected: &Evidence,
+    candidate: &Evidence,
+) -> Vec<&'static str> {
+    let mut fields = Vec::new();
+    if selected.source_title != candidate.source_title {
+        fields.push("source_title");
+    }
+    if selected.url != candidate.url {
+        fields.push("url");
+    }
+    if selected.provider != candidate.provider {
+        fields.push("provider");
+    }
+    if selected.query != candidate.query {
+        fields.push("query");
+    }
+    if selected.snippet != candidate.snippet {
+        fields.push("snippet");
+    }
+    if selected.summary != candidate.summary {
+        fields.push("summary");
+    }
+    if selected.published_at != candidate.published_at {
+        fields.push("published_at");
+    }
+    if selected.retrieved_at != candidate.retrieved_at {
+        fields.push("retrieved_at");
+    }
+    fields
 }
 
 pub fn validate_output(

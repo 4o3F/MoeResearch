@@ -277,6 +277,39 @@ fn rejects_unknown_evidence_ref() {
     assert!(matches!(err, Error::SchemaValidationFailed { .. }));
 }
 
+/// When the selected evidence diverges from the search-tool candidate,
+/// the error message MUST name every mismatched field so operators can
+/// see the full diff without re-running. The validator surfaces issues
+/// in declaration order, with the first issue feeding the
+/// `SchemaValidationFailed.message`.
+#[test]
+fn rejects_mutated_evidence_provenance_with_field_names() {
+    let mut selected = evidence();
+    // Rewrite both summary and snippet — the model paraphrasing case
+    // we observed in real Layer 2 runs.
+    selected[0].summary = "model paraphrased the original markdown".to_owned();
+    selected[0].snippet = "shortened snippet".to_owned();
+
+    let err = validate_result(&result(report(), selected))
+        .expect_err("mutated provenance must fail");
+
+    let Error::SchemaValidationFailed { message } = err else {
+        panic!("expected SchemaValidationFailed, got {err:?}");
+    };
+    assert!(
+        message.contains("mutated_evidence_provenance"),
+        "message must carry the issue code, got `{message}`"
+    );
+    assert!(
+        message.contains("snippet") && message.contains("summary"),
+        "message must name every mismatched field, got `{message}`"
+    );
+    assert!(
+        message.contains("evidence[0]"),
+        "message must include the path to the offending evidence, got `{message}`"
+    );
+}
+
 #[test]
 fn rejects_too_many_findings() {
     let mut report = report();
