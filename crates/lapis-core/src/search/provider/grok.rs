@@ -182,10 +182,14 @@ fn search_prompt(request: &SearchRequest) -> String {
 fn map_grok_response(response: GrokSearchResponse, max_results: usize) -> Vec<SearchResult> {
     let mut full_text = String::new();
     let mut citations = Vec::new();
+    let mut fallback_sources: Vec<GrokSearchSource> = Vec::new();
 
     for output in response.output {
         match output {
-            GrokSearchOutput::Message { content } => {
+            GrokSearchOutput::Message {
+                content,
+                search_sources,
+            } => {
                 for item in content {
                     match item {
                         GrokSearchContent::OutputText { text, annotations } => {
@@ -200,6 +204,7 @@ fn map_grok_response(response: GrokSearchResponse, max_results: usize) -> Vec<Se
                         GrokSearchContent::Other => {}
                     }
                 }
+                fallback_sources.extend(search_sources);
             }
             GrokSearchOutput::Reasoning {}
             | GrokSearchOutput::WebSearchCall {}
@@ -226,6 +231,41 @@ fn map_grok_response(response: GrokSearchResponse, max_results: usize) -> Vec<Se
         if results.len() == max_results {
             break;
         }
+    }
+
+    // Grok also returns `search_sources` alongside `content`. These are URLs the
+    // model consulted but did not surface as inline `url_citation` annotations
+    // (e.g., supporting reddit/substack threads). Append them after the
+    // citation-derived results so high-signal annotated sources still rank
+    // first; dedupe by URL so we never double-list.
+    for source in fallback_sources {
+        if results.len() >= max_results {
+            break;
+        }
+        if !seen_urls.insert(source.url.clone()) {
+            continue;
+        }
+
+        let title = source
+            .title
+            .clone()
+            .unwrap_or_else(|| source.url.clone());
+        let snippet = source
+            .title
+            .clone()
+            .unwrap_or_else(|| source.url.clone());
+        let summary = if full_text.is_empty() {
+            None
+        } else {
+            Some(full_text.clone())
+        };
+        results.push(SearchResult {
+            title,
+            url: Some(source.url),
+            snippet,
+            summary,
+            published_at: None,
+        });
     }
 
     if results.is_empty() && !full_text.is_empty() && max_results > 0 {
@@ -334,11 +374,26 @@ enum GrokSearchOutput {
     Message {
         #[serde(default)]
         content: Vec<GrokSearchContent>,
+        #[serde(default)]
+        search_sources: Vec<GrokSearchSource>,
     },
     Reasoning {},
     WebSearchCall {},
     #[serde(other)]
     Other,
+}
+
+/// Source URL listed in Grok's `search_sources` array.
+///
+/// Grok returns these alongside `content` to disclose every page the model
+/// consulted, including ones that were not inlined as `url_citation`
+/// annotations. We use them as a fallback to fill `max_results` so we do not
+/// silently drop legitimate references (reddit/substack threads, etc.).
+#[derive(Deserialize, Clone)]
+struct GrokSearchSource {
+    url: String,
+    #[serde(default)]
+    title: Option<String>,
 }
 
 #[derive(Deserialize)]

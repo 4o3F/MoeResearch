@@ -546,6 +546,129 @@ async fn grok_search_dedupes_citations_and_limits_results() {
     );
 }
 
+/// Grok's `search_sources` array discloses every URL the model consulted,
+/// including pages it did not cite inline via `url_citation`. When citations
+/// underfill `max_results`, these sources MUST be appended so high-value
+/// references (e.g. reddit/substack threads) are not silently dropped.
+#[tokio::test]
+async fn grok_search_appends_search_sources_when_citations_underfill() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [{
+                "type": "message",
+                "content": [{
+                    "type": "output_text",
+                    "text": "Cited summary",
+                    "annotations": [{
+                        "type": "url_citation",
+                        "url": "https://example.com/cited",
+                        "title": "Cited",
+                        "start_index": 0,
+                        "end_index": 5
+                    }]
+                }],
+                "search_sources": [
+                    { "url": "https://example.com/cited",  "title": "Duplicate",  "type": "web" },
+                    { "url": "https://example.com/reddit", "title": "Reddit",     "type": "web" },
+                    { "url": "https://example.com/sub",    "title": "Substack",   "type": "web" }
+                ]
+            }]
+        }),
+    }]));
+    let provider = GrokSearchProvider::new(
+        network,
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    let response = provider
+        .search(SearchRequest::new("grok", "lapis", 5))
+        .await
+        .expect("grok response");
+
+    // 1 cited + 2 fallback sources (third source is a URL duplicate of the
+    // citation and is dropped by dedupe).
+    assert_eq!(response.results.len(), 3);
+    assert_eq!(
+        response.results[0].url.as_deref(),
+        Some("https://example.com/cited"),
+        "citation must rank first"
+    );
+    assert_eq!(
+        response.results[1].url.as_deref(),
+        Some("https://example.com/reddit"),
+        "first non-duplicate fallback source is appended"
+    );
+    assert_eq!(response.results[1].title, "Reddit");
+    assert_eq!(response.results[1].snippet, "Reddit");
+    assert_eq!(
+        response.results[1].summary.as_deref(),
+        Some("Cited summary"),
+        "fallback inherits the message-level narrative"
+    );
+    assert_eq!(
+        response.results[2].url.as_deref(),
+        Some("https://example.com/sub")
+    );
+}
+
+/// `max_results` is the hard cap on the total returned vector — citations
+/// fill first, and fallback sources MUST NOT cause an overflow.
+#[tokio::test]
+async fn grok_search_search_sources_respect_max_results_cap() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [{
+                "type": "message",
+                "content": [{
+                    "type": "output_text",
+                    "text": "Alpha cited",
+                    "annotations": [{
+                        "type": "url_citation",
+                        "url": "https://example.com/alpha",
+                        "title": "Alpha",
+                        "start_index": 0,
+                        "end_index": 5
+                    }]
+                }],
+                "search_sources": [
+                    { "url": "https://example.com/beta",  "title": "Beta",  "type": "web" },
+                    { "url": "https://example.com/gamma", "title": "Gamma", "type": "web" }
+                ]
+            }]
+        }),
+    }]));
+    let provider = GrokSearchProvider::new(
+        network,
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    let response = provider
+        .search(SearchRequest::new("grok", "lapis", 2))
+        .await
+        .expect("grok response");
+
+    assert_eq!(response.results.len(), 2);
+    assert_eq!(
+        response.results[0].url.as_deref(),
+        Some("https://example.com/alpha")
+    );
+    assert_eq!(
+        response.results[1].url.as_deref(),
+        Some("https://example.com/beta"),
+        "gamma is dropped because cap was reached"
+    );
+}
+
 #[tokio::test]
 async fn grok_search_rejects_non_success_status() {
     let network = Arc::new(MockNetworkClient::new([NetworkResponse {
