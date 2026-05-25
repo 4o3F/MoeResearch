@@ -8,7 +8,8 @@ use lapis_core::schema::policy::{
     EvidencePolicy, EvidenceRequirement, ModelSelector, OutputPolicy, SearchSelector, ToolName,
 };
 use lapis_core::schema::report::{
-    AspectReport, Confidence, Evidence, Finding, FindingType, Importance, SourceType,
+    AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
+    SourceType,
 };
 use lapis_core::schema::research::{AspectSpec, PromptAssets};
 use serde_json::json;
@@ -104,11 +105,30 @@ fn evidence() -> Vec<Evidence> {
     }]
 }
 
+fn result(report: AspectReport, evidence: Vec<Evidence>) -> AspectResearchResult {
+    AspectResearchResult {
+        aspect_report: report,
+        evidence,
+    }
+}
+
 fn validate(
     report: &AspectReport,
-) -> lapis_core::error::Result<(AspectReport, lapis_core::schema::report::ValidationStatus)> {
+) -> lapis_core::error::Result<(
+    AspectResearchResult,
+    lapis_core::schema::report::ValidationStatus,
+)> {
+    validate_result(&result(report.clone(), evidence()))
+}
+
+fn validate_result(
+    result: &AspectResearchResult,
+) -> lapis_core::error::Result<(
+    AspectResearchResult,
+    lapis_core::schema::report::ValidationStatus,
+)> {
     validate_output(
-        &serde_json::to_string(report).expect("serialize report"),
+        &serde_json::to_string(result).expect("serialize result"),
         &validator_aspect(),
         &evidence(),
         &EvidencePolicy::default(),
@@ -188,7 +208,7 @@ fn search_model_tool_uses_provider_neutral_schema() {
 fn accepts_valid_report() {
     let (validated, status) = validate(&report()).expect("valid report");
 
-    assert_eq!(validated.aspect_id, "aspect-1");
+    assert_eq!(validated.aspect_report.aspect_id, "aspect-1");
     assert!(status.ok);
     assert!(status.issues.is_empty());
 }
@@ -247,7 +267,7 @@ fn rejects_too_many_findings() {
     };
 
     let err = validate_output(
-        &serde_json::to_string(&report).expect("serialize report"),
+        &serde_json::to_string(&result(report, evidence())).expect("serialize result"),
         &validator_aspect(),
         &evidence(),
         &EvidencePolicy::default(),

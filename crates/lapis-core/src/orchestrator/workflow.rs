@@ -27,7 +27,7 @@ pub async fn aspect_research(
     model_service: &ModelService,
     search_service: &SearchService,
     budget_config: &BudgetConfig,
-) -> Result<AspectResearchResult, AgentRuntimeFailure> {
+) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
     request
         .validate_for_execution(&WorkflowValidationContext {
             budget_config,
@@ -41,7 +41,6 @@ pub async fn aspect_research(
     AgentRuntime::new(model_service, search_service, &request)
         .run()
         .await
-        .map(AgentRuntimeOutput::into_result)
 }
 
 pub async fn deep_research(
@@ -140,7 +139,7 @@ fn aspect_requests(request: &DeepResearchRequest) -> Vec<AspectResearchRequest> 
 fn record_aspect_result(
     run: &mut DeepResearchRun,
     aspect_id: &str,
-    result: Result<AspectResearchResult>,
+    result: Result<AgentRuntimeOutput>,
 ) {
     match result {
         Ok(result) => record_aspect_success(run, result),
@@ -154,31 +153,32 @@ fn record_aspect_result(
     }
 }
 
-fn record_aspect_success(run: &mut DeepResearchRun, mut result: AspectResearchResult) {
-    namespace_aspect_evidence(&mut result);
-    run.budget_usage.model_calls_used += result.provider_usage.model_calls;
-    run.budget_usage.search_calls_used += result.budget_usage.search_calls_used;
+fn record_aspect_success(run: &mut DeepResearchRun, mut output: AgentRuntimeOutput) {
+    namespace_aspect_evidence(&mut output.result);
+    run.budget_usage.model_calls_used += output.provider_usage.model_calls;
+    run.budget_usage.search_calls_used += output.budget_usage.search_calls_used;
     run.budget_usage.elapsed_ms = run
         .budget_usage
         .elapsed_ms
-        .saturating_add(result.budget_usage.elapsed_ms);
+        .saturating_add(output.budget_usage.elapsed_ms);
     run.budget_usage.token_usage = merge_token_usage(
         run.budget_usage.token_usage.take(),
-        result.provider_usage.token_usage.clone(),
+        output.provider_usage.token_usage.clone(),
     );
-    if let Some(trace_summary) = &result.trace_summary {
-        run.model_calls.extend(trace_summary.model_calls.clone());
-        run.search_calls.extend(trace_summary.search_calls.clone());
-    }
-    run.completed.push(result.aspect_report.aspect_id.clone());
+    run.model_calls
+        .extend(output.trace_summary.model_calls.clone());
+    run.search_calls
+        .extend(output.trace_summary.search_calls.clone());
+    run.completed
+        .push(output.result.aspect_report.aspect_id.clone());
     run.open_questions
-        .extend(result.aspect_report.open_questions.clone());
-    for evidence in &result.evidence {
+        .extend(output.result.aspect_report.open_questions.clone());
+    for evidence in &output.result.evidence {
         run.evidence_by_id
             .entry(evidence.id.clone())
             .or_insert_with(|| evidence.clone());
     }
-    run.aspect_reports.push(result.aspect_report);
+    run.aspect_reports.push(output.result.aspect_report);
 }
 
 fn namespace_aspect_evidence(result: &mut AspectResearchResult) {

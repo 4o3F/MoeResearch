@@ -408,12 +408,12 @@ ToolEnvelope<T>
 
 约定：
 
-- `status=ok` 时，`data` 承载结果，`partial_trace` 为 `null`；成功 trace 仅在输出策略开启时出现在 `data.trace_summary`。
+- `status=ok` 时，`data` 承载 Layer 2 输出的业务结果，`partial_trace` 为 `null`；单 aspect 成功结果不在 `data` 中携带 runtime trace、provider usage 或 budget usage。
 - `status=partial` 用于多 aspect 工作流中部分 aspect 失败但整体仍返回可用结果的场景。
 - `status=failed` 时，`data` 为 `null`，`error` 说明失败原因；如果失败发生在 Agent runtime 启动之后，`partial_trace` 应保留已完成的 model/search/tool call 诊断信息。
 - `partial_trace` 不代表可用研究结果，只用于调试中途失败；它包含已完成的 `search_queries`、`tool_calls`、`provider_usage`、`budget_usage` 和 `evidence_count`。
 - runtime 启动前的校验错误（例如无效输入、schema version 不支持）没有可用 runtime state，因此 `partial_trace` 为 `null`。
-- `search_queries[].query` 和 `tool_calls[].search.query` 必须遵守 `evidence_policy.include_query_trace`；`sources[].url` 必须遵守 `evidence_policy.include_source_urls`。不得在 envelope 中返回 secrets、Authorization header、API key、完整 prompt、raw provider request/response body 或 raw snippets。
+- Layer 3 对 Layer 2 透明提供标准化搜索结果，包括 query、source title、URL、snippet、summary、provider 和发布时间等字段。不得在 envelope 中返回 secrets、Authorization header、API key、完整 prompt 或 raw provider request/response body。
 
 ### 10.2 Model Agent Orchestrator
 

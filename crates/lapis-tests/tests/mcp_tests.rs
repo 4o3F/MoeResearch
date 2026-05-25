@@ -22,8 +22,8 @@ use lapis_core::schema::policy::{
     ToolName,
 };
 use lapis_core::schema::report::{
-    AspectReport, AspectResearchResult, Confidence, Finding, FindingType, Importance, OpenQuestion,
-    TerminationReason,
+    AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
+    OpenQuestion, TerminationReason,
 };
 use lapis_core::schema::research::{
     AspectResearchRequest, AspectSpec, DeepResearchRequest, DeliverableSpec, PromptAssets,
@@ -66,7 +66,12 @@ impl ModelProvider for AdaptiveModelProvider {
             return Ok(final_response("{}".to_owned()));
         }
 
-        Ok(final_response(report_json(&aspect_id, &aspect_name)))
+        let evidence = first_evidence_from_tool_output(&request.input);
+        Ok(final_response(result_json(
+            &aspect_id,
+            &aspect_name,
+            evidence,
+        )))
     }
 }
 
@@ -76,15 +81,26 @@ impl ModelProvider for SequenceModelProvider {
         "model"
     }
 
-    async fn complete(&self, _request: ModelRequest) -> Result<ModelResponse> {
+    async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        self.responses
+        let mut response = self
+            .responses
             .lock()
             .expect("responses lock")
             .pop_front()
             .ok_or_else(|| Error::Internal {
                 message: "missing fake model response".to_owned(),
-            })
+            })?;
+        if response.content.as_deref() == Some("__RESULT_FROM_TOOL_OUTPUT__") {
+            let aspect_id = aspect_field(&request.input, "Aspect ID");
+            let aspect_name = aspect_field(&request.input, "Aspect name");
+            response.content = Some(result_json(
+                &aspect_id,
+                &aspect_name,
+                first_evidence_from_tool_output(&request.input),
+            ));
+        }
+        Ok(response)
     }
 }
 
@@ -179,11 +195,7 @@ fn aspect_request() -> AspectResearchRequest {
         shared_context: ResearchContext::default(),
         model_policy: model_policy(),
         search_policy: search_policy(),
-        evidence_policy: EvidencePolicy {
-            include_query_trace: false,
-            include_source_urls: true,
-            ..EvidencePolicy::default()
-        },
+        evidence_policy: EvidencePolicy::default(),
         output_policy: OutputPolicy::default(),
         budget: AgentBudget::default(),
         execution_policy: ExecutionPolicy {
@@ -218,11 +230,7 @@ fn deep_request(count: usize) -> DeepResearchRequest {
             },
             model_policy: model_policy(),
             search_policy: search_policy(),
-            evidence_policy: EvidencePolicy {
-                include_query_trace: false,
-                include_source_urls: true,
-                ..EvidencePolicy::default()
-            },
+            evidence_policy: EvidencePolicy::default(),
             output_policy: OutputPolicy::default(),
         },
         shared_context: ResearchContext::default(),
@@ -297,8 +305,8 @@ fn final_response(content: String) -> ModelResponse {
     }
 }
 
-fn report_json(aspect_id: &str, aspect_name: &str) -> String {
-    serde_json::to_string(&AspectReport {
+fn report(aspect_id: &str, aspect_name: &str, evidence_id: String) -> AspectReport {
+    AspectReport {
         aspect_id: aspect_id.to_owned(),
         aspect_name: aspect_name.to_owned(),
         question: "What is true?".to_owned(),
@@ -309,7 +317,7 @@ fn report_json(aspect_id: &str, aspect_name: &str) -> String {
             finding_type: FindingType::Fact,
             importance: Importance::High,
             confidence: Confidence::Medium,
-            evidence_refs: vec!["ev-1-1".to_owned()],
+            evidence_refs: vec![evidence_id],
             contradicted_by: vec![],
         }],
         assumptions: vec![],
@@ -323,8 +331,29 @@ fn report_json(aspect_id: &str, aspect_name: &str) -> String {
         }],
         confidence: Confidence::Medium,
         limitations: vec![],
+    }
+}
+
+fn result_json(aspect_id: &str, aspect_name: &str, mut evidence: Evidence) -> String {
+    evidence.supports_findings = vec![format!("finding-{aspect_id}")];
+    serde_json::to_string(&AspectResearchResult {
+        aspect_report: report(aspect_id, aspect_name, evidence.id.clone()),
+        evidence: vec![evidence],
     })
-    .expect("report json")
+    .expect("result json")
+}
+
+fn first_evidence_from_tool_output(input: &[ModelInputItem]) -> Evidence {
+    let output = input
+        .iter()
+        .rev()
+        .find_map(|item| match item {
+            ModelInputItem::ToolOutput(output) => Some(output.output.as_str()),
+            _ => None,
+        })
+        .expect("tool output");
+    let value = serde_json::from_str::<serde_json::Value>(output).expect("tool output json");
+    serde_json::from_value(value["results"][0].clone()).expect("evidence result")
 }
 
 fn has_tool_output(input: &[ModelInputItem]) -> bool {
@@ -459,8 +488,6 @@ async fn aspect_research_invalid_input_returns_failed_envelope() {
 #[tokio::test]
 async fn aspect_research_budget_failure_envelope_includes_partial_trace() {
     let mut request = aspect_request();
-    request.evidence_policy.include_query_trace = true;
-    request.evidence_policy.include_source_urls = true;
     request.budget.max_search_calls = Limit::limited(2);
     let services = sequence_services(vec![tool_response(), tool_response(), tool_response()]);
     let search_calls = services.search_calls.clone();

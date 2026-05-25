@@ -93,14 +93,11 @@ Return only JSON matching this shape:
   },
   "evidence_policy": {
     "require_evidence_for_findings": true,
-    "min_evidence_per_finding": 1,
-    "include_query_trace": true,
-    "include_source_urls": true
+    "min_evidence_per_finding": 1
   },
   "output_policy": {
     "language": "string",
     "include_trace_summary": true,
-    "include_raw_search_snippets": false,
     "max_findings_per_aspect": null
   }
 }

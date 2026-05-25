@@ -16,15 +16,13 @@ use crate::schema::model::{
 };
 use crate::schema::policy::SearchPolicy;
 use crate::schema::report::{
-    AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, PartialTrace,
+    AgentBudgetUsage, AspectResearchResult, Confidence, Evidence, PartialTrace,
     ProviderCallSummary, ProviderType, ProviderUsage, SearchQueryTrace, SearchSourceTrace,
     SearchToolCallTrace, SourceType, TerminationReason, TokenUsage, ToolCallTrace, TraceSummary,
 };
 use crate::schema::research::AspectResearchRequest;
 use crate::schema::search::{SearchRequest, SearchResponse, SearchResult};
 use crate::search::service::SearchService;
-
-const REDACTED: &str = "[redacted]";
 
 pub struct AgentRuntime<'a> {
     model_service: &'a ModelService,
@@ -34,13 +32,12 @@ pub struct AgentRuntime<'a> {
 
 #[derive(Debug)]
 pub struct AgentRuntimeOutput {
-    pub aspect_report: AspectReport,
-    pub evidence: Vec<Evidence>,
+    pub result: AspectResearchResult,
     pub search_queries: Vec<SearchQueryTrace>,
     pub tool_calls: Vec<ToolCallTrace>,
     pub provider_usage: ProviderUsage,
     pub budget_usage: AgentBudgetUsage,
-    pub trace_summary: Option<TraceSummary>,
+    pub trace_summary: TraceSummary,
 }
 
 #[derive(Debug)]
@@ -52,15 +49,7 @@ pub struct AgentRuntimeFailure {
 impl AgentRuntimeOutput {
     #[must_use]
     pub fn into_result(self) -> AspectResearchResult {
-        AspectResearchResult {
-            aspect_report: self.aspect_report,
-            evidence: self.evidence,
-            search_queries: self.search_queries,
-            tool_calls: self.tool_calls,
-            provider_usage: self.provider_usage,
-            budget_usage: self.budget_usage,
-            trace_summary: self.trace_summary,
-        }
+        self.result
     }
 }
 
@@ -68,7 +57,7 @@ struct RuntimeState {
     input: Vec<ModelInputItem>,
     replay_input: Vec<ModelInputItem>,
     previous_response_id: Option<String>,
-    evidence: Vec<Evidence>,
+    candidate_evidence: Vec<Evidence>,
     search_queries: Vec<SearchQueryTrace>,
     tool_calls: Vec<ToolCallTrace>,
     provider_usage: ProviderUsage,
@@ -81,7 +70,7 @@ impl RuntimeState {
             replay_input: input.clone(),
             input,
             previous_response_id: None,
-            evidence: Vec::new(),
+            candidate_evidence: Vec::new(),
             search_queries: Vec::new(),
             tool_calls: Vec::new(),
             provider_usage: ProviderUsage::default(),
@@ -272,15 +261,14 @@ impl<'a> AgentRuntime<'a> {
         let new_evidence = self.evidence_from_search(
             &args.query,
             &response,
-            state.evidence.len(),
+            state.candidate_evidence.len(),
             state.search_queries.len() + 1,
         );
         let result_count = response.results.len();
         let sources = self.source_traces_from_response(&response);
-        state.evidence.extend(new_evidence);
         state.search_queries.push(SearchQueryTrace {
             provider: response.provider.clone(),
-            query: self.public_query(&args.query),
+            query: args.query.clone(),
             result_count,
             sources: sources.clone(),
             started_at: search_started_at.clone(),
@@ -293,7 +281,7 @@ impl<'a> AgentRuntime<'a> {
             output_summary: format!("{result_count} result(s) from {}", response.provider),
             search: Some(SearchToolCallTrace {
                 provider: response.provider.clone(),
-                query: self.public_query(&args.query),
+                query: args.query.clone(),
                 result_count,
                 sources,
             }),
@@ -301,10 +289,10 @@ impl<'a> AgentRuntime<'a> {
             duration_ms: search_duration,
         });
 
-        Ok(ModelToolOutput::new(
-            tool_call.id.clone(),
-            self.search_result_message(&args.query, &response, &state.evidence),
-        ))
+        let tool_output = self.search_result_message(&args.query, &response, &new_evidence);
+        state.candidate_evidence.extend(new_evidence);
+
+        Ok(ModelToolOutput::new(tool_call.id.clone(), tool_output))
     }
 
     fn finish(
@@ -314,31 +302,20 @@ impl<'a> AgentRuntime<'a> {
         budget: &AgentBudgetGuard,
         validator: &OutputValidator<'_>,
     ) -> std::result::Result<AgentRuntimeOutput, Box<AgentRuntimeFailure>> {
-        let (aspect_report, _) = match validator.validate_content(content, &state.evidence) {
+        let (result, _) = match validator.validate_content(content, &state.candidate_evidence) {
             Ok(result) => result,
             Err(error) => return Err(Box::new(Self::failure(error, state, budget))),
         };
         state.trace_summary.finished_at = Some(now_rfc3339());
         state.trace_summary.termination_reason = Some(TerminationReason::Completed);
-        let include_trace = self.request.output_policy.include_trace_summary;
-        let include_query_trace = include_trace && self.request.evidence_policy.include_query_trace;
 
         Ok(AgentRuntimeOutput {
-            aspect_report,
-            evidence: state.evidence,
-            search_queries: if include_query_trace {
-                state.search_queries
-            } else {
-                Vec::new()
-            },
-            tool_calls: if include_query_trace {
-                state.tool_calls
-            } else {
-                Vec::new()
-            },
+            result,
+            search_queries: state.search_queries,
+            tool_calls: state.tool_calls,
             provider_usage: state.provider_usage,
             budget_usage: budget.usage(),
-            trace_summary: include_trace.then_some(state.trace_summary),
+            trace_summary: state.trace_summary,
         })
     }
 
@@ -433,18 +410,17 @@ impl<'a> AgentRuntime<'a> {
         evidence_index: usize,
         search_index: usize,
     ) -> Evidence {
-        let snippet = self.public_snippet(result);
-        let summary = self.public_summary(result);
+        let snippet = result.snippet.clone();
+        let summary = result
+            .summary
+            .clone()
+            .unwrap_or_else(|| result.snippet.clone());
         Evidence {
             id: format!("ev-{search_index}-{evidence_index}"),
             source_title: result.title.clone(),
-            url: if self.request.evidence_policy.include_source_urls {
-                result.url.clone()
-            } else {
-                None
-            },
+            url: result.url.clone(),
             provider: provider.to_owned(),
-            query: self.public_query(query),
+            query: query.to_owned(),
             snippet,
             summary,
             published_at: result.published_at.clone(),
@@ -461,43 +437,14 @@ impl<'a> AgentRuntime<'a> {
         response: &SearchResponse,
         evidence: &[Evidence],
     ) -> String {
-        let result_ids: Vec<&str> = evidence
-            .iter()
-            .rev()
-            .take(response.results.len())
-            .map(|item| item.id.as_str())
-            .collect();
         json!({
             "tool": "search",
-            "query": self.public_query(query),
+            "query": query,
             "provider": response.provider,
             "result_count": response.results.len(),
-            "evidence_ids": result_ids,
+            "results": evidence,
         })
         .to_string()
-    }
-
-    fn public_query(&self, query: &str) -> String {
-        if self.request.evidence_policy.include_query_trace {
-            query.to_owned()
-        } else {
-            REDACTED.to_owned()
-        }
-    }
-
-    fn public_snippet(&self, result: &SearchResult) -> String {
-        if self.request.output_policy.include_raw_search_snippets {
-            result.snippet.clone()
-        } else {
-            "raw search snippet omitted by output policy".to_owned()
-        }
-    }
-
-    fn public_summary(&self, result: &SearchResult) -> String {
-        result
-            .summary
-            .clone()
-            .unwrap_or_else(|| self.public_snippet(result))
     }
 
     fn source_traces_from_response(&self, response: &SearchResponse) -> Vec<SearchSourceTrace> {
@@ -506,11 +453,7 @@ impl<'a> AgentRuntime<'a> {
             .iter()
             .map(|result| SearchSourceTrace {
                 title: result.title.clone(),
-                url: if self.request.evidence_policy.include_source_urls {
-                    result.url.clone()
-                } else {
-                    None
-                },
+                url: result.url.clone(),
             })
             .collect()
     }
@@ -535,7 +478,7 @@ impl<'a> AgentRuntime<'a> {
             tool_calls: state.tool_calls,
             provider_usage: state.provider_usage,
             budget_usage: budget.usage(),
-            evidence_count: state.evidence.len(),
+            evidence_count: state.candidate_evidence.len(),
         };
         AgentRuntimeFailure {
             error,

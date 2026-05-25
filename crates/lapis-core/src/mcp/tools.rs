@@ -2,6 +2,7 @@ use rmcp::{Json, handler::server::wrapper::Parameters, tool, tool_router};
 
 use crate::error::Error;
 use crate::mcp::server::LapisMcpServer;
+use crate::orchestrator::agent_loop::AgentRuntimeOutput;
 use crate::orchestrator::workflow::{
     aspect_research as run_aspect_research, deep_research as run_deep_research,
 };
@@ -30,7 +31,7 @@ impl LapisMcpServer {
             )
             .await
             {
-                Ok(result) => aspect_success_envelope(schema_version, request_id, result),
+                Ok(output) => aspect_success_envelope(schema_version, request_id, output),
                 Err(failure) => failed_envelope(
                     schema_version,
                     request_id,
@@ -70,15 +71,15 @@ impl LapisMcpServer {
 fn aspect_success_envelope(
     schema_version: String,
     request_id: String,
-    result: AspectResearchResult,
+    output: AgentRuntimeOutput,
 ) -> ToolEnvelope<AspectResearchResult> {
-    let run_id = result.trace_summary.as_ref().and_then(non_empty_trace_id);
+    let run_id = non_empty_trace_id(&output.trace_summary);
     ToolEnvelope {
         schema_version,
         request_id,
         run_id,
         status: ToolStatus::Ok,
-        data: Some(result),
+        data: Some(output.result),
         error: None,
         partial_trace: None,
     }

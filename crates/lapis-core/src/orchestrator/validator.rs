@@ -1,10 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     error::{Error, Result},
     schema::{
         policy::{EvidencePolicy, OutputPolicy},
-        report::{AspectReport, Evidence, ValidationIssue, ValidationStatus},
+        report::{AspectReport, AspectResearchResult, Evidence, ValidationIssue, ValidationStatus},
         research::AspectSpec,
     },
 };
@@ -31,17 +31,23 @@ impl<'a> OutputValidator<'a> {
     pub fn validate_content(
         &self,
         content: &str,
-        evidence: &[Evidence],
-    ) -> Result<(AspectReport, ValidationStatus)> {
-        let report = serde_json::from_str::<AspectReport>(content).map_err(|_| {
+        candidate_evidence: &[Evidence],
+    ) -> Result<(AspectResearchResult, ValidationStatus)> {
+        let result = serde_json::from_str::<AspectResearchResult>(content).map_err(|_| {
             Error::SchemaValidationFailed {
-                message: "final output must be valid AspectReport JSON".to_owned(),
+                message: "final output must be valid AspectResearchResult JSON".to_owned(),
             }
         })?;
 
-        let issues = self.validate_report(&report, evidence);
+        let mut issues = self.validate_report(&result.aspect_report, &result.evidence);
+        issues.extend(validate_selected_evidence(
+            &result.aspect_report,
+            &result.evidence,
+            candidate_evidence,
+        ));
+
         if issues.is_empty() {
-            return Ok((report, ValidationStatus { ok: true, issues }));
+            return Ok((result, ValidationStatus { ok: true, issues }));
         }
 
         Err(Error::SchemaValidationFailed {
@@ -52,7 +58,7 @@ impl<'a> OutputValidator<'a> {
     fn validate_report(
         &self,
         report: &AspectReport,
-        evidence: &[Evidence],
+        selected_evidence: &[Evidence],
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
@@ -60,7 +66,7 @@ impl<'a> OutputValidator<'a> {
             issues.push(issue(
                 "aspect_id_mismatch",
                 "report aspect_id does not match requested aspect",
-                "aspect_id",
+                "aspect_report.aspect_id",
             ));
         }
 
@@ -68,7 +74,7 @@ impl<'a> OutputValidator<'a> {
             issues.push(issue(
                 "aspect_name_mismatch",
                 "report aspect_name does not match requested aspect",
-                "aspect_name",
+                "aspect_report.aspect_name",
             ));
         }
 
@@ -76,7 +82,7 @@ impl<'a> OutputValidator<'a> {
             issues.push(issue(
                 "empty_question",
                 "report question must not be empty",
-                "question",
+                "aspect_report.question",
             ));
         }
 
@@ -86,38 +92,62 @@ impl<'a> OutputValidator<'a> {
             issues.push(issue(
                 "too_many_findings",
                 "report contains more findings than allowed",
-                "findings",
+                "aspect_report.findings",
             ));
         }
 
-        let evidence_ids = evidence
+        let evidence_ids = selected_evidence
             .iter()
             .map(|evidence| evidence.id.as_str())
             .collect::<HashSet<_>>();
+        let mut finding_ids = HashSet::new();
 
         for (index, finding) in report.findings.iter().enumerate() {
+            if finding.id.trim().is_empty() {
+                issues.push(issue(
+                    "empty_finding_id",
+                    "finding id must not be empty",
+                    format!("aspect_report.findings[{index}].id"),
+                ));
+            }
+            if !finding_ids.insert(finding.id.as_str()) {
+                issues.push(issue(
+                    "duplicate_finding_id",
+                    "finding id must be unique",
+                    format!("aspect_report.findings[{index}].id"),
+                ));
+            }
+
             if self.evidence_policy.require_evidence_for_findings
                 && finding.evidence_refs.len() < self.evidence_policy.min_evidence_per_finding
             {
                 issues.push(issue(
                     "missing_required_evidence",
                     "finding does not have enough evidence references",
-                    format!("findings[{index}].evidence_refs"),
+                    format!("aspect_report.findings[{index}].evidence_refs"),
                 ));
             }
 
+            let mut refs = HashSet::new();
             for evidence_ref in &finding.evidence_refs {
+                if !refs.insert(evidence_ref.as_str()) {
+                    issues.push(issue(
+                        "duplicate_evidence_ref",
+                        "finding evidence references must be unique",
+                        format!("aspect_report.findings[{index}].evidence_refs"),
+                    ));
+                }
                 if !evidence_ids.contains(evidence_ref.as_str()) {
                     issues.push(issue(
                         "unknown_evidence_ref",
-                        "finding references evidence that is not present in the report",
-                        format!("findings[{index}].evidence_refs"),
+                        "finding references evidence that is not present in selected evidence",
+                        format!("aspect_report.findings[{index}].evidence_refs"),
                     ));
                 }
             }
         }
 
-        for (index, evidence) in evidence.iter().enumerate() {
+        for (index, evidence) in selected_evidence.iter().enumerate() {
             if evidence.id.trim().is_empty() {
                 issues.push(issue(
                     "empty_evidence_id",
@@ -155,14 +185,119 @@ impl<'a> OutputValidator<'a> {
     }
 }
 
+fn validate_selected_evidence(
+    report: &AspectReport,
+    selected: &[Evidence],
+    candidates: &[Evidence],
+) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+    let candidates_by_id = candidates
+        .iter()
+        .map(|evidence| (evidence.id.as_str(), evidence))
+        .collect::<HashMap<_, _>>();
+    let mut selected_ids = HashSet::new();
+    let finding_ids = report
+        .findings
+        .iter()
+        .map(|finding| finding.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut cited_by_evidence: HashMap<&str, Vec<&str>> = HashMap::new();
+
+    for finding in &report.findings {
+        for evidence_ref in &finding.evidence_refs {
+            cited_by_evidence
+                .entry(evidence_ref.as_str())
+                .or_default()
+                .push(finding.id.as_str());
+        }
+    }
+
+    for (index, evidence) in selected.iter().enumerate() {
+        if !selected_ids.insert(evidence.id.as_str()) {
+            issues.push(issue(
+                "duplicate_evidence_id",
+                "selected evidence id must be unique",
+                format!("evidence[{index}].id"),
+            ));
+        }
+
+        let Some(candidate) = candidates_by_id.get(evidence.id.as_str()) else {
+            issues.push(issue(
+                "unknown_selected_evidence",
+                "selected evidence was not present in search tool output",
+                format!("evidence[{index}].id"),
+            ));
+            continue;
+        };
+
+        if !provenance_matches(evidence, candidate) {
+            issues.push(issue(
+                "mutated_evidence_provenance",
+                "selected evidence provenance must match search tool output",
+                format!("evidence[{index}]"),
+            ));
+        }
+
+        for finding_id in &evidence.supports_findings {
+            if !finding_ids.contains(finding_id.as_str()) {
+                issues.push(issue(
+                    "unknown_supported_finding",
+                    "evidence supports_findings references an unknown finding",
+                    format!("evidence[{index}].supports_findings"),
+                ));
+            }
+        }
+
+        let cited_by = cited_by_evidence
+            .get(evidence.id.as_str())
+            .cloned()
+            .unwrap_or_default();
+        if cited_by.is_empty() {
+            issues.push(issue(
+                "uncited_selected_evidence",
+                "selected evidence must be cited by at least one finding",
+                format!("evidence[{index}].id"),
+            ));
+        }
+
+        let supports = evidence
+            .supports_findings
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let cited = cited_by.into_iter().collect::<HashSet<_>>();
+        if supports != cited {
+            issues.push(issue(
+                "supports_findings_mismatch",
+                "evidence supports_findings must match finding evidence_refs",
+                format!("evidence[{index}].supports_findings"),
+            ));
+        }
+    }
+
+    issues
+}
+
+fn provenance_matches(selected: &Evidence, candidate: &Evidence) -> bool {
+    selected.source_title == candidate.source_title
+        && selected.url == candidate.url
+        && selected.provider == candidate.provider
+        && selected.query == candidate.query
+        && selected.snippet == candidate.snippet
+        && selected.summary == candidate.summary
+        && selected.published_at == candidate.published_at
+        && selected.retrieved_at == candidate.retrieved_at
+}
+
 pub fn validate_output(
     content: &str,
     aspect: &AspectSpec,
-    evidence: &[Evidence],
+    candidate_evidence: &[Evidence],
     evidence_policy: &EvidencePolicy,
     output_policy: &OutputPolicy,
-) -> Result<(AspectReport, ValidationStatus)> {
-    OutputValidator::new(aspect, evidence_policy, output_policy).validate_content(content, evidence)
+) -> Result<(AspectResearchResult, ValidationStatus)> {
+    OutputValidator::new(aspect, evidence_policy, output_policy)
+        .validate_content(content, candidate_evidence)
 }
 
 fn issue(code: &str, message: &str, path: impl Into<String>) -> ValidationIssue {

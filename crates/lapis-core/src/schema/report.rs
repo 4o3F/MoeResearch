@@ -255,14 +255,6 @@ pub struct ConfidenceSummary {
 pub struct AspectResearchResult {
     pub aspect_report: AspectReport,
     pub evidence: Vec<Evidence>,
-    pub provider_usage: ProviderUsage,
-    pub budget_usage: AgentBudgetUsage,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trace_summary: Option<TraceSummary>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub search_queries: Vec<SearchQueryTrace>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tool_calls: Vec<ToolCallTrace>,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]

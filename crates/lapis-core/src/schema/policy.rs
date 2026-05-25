@@ -125,8 +125,6 @@ impl SearchPolicy {
 pub struct EvidencePolicy {
     pub require_evidence_for_findings: bool,
     pub min_evidence_per_finding: usize,
-    pub include_query_trace: bool,
-    pub include_source_urls: bool,
 }
 
 impl Default for EvidencePolicy {
@@ -134,8 +132,6 @@ impl Default for EvidencePolicy {
         Self {
             require_evidence_for_findings: true,
             min_evidence_per_finding: 1,
-            include_query_trace: true,
-            include_source_urls: true,
         }
     }
 }
@@ -144,7 +140,6 @@ impl Default for EvidencePolicy {
 pub struct OutputPolicy {
     pub language: String,
     pub include_trace_summary: bool,
-    pub include_raw_search_snippets: bool,
     pub max_findings_per_aspect: Option<usize>,
 }
 
@@ -153,7 +148,6 @@ impl Default for OutputPolicy {
         Self {
             language: "zh-CN".to_owned(),
             include_trace_summary: true,
-            include_raw_search_snippets: false,
             max_findings_per_aspect: None,
         }
     }

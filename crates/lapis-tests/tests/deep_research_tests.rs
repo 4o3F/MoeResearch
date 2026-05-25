@@ -17,7 +17,8 @@ use lapis_core::schema::policy::{
     ToolName,
 };
 use lapis_core::schema::report::{
-    AspectReport, Confidence, Finding, FindingType, Importance, OpenQuestion, TerminationReason,
+    AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
+    OpenQuestion, TerminationReason,
 };
 use lapis_core::schema::research::{
     AspectSpec, DeepResearchRequest, DeliverableSpec, PromptAssets, ResearchContext, ResearchPlan,
@@ -59,10 +60,12 @@ impl ModelProvider for AdaptiveModelProvider {
             return Ok(final_response("{}".to_owned()));
         }
 
-        Ok(final_response(report_json(
+        let evidence = first_evidence_from_tool_output(&request.input);
+        Ok(final_response(result_json(
             &aspect_id,
             &aspect_name,
             Confidence::Medium,
+            evidence,
         )))
     }
 }
@@ -170,11 +173,7 @@ fn deep_request(count: usize) -> DeepResearchRequest {
                 max_results_per_query: 2,
                 ..SearchPolicy::default()
             },
-            evidence_policy: EvidencePolicy {
-                include_query_trace: false,
-                include_source_urls: true,
-                ..EvidencePolicy::default()
-            },
+            evidence_policy: EvidencePolicy::default(),
             output_policy: OutputPolicy::default(),
         },
         shared_context: ResearchContext::default(),
@@ -232,8 +231,13 @@ fn final_response(content: String) -> ModelResponse {
     }
 }
 
-fn report_json(aspect_id: &str, aspect_name: &str, confidence: Confidence) -> String {
-    serde_json::to_string(&AspectReport {
+fn report(
+    aspect_id: &str,
+    aspect_name: &str,
+    confidence: Confidence,
+    evidence_id: String,
+) -> AspectReport {
+    AspectReport {
         aspect_id: aspect_id.to_owned(),
         aspect_name: aspect_name.to_owned(),
         question: "What is true?".to_owned(),
@@ -244,7 +248,7 @@ fn report_json(aspect_id: &str, aspect_name: &str, confidence: Confidence) -> St
             finding_type: FindingType::Fact,
             importance: Importance::High,
             confidence,
-            evidence_refs: vec!["ev-1-1".to_owned()],
+            evidence_refs: vec![evidence_id],
             contradicted_by: vec![],
         }],
         assumptions: vec![],
@@ -258,8 +262,34 @@ fn report_json(aspect_id: &str, aspect_name: &str, confidence: Confidence) -> St
         }],
         confidence,
         limitations: vec![],
+    }
+}
+
+fn result_json(
+    aspect_id: &str,
+    aspect_name: &str,
+    confidence: Confidence,
+    mut evidence: Evidence,
+) -> String {
+    evidence.supports_findings = vec![format!("finding-{aspect_id}")];
+    serde_json::to_string(&AspectResearchResult {
+        aspect_report: report(aspect_id, aspect_name, confidence, evidence.id.clone()),
+        evidence: vec![evidence],
     })
-    .expect("report json")
+    .expect("result json")
+}
+
+fn first_evidence_from_tool_output(input: &[ModelInputItem]) -> Evidence {
+    let output = input
+        .iter()
+        .rev()
+        .find_map(|item| match item {
+            ModelInputItem::ToolOutput(output) => Some(output.output.as_str()),
+            _ => None,
+        })
+        .expect("tool output");
+    let value = serde_json::from_str::<serde_json::Value>(output).expect("tool output json");
+    serde_json::from_value(value["results"][0].clone()).expect("evidence result")
 }
 
 fn has_tool_output(input: &[ModelInputItem]) -> bool {

@@ -19,7 +19,8 @@ use lapis_core::schema::policy::{
     ToolName,
 };
 use lapis_core::schema::report::{
-    AspectReport, Confidence, Finding, FindingType, Importance, OpenQuestion, TerminationReason,
+    AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
+    OpenQuestion, SourceType, TerminationReason,
 };
 use lapis_core::schema::research::{
     AspectResearchRequest, AspectSpec, PromptAssets, ResearchContext,
@@ -28,6 +29,11 @@ use lapis_core::schema::search::{ProviderSearchRequest, SearchResponse, SearchRe
 use lapis_core::search::provider::SearchProvider;
 use lapis_core::search::service::SearchService;
 use serde_json::json;
+
+const VALID_ASPECT_RESULT_SENTINEL: &str = "__VALID_ASPECT_RESULT_FROM_TOOL_OUTPUT__";
+const UNKNOWN_EVIDENCE_SENTINEL: &str = "__UNKNOWN_EVIDENCE_FROM_TOOL_OUTPUT__";
+const TAMPERED_EVIDENCE_SENTINEL: &str = "__TAMPERED_EVIDENCE_FROM_TOOL_OUTPUT__";
+const INTERPRETIVE_EVIDENCE_SENTINEL: &str = "__INTERPRETIVE_EVIDENCE_FROM_TOOL_OUTPUT__";
 
 struct SequenceModelProvider {
     calls: Arc<AtomicUsize>,
@@ -47,18 +53,20 @@ impl ModelProvider for SequenceModelProvider {
         "model"
     }
 
-    async fn complete(&self, _request: ModelRequest) -> Result<ModelResponse> {
+    async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if let Some(delay) = self.delay {
             tokio::time::sleep(delay).await;
         }
-        self.responses
+        let response = self
+            .responses
             .lock()
             .expect("responses lock")
             .pop_front()
             .ok_or_else(|| Error::Internal {
                 message: "missing fake model response".to_owned(),
-            })
+            })?;
+        Ok(resolve_final_response(response, &request.input))
     }
 }
 
@@ -70,14 +78,19 @@ impl ModelProvider for CapturingSequenceModelProvider {
 
     async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        self.requests.lock().expect("requests lock").push(request);
-        self.responses
+        self.requests
+            .lock()
+            .expect("requests lock")
+            .push(request.clone());
+        let response = self
+            .responses
             .lock()
             .expect("responses lock")
             .pop_front()
             .ok_or_else(|| Error::Internal {
                 message: "missing fake model response".to_owned(),
-            })
+            })?;
+        Ok(resolve_final_response(response, &request.input))
     }
 }
 
@@ -128,7 +141,7 @@ fn search_response() -> SearchResponse {
             url: Some("https://example.test/source".to_owned()),
             snippet: "snippet".to_owned(),
             summary: Some("summary".to_owned()),
-            published_at: None,
+            published_at: Some("2026-05-25".to_owned()),
         }],
     }
 }
@@ -205,11 +218,7 @@ fn aspect_request() -> AspectResearchRequest {
             max_results_per_query: 2,
             ..SearchPolicy::default()
         },
-        evidence_policy: EvidencePolicy {
-            include_query_trace: false,
-            include_source_urls: false,
-            ..EvidencePolicy::default()
-        },
+        evidence_policy: EvidencePolicy::default(),
         output_policy: OutputPolicy::default(),
         budget: AgentBudget::default(),
         execution_policy: ExecutionPolicy {
@@ -261,7 +270,11 @@ fn final_response(content: String) -> ModelResponse {
 }
 
 fn valid_report_json() -> String {
-    serde_json::to_string(&AspectReport {
+    VALID_ASPECT_RESULT_SENTINEL.to_owned()
+}
+
+fn valid_aspect_report(evidence_refs: Vec<String>) -> AspectReport {
+    AspectReport {
         aspect_id: "aspect-1".to_owned(),
         aspect_name: "Aspect".to_owned(),
         question: "What is true?".to_owned(),
@@ -272,7 +285,7 @@ fn valid_report_json() -> String {
             finding_type: FindingType::Fact,
             importance: Importance::High,
             confidence: Confidence::Medium,
-            evidence_refs: vec!["ev-1-1".to_owned()],
+            evidence_refs,
             contradicted_by: vec![],
         }],
         assumptions: vec![],
@@ -281,8 +294,61 @@ fn valid_report_json() -> String {
         open_questions: Vec::<OpenQuestion>::new(),
         confidence: Confidence::Medium,
         limitations: vec![],
+    }
+}
+
+fn aspect_result_json(mut evidence: Vec<Evidence>) -> String {
+    let evidence_refs = evidence
+        .iter()
+        .map(|evidence| evidence.id.clone())
+        .collect::<Vec<_>>();
+    for item in &mut evidence {
+        item.supports_findings = vec!["finding-1".to_owned()];
+    }
+    serde_json::to_string(&AspectResearchResult {
+        aspect_report: valid_aspect_report(evidence_refs),
+        evidence,
     })
-    .expect("report json")
+    .expect("aspect result json")
+}
+
+fn resolve_final_response(mut response: ModelResponse, input: &[ModelInputItem]) -> ModelResponse {
+    if response.content.as_deref() == Some(VALID_ASPECT_RESULT_SENTINEL) {
+        response.content = Some(aspect_result_json(vec![first_evidence_from_tool_output(
+            input,
+        )]));
+    } else if response.content.as_deref() == Some(UNKNOWN_EVIDENCE_SENTINEL) {
+        let mut evidence = first_evidence_from_tool_output(input);
+        evidence.id = "ev-missing".to_owned();
+        response.content = Some(aspect_result_json(vec![evidence]));
+    } else if response.content.as_deref() == Some(TAMPERED_EVIDENCE_SENTINEL) {
+        let mut evidence = first_evidence_from_tool_output(input);
+        evidence.summary = "tampered summary".to_owned();
+        response.content = Some(aspect_result_json(vec![evidence]));
+    } else if response.content.as_deref() == Some(INTERPRETIVE_EVIDENCE_SENTINEL) {
+        let mut evidence = first_evidence_from_tool_output(input);
+        evidence.source_type = SourceType::Official;
+        evidence.confidence = Confidence::High;
+        response.content = Some(aspect_result_json(vec![evidence]));
+    }
+    response
+}
+
+fn first_evidence_from_tool_output(input: &[ModelInputItem]) -> Evidence {
+    evidence_from_tool_output(input, 0)
+}
+
+fn evidence_from_tool_output(input: &[ModelInputItem], index: usize) -> Evidence {
+    let output = input
+        .iter()
+        .rev()
+        .find_map(|item| match item {
+            ModelInputItem::ToolOutput(output) => Some(output.output.as_str()),
+            _ => None,
+        })
+        .expect("tool output");
+    let value = serde_json::from_str::<serde_json::Value>(output).expect("tool output json");
+    serde_json::from_value(value["results"][index].clone()).expect("evidence result")
 }
 
 fn budget(max_turns: usize, max_tool_calls: usize, max_search_calls: usize) -> AgentBudget {
@@ -452,7 +518,7 @@ async fn accepts_absolute_prompt_asset_path() {
     .await
     .expect("valid absolute prompt path");
 
-    assert_eq!(result.aspect_report.aspect_id, "aspect-1");
+    assert_eq!(result.result.aspect_report.aspect_id, "aspect-1");
     assert_eq!(search_calls.load(Ordering::SeqCst), 1);
 }
 
@@ -513,7 +579,7 @@ async fn delegates_valid_request_to_runtime() {
     .await
     .expect("aspect result");
 
-    assert_eq!(result.aspect_report.aspect_id, "aspect-1");
+    assert_eq!(result.result.aspect_report.aspect_id, "aspect-1");
     assert_eq!(search_calls.load(Ordering::SeqCst), 1);
 }
 
@@ -532,15 +598,14 @@ async fn fake_model_and_search_complete_successfully() {
 
     assert_eq!(model_calls.load(Ordering::SeqCst), 2);
     assert_eq!(search_calls.load(Ordering::SeqCst), 1);
-    assert_ne!(output.evidence[0].query, "private query");
+    assert_eq!(output.result.evidence[0].query, "private query");
+    assert_eq!(output.result.evidence[0].snippet, "snippet");
     assert_eq!(
-        output.evidence[0].snippet,
-        "raw search snippet omitted by output policy"
+        output.result.evidence[0].url.as_deref(),
+        Some("https://example.test/source")
     );
-    assert!(output.evidence[0].url.is_none());
-    assert!(output.trace_summary.is_some());
-    assert!(output.search_queries.is_empty());
-    assert!(output.tool_calls.is_empty());
+    assert_eq!(output.search_queries.len(), 1);
+    assert_eq!(output.tool_calls.len(), 1);
 }
 
 #[tokio::test]
@@ -557,16 +622,18 @@ async fn success_output_omits_trace_when_policy_disables_it() {
         .await
         .expect("runtime output");
 
-    assert!(output.trace_summary.is_none());
-    assert!(output.search_queries.is_empty());
-    assert!(output.tool_calls.is_empty());
-    assert_eq!(output.evidence.len(), 1);
+    assert_eq!(
+        output.trace_summary.termination_reason,
+        Some(TerminationReason::Completed)
+    );
+    assert_eq!(output.search_queries.len(), 1);
+    assert_eq!(output.tool_calls.len(), 1);
+    assert_eq!(output.result.evidence.len(), 1);
 }
 
 #[tokio::test]
-async fn tool_trace_summary_redacts_query_when_query_trace_is_enabled() {
-    let mut request = aspect_request();
-    request.evidence_policy.include_query_trace = true;
+async fn tool_trace_summary_keeps_query_but_input_summary_hides_it() {
+    let request = aspect_request();
     let (model_service, search_service, _model_calls, _search_calls) = services(vec![
         tool_response("search"),
         final_response(valid_report_json()),
@@ -577,7 +644,7 @@ async fn tool_trace_summary_redacts_query_when_query_trace_is_enabled() {
         .await
         .expect("runtime output");
 
-    assert_eq!(output.evidence[0].query, "private query");
+    assert_eq!(output.result.evidence[0].query, "private query");
     assert_eq!(output.search_queries[0].query, "private query");
     assert_eq!(
         output.tool_calls[0].input_summary,
@@ -636,6 +703,105 @@ async fn model_tool_outputs_use_ordered_responses_items() {
                 if message.content == "Tool calls accepted and executed."
         )
     }));
+}
+
+#[tokio::test]
+async fn search_tool_output_includes_full_results_for_layer2() {
+    let request = aspect_request();
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let search_calls = Arc::new(AtomicUsize::new(0));
+    let captured_requests = Arc::new(Mutex::new(Vec::new()));
+    let mut model_service = ModelService::new();
+    model_service.register(CapturingSequenceModelProvider {
+        calls: model_calls.clone(),
+        responses: Mutex::new(
+            vec![tool_response("search"), final_response(valid_report_json())].into(),
+        ),
+        requests: captured_requests.clone(),
+    });
+    let mut search_service = SearchService::new();
+    search_service.register(CountingSearchProvider {
+        calls: search_calls.clone(),
+    });
+
+    AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect("agent output");
+
+    let requests = captured_requests.lock().expect("requests lock").clone();
+    let tool_output = requests[1]
+        .input
+        .iter()
+        .find_map(|item| match item {
+            ModelInputItem::ToolOutput(output) => Some(output.output.as_str()),
+            _ => None,
+        })
+        .expect("tool output");
+    let value = serde_json::from_str::<serde_json::Value>(tool_output).expect("tool output json");
+
+    assert!(value.get("evidence_ids").is_none());
+    assert_eq!(value["tool"], "search");
+    assert_eq!(value["query"], "private query");
+    assert_eq!(value["provider"], "searcher");
+    assert_eq!(value["result_count"], 1);
+    assert_eq!(value["results"][0]["id"], "ev-1-1");
+    assert_eq!(value["results"][0]["source_title"], "Source");
+    assert_eq!(value["results"][0]["url"], "https://example.test/source");
+    assert_eq!(value["results"][0]["query"], "private query");
+    assert_eq!(value["results"][0]["snippet"], "snippet");
+    assert_eq!(value["results"][0]["summary"], "summary");
+    assert_eq!(value["results"][0]["published_at"], "2026-05-25");
+    assert!(value["results"][0]["retrieved_at"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn rejects_selected_evidence_not_seen_in_tool_output() {
+    let request = aspect_request();
+    let (model_service, search_service, _model_calls, _search_calls) = services(vec![
+        tool_response("search"),
+        final_response(UNKNOWN_EVIDENCE_SENTINEL.to_owned()),
+    ]);
+
+    let error = AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect_err("unknown evidence rejected");
+
+    assert!(matches!(error.error, Error::SchemaValidationFailed { .. }));
+}
+
+#[tokio::test]
+async fn rejects_tampered_evidence_provenance() {
+    let request = aspect_request();
+    let (model_service, search_service, _model_calls, _search_calls) = services(vec![
+        tool_response("search"),
+        final_response(TAMPERED_EVIDENCE_SENTINEL.to_owned()),
+    ]);
+
+    let error = AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect_err("tampered evidence rejected");
+
+    assert!(matches!(error.error, Error::SchemaValidationFailed { .. }));
+}
+
+#[tokio::test]
+async fn allows_layer2_to_set_interpretive_evidence_fields() {
+    let request = aspect_request();
+    let (model_service, search_service, _model_calls, _search_calls) = services(vec![
+        tool_response("search"),
+        final_response(INTERPRETIVE_EVIDENCE_SENTINEL.to_owned()),
+    ]);
+
+    let output = AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect("interpretive fields accepted");
+
+    assert_eq!(output.result.evidence[0].source_type, SourceType::Official);
+    assert_eq!(output.result.evidence[0].confidence, Confidence::High);
 }
 
 #[tokio::test]
@@ -783,10 +949,8 @@ async fn model_tool_outputs_can_fall_back_after_previous_response_id() {
 }
 
 #[tokio::test]
-async fn search_trace_includes_structured_sources_when_allowed() {
-    let mut request = aspect_request();
-    request.evidence_policy.include_query_trace = true;
-    request.evidence_policy.include_source_urls = true;
+async fn search_trace_includes_structured_sources() {
+    let request = aspect_request();
     let (model_service, search_service, _model_calls, _search_calls) = services(vec![
         tool_response("search"),
         final_response(valid_report_json()),
@@ -817,7 +981,7 @@ async fn search_trace_includes_structured_sources_when_allowed() {
 }
 
 #[tokio::test]
-async fn success_output_omits_detail_trace_when_query_trace_is_disabled() {
+async fn success_output_retains_complete_internal_runtime_metadata() {
     let request = aspect_request();
     let (model_service, search_service, _model_calls, _search_calls) = services(vec![
         tool_response("search"),
@@ -829,18 +993,22 @@ async fn success_output_omits_detail_trace_when_query_trace_is_disabled() {
         .await
         .expect("runtime output");
 
-    assert!(output.trace_summary.is_some());
-    assert!(output.search_queries.is_empty());
-    assert!(output.tool_calls.is_empty());
-    assert_eq!(output.evidence[0].query, "[redacted]");
-    assert!(output.evidence[0].url.is_none());
+    assert_eq!(
+        output.trace_summary.termination_reason,
+        Some(TerminationReason::Completed)
+    );
+    assert_eq!(output.search_queries[0].query, "private query");
+    assert_eq!(output.tool_calls.len(), 1);
+    assert_eq!(output.result.evidence[0].query, "private query");
+    assert_eq!(
+        output.result.evidence[0].url.as_deref(),
+        Some("https://example.test/source")
+    );
 }
 
 #[tokio::test]
 async fn budget_failure_preserves_completed_partial_trace() {
     let mut request = aspect_request();
-    request.evidence_policy.include_query_trace = true;
-    request.evidence_policy.include_source_urls = true;
     request.budget.max_search_calls = Limit::limited(2);
     let (model_service, search_service, _model_calls, search_calls) = services(vec![
         tool_response("search"),
@@ -879,9 +1047,7 @@ async fn budget_failure_preserves_completed_partial_trace() {
 
 #[tokio::test]
 async fn provider_failure_preserves_prior_partial_trace() {
-    let mut request = aspect_request();
-    request.evidence_policy.include_query_trace = true;
-    request.evidence_policy.include_source_urls = true;
+    let request = aspect_request();
 
     let model_calls = Arc::new(AtomicUsize::new(0));
     let search_calls = Arc::new(AtomicUsize::new(0));
@@ -962,7 +1128,7 @@ async fn slow_final_model_call_exhausts_effective_timeout() {
     request.budget.timeout_ms = Limit::limited(60_000);
     request.execution_policy.timeout_ms = Some(1);
     let (model_service, search_service, model_calls, search_calls) = services_with_delay(
-        vec![final_response(valid_report_json())],
+        vec![final_response("{}".to_owned())],
         Some(Duration::from_millis(5)),
     );
 

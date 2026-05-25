@@ -4,7 +4,10 @@ use lapis_core::schema::policy::{
     EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
     ToolName,
 };
-use lapis_core::schema::report::{AspectReport, Confidence, Finding, FindingType, Importance};
+use lapis_core::schema::report::{
+    AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
+    SourceType,
+};
 use lapis_core::schema::research::{
     AspectResearchRequest, AspectSpec, DeliverableSpec, PromptAssets, ResearchConstraint,
     ResearchContext, ResearchPlan,
@@ -213,4 +216,65 @@ fn validate_rejects_invalid_temperature_and_zero_max_tokens() {
     request.max_tokens = Some(0);
 
     assert!(request.validate().is_err());
+}
+
+#[test]
+fn aspect_research_result_schema_excludes_runtime_metadata() {
+    let schema = serde_json::to_value(rmcp::schemars::schema_for!(AspectResearchResult))
+        .expect("schema json");
+    let properties = schema["properties"].as_object().expect("properties");
+
+    assert!(properties.contains_key("aspect_report"));
+    assert!(properties.contains_key("evidence"));
+    assert!(!properties.contains_key("provider_usage"));
+    assert!(!properties.contains_key("budget_usage"));
+    assert!(!properties.contains_key("trace_summary"));
+    assert!(!properties.contains_key("search_queries"));
+    assert!(!properties.contains_key("tool_calls"));
+}
+
+#[test]
+fn aspect_research_result_roundtrips_json() {
+    let result = AspectResearchResult {
+        aspect_report: AspectReport {
+            aspect_id: "aspect-1".to_owned(),
+            aspect_name: "Aspect".to_owned(),
+            question: "What is true?".to_owned(),
+            scope: vec!["scope".to_owned()],
+            findings: vec![Finding {
+                id: "finding-1".to_owned(),
+                claim: "A supported claim".to_owned(),
+                finding_type: FindingType::Fact,
+                importance: Importance::High,
+                confidence: Confidence::Medium,
+                evidence_refs: vec!["ev-1-1".to_owned()],
+                contradicted_by: vec![],
+            }],
+            assumptions: vec![],
+            risks: vec![],
+            counterarguments: vec![],
+            open_questions: vec![],
+            confidence: Confidence::Medium,
+            limitations: vec![],
+        },
+        evidence: vec![Evidence {
+            id: "ev-1-1".to_owned(),
+            source_title: "Source".to_owned(),
+            url: Some("https://example.test/source".to_owned()),
+            provider: "searcher".to_owned(),
+            query: "query".to_owned(),
+            snippet: "snippet".to_owned(),
+            summary: "summary".to_owned(),
+            published_at: None,
+            retrieved_at: "2026-05-25T00:00:00Z".to_owned(),
+            supports_findings: vec!["finding-1".to_owned()],
+            source_type: SourceType::Official,
+            confidence: Confidence::High,
+        }],
+    };
+
+    let json = serde_json::to_string(&result).expect("serialize result");
+    let decoded = serde_json::from_str::<AspectResearchResult>(&json).expect("decode result");
+
+    assert_eq!(decoded, result);
 }
