@@ -53,12 +53,17 @@ impl LapisMcpServer {
                         request_id = %request_id,
                         aspect_id = %aspect_id,
                         tool = "aspect_research",
-                        error_code = ?failure.error.code(),
-                        retryable = failure.error.to_tool_error().retryable,
+                        error_code = failure.error.code().as_str(),
+                        retryable = failure.error.retryable(),
                         status = "failed",
                         "MCP tool failed"
                     );
-                    failed_envelope(schema_version, request_id, &failure.error)
+                    failed_envelope(
+                        schema_version,
+                        request_id,
+                        Some(aspect_id.clone()),
+                        &failure.error,
+                    )
                 }
             },
         )
@@ -102,12 +107,12 @@ impl LapisMcpServer {
                     tracing::warn!(
                         request_id = %request_id,
                         tool = "deep_research",
-                        error_code = ?error.code(),
-                        retryable = error.to_tool_error().retryable,
+                        error_code = error.code().as_str(),
+                        retryable = error.retryable(),
                         status = "failed",
                         "MCP tool failed"
                     );
-                    failed_envelope(schema_version, request_id, &error)
+                    failed_envelope(schema_version, request_id, None, &error)
                 }
             },
         )
@@ -151,9 +156,19 @@ fn deep_success_envelope(
     }
 }
 
+/// Builds a `failed` MCP envelope.
+///
+/// `aspect_id = Some(_)` is required for single-aspect tool failures (e.g.
+/// `aspect_research`) so external clients can pinpoint the failing aspect.
+/// Top-level deep-research failures pass `None`.
+///
+/// `data` and `run_id` are intentionally `None`; the envelope serializes them
+/// as JSON `null` to satisfy the contract pinned by `tool_envelope_failed_*`
+/// golden tests.
 fn failed_envelope<T>(
     schema_version: String,
     request_id: String,
+    aspect_id: Option<String>,
     error: &Error,
 ) -> ToolEnvelope<T> {
     ToolEnvelope {
@@ -162,6 +177,6 @@ fn failed_envelope<T>(
         run_id: None,
         status: ToolStatus::Failed,
         data: None,
-        error: Some(error.to_tool_error()),
+        error: Some(error.to_tool_error_with_aspect(aspect_id)),
     }
 }

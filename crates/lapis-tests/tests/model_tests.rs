@@ -586,3 +586,39 @@ async fn request_serializes_function_call_output_items() {
     assert_eq!(body["input"][2]["call_id"], "call_1");
     assert_eq!(body["input"][2]["output"], r#"{"result_count":1}"#);
 }
+
+/// The OpenAI Responses parser MUST silently tolerate unknown `output` kinds
+/// (forward-compatible behavior driven by `#[serde(other)]` on
+/// `OpenAiResponseOutput::Unknown`), so a provider-side addition does not
+/// fail the whole response.
+#[tokio::test]
+async fn openai_provider_tolerates_unknown_response_output() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [
+                {
+                    "type": "some_future_kind",
+                    "details": {"foo": "bar"}
+                },
+                {
+                    "type": "message",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "hello"
+                    }]
+                }
+            ]
+        }),
+    }]));
+    let provider = provider(network);
+
+    let response = provider
+        .complete(request_with_input(vec![user_message("hi")]))
+        .await
+        .expect("model response");
+
+    assert_eq!(response.content, Some("hello".to_owned()));
+    assert!(response.tool_calls.is_empty());
+}

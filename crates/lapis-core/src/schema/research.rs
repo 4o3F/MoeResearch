@@ -187,12 +187,19 @@ fn validate_aspect_task(
     Ok(())
 }
 
+/// Validates that the request's `schema_version` is in the supported list.
+///
+/// # Errors
+/// Returns `Error::UnsupportedSchemaVersion { version }` when the supplied
+/// value is not in `supported`, so the public error code is the dedicated
+/// `ToolErrorCode::UnsupportedSchemaVersion` instead of the generic
+/// `SchemaValidationFailed`.
 fn ensure_schema_version_supported(version: &str, supported: &[&str]) -> Result<()> {
     if supported.contains(&version) {
         return Ok(());
     }
-    Err(Error::SchemaValidationFailed {
-        message: format!("unsupported schema version: {version}"),
+    Err(Error::UnsupportedSchemaVersion {
+        version: version.to_owned(),
     })
 }
 

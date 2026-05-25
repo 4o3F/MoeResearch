@@ -100,7 +100,10 @@ impl AgentBudget {
 
 impl ResearchBudget {
     pub(crate) fn validate_against_config(&self, limits: &BudgetConfig) -> Result<()> {
-        ensure_budget_non_zero("research budget requires at least one agent", self.max_agents)?;
+        ensure_budget_non_zero(
+            "research budget requires at least one agent",
+            self.max_agents,
+        )?;
         ensure_budget_non_zero(
             "research budget requires non-zero concurrency",
             self.max_concurrent_agents,
@@ -171,10 +174,7 @@ impl AgentBudget {
             "agent budget requires at least one model turn",
             self.max_turns,
         )?;
-        ensure_budget_non_zero(
-            "agent budget requires a non-zero timeout",
-            self.timeout_ms,
-        )?;
+        ensure_budget_non_zero("agent budget requires a non-zero timeout", self.timeout_ms)?;
         Ok(())
     }
 

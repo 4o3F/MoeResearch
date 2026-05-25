@@ -555,7 +555,10 @@ async fn deep_research_partial_success_returns_partial_envelope() {
     assert_eq!(data.completed_aspects.len(), 2);
     assert_eq!(data.failed_aspects.len(), 1);
     assert_eq!(data.failed_aspects[0].aspect_id, "aspect-2");
-    assert_eq!(data.failed_aspects[0].error_code, "SchemaValidationFailed");
+    assert_eq!(
+        data.failed_aspects[0].error_code,
+        "schema_validation_failed"
+    );
 }
 
 #[tokio::test]
@@ -613,6 +616,166 @@ fn error_retryability_mapping_is_stable() {
         .to_tool_error()
         .retryable
     );
+}
+
+/// `ToolErrorCode::as_str` MUST emit the same snake_case string that serde
+/// produces under `#[serde(rename_all = "snake_case")]`, so external clients
+/// can rely on either path to dispatch on the same identifier.
+#[test]
+fn tool_error_code_as_str_matches_serde() {
+    let codes = [
+        ToolErrorCode::InvalidInput,
+        ToolErrorCode::UnsupportedSchemaVersion,
+        ToolErrorCode::ConfigInvalid,
+        ToolErrorCode::ProviderUnavailable,
+        ToolErrorCode::NetworkFailed,
+        ToolErrorCode::BudgetExceeded,
+        ToolErrorCode::ToolPolicyDenied,
+        ToolErrorCode::SchemaValidationFailed,
+        ToolErrorCode::Timeout,
+        ToolErrorCode::PartialResult,
+        ToolErrorCode::Internal,
+    ];
+    for code in codes {
+        let serde_value = serde_json::to_value(code).expect("serialize");
+        let serde_str = serde_value.as_str().expect("string");
+        assert_eq!(serde_str, code.as_str(), "mismatch for {code:?}");
+    }
+}
+
+/// The MCP envelope MUST serialize `run_id: null` and `error: null` (not
+/// omitted) on `status = "ok"` so external clients can rely on a fixed key
+/// set per the public contract in `docs/research-agent-product.md` §10.1.
+#[tokio::test]
+async fn tool_envelope_ok_serializes_null_run_id_and_null_error() {
+    let envelope = mcp_server(services(&[]))
+        .aspect_research(Parameters(aspect_request()))
+        .await
+        .0;
+    assert_eq!(envelope.status, ToolStatus::Ok);
+    let value = serde_json::to_value(&envelope).expect("envelope json");
+    let object = value.as_object().expect("object envelope");
+    assert!(object.contains_key("run_id"), "run_id key must be present");
+    assert!(object.contains_key("error"), "error key must be present");
+    assert!(object["run_id"].is_null(), "run_id must serialize as null");
+    assert!(object["error"].is_null(), "error must serialize as null");
+}
+
+/// Partial envelopes MUST surface `run_id`, populated `data`, and an explicit
+/// `error: null` so clients can distinguish the partial path from a failed
+/// envelope without inspecting `status`.
+#[tokio::test]
+async fn tool_envelope_partial_includes_data_and_null_error_with_run_id() {
+    let envelope = mcp_server(services(&["aspect-2"]))
+        .deep_research(Parameters(deep_request(3)))
+        .await
+        .0;
+    assert_eq!(envelope.status, ToolStatus::Partial);
+    let value = serde_json::to_value(&envelope).expect("envelope json");
+    let object = value.as_object().expect("object envelope");
+    assert!(object["run_id"].is_string(), "run_id must be populated");
+    assert!(object["data"].is_object(), "data must be populated");
+    assert!(object.contains_key("error"));
+    assert!(object["error"].is_null(), "error must serialize as null");
+}
+
+/// Failed envelopes MUST serialize `run_id: null` and `data: null` so clients
+/// see the same key set across `ok` / `partial` / `failed` responses.
+#[tokio::test]
+async fn tool_envelope_failed_serializes_null_run_id_and_null_data() {
+    let mut request = aspect_request();
+    request.task.aspect.research_question.clear();
+    let envelope = mcp_server(services(&[]))
+        .aspect_research(Parameters(request))
+        .await
+        .0;
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    let value = serde_json::to_value(&envelope).expect("envelope json");
+    let object = value.as_object().expect("object envelope");
+    assert!(object.contains_key("run_id"));
+    assert!(object["run_id"].is_null(), "run_id must serialize as null");
+    assert!(object["data"].is_null(), "data must serialize as null");
+    assert!(object["error"].is_object(), "error must be populated");
+}
+
+/// Aspect-research failures MUST carry the failing aspect id in `error.aspect_id`
+/// so external clients can pinpoint the failure without parsing the message.
+#[tokio::test]
+async fn tool_envelope_failed_aspect_research_carries_aspect_id() {
+    let mut request = aspect_request();
+    request.task.aspect.research_question.clear();
+    let expected_aspect_id = request.task.aspect.aspect_id.clone();
+    let envelope = mcp_server(services(&[]))
+        .aspect_research(Parameters(request))
+        .await
+        .0;
+    let error = envelope.error.expect("tool error");
+    assert_eq!(
+        error.aspect_id.as_deref(),
+        Some(expected_aspect_id.as_str())
+    );
+}
+
+/// Top-level deep-research failures cannot be tied to a single aspect, so
+/// the envelope MUST set `error.aspect_id` to `None`.
+#[tokio::test]
+async fn tool_envelope_failed_deep_research_aspect_id_is_none() {
+    let mut request = deep_request(1);
+    request.schema_version = "not-a-supported-version".to_owned();
+    let envelope = mcp_server(services(&[]))
+        .deep_research(Parameters(request))
+        .await
+        .0;
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::UnsupportedSchemaVersion);
+    assert!(error.aspect_id.is_none());
+}
+
+/// `ToolError.message` MUST be a stable, redacted summary; detailed context
+/// (provider names, request bodies, header values) belongs in `tracing`,
+/// never in the public envelope.
+#[test]
+fn tool_envelope_message_redacts_provider_path_and_api_key() {
+    let error = Error::HttpTransport {
+        message: "POST https://api.openai.com/v1/responses Authorization=sk-abcdef".to_owned(),
+        retryable: true,
+    };
+    let tool_error = error.to_tool_error();
+    assert_eq!(tool_error.code, ToolErrorCode::NetworkFailed);
+    assert!(!tool_error.message.contains("Authorization"));
+    assert!(!tool_error.message.contains("sk-abcdef"));
+    assert!(!tool_error.message.contains("api.openai.com"));
+}
+
+/// An unsupported `schema_version` MUST produce the dedicated
+/// `ToolErrorCode::UnsupportedSchemaVersion` rather than the generic
+/// `SchemaValidationFailed`, so clients can differentiate the two.
+#[tokio::test]
+async fn unsupported_schema_version_returns_dedicated_code_aspect_research() {
+    let mut request = aspect_request();
+    request.schema_version = "v999".to_owned();
+    let envelope = mcp_server(services(&[]))
+        .aspect_research(Parameters(request))
+        .await
+        .0;
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::UnsupportedSchemaVersion);
+}
+
+/// Same dedicated-code guarantee for the deep_research entry point.
+#[tokio::test]
+async fn unsupported_schema_version_returns_dedicated_code_deep_research() {
+    let mut request = deep_request(1);
+    request.schema_version = "v999".to_owned();
+    let envelope = mcp_server(services(&[]))
+        .deep_research(Parameters(request))
+        .await
+        .0;
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::UnsupportedSchemaVersion);
 }
 
 #[test]

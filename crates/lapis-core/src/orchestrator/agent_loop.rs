@@ -132,10 +132,10 @@ impl<'a> AgentRuntime<'a> {
         loop {
             let model_response = match self.complete_model_turn(&mut state, &mut budget).await {
                 Ok(response) => response,
-                Err(error) => return Err(self.failure(error, state, &budget)),
+                Err(error) => return Err(self.failure(error, &state, &budget)),
             };
             if let Err(error) = deadline.ensure_not_elapsed() {
-                return Err(self.failure(error, state, &budget));
+                return Err(self.failure(error, &state, &budget));
             }
             if model_response.tool_calls.is_empty() {
                 let content = match model_response.content.as_deref().ok_or_else(|| {
@@ -144,7 +144,7 @@ impl<'a> AgentRuntime<'a> {
                     }
                 }) {
                     Ok(content) => content,
-                    Err(error) => return Err(self.failure(error, state, &budget)),
+                    Err(error) => return Err(self.failure(error, &state, &budget)),
                 };
                 return self
                     .finish(content, state, &budget, &validator)
@@ -165,10 +165,10 @@ impl<'a> AgentRuntime<'a> {
                     .await
                 {
                     Ok(output) => output,
-                    Err(error) => return Err(self.failure(error, state, &budget)),
+                    Err(error) => return Err(self.failure(error, &state, &budget)),
                 };
                 if let Err(error) = deadline.ensure_not_elapsed() {
-                    return Err(self.failure(error, state, &budget));
+                    return Err(self.failure(error, &state, &budget));
                 }
                 tool_outputs.push(output);
             }
@@ -202,7 +202,7 @@ impl<'a> AgentRuntime<'a> {
                     aspect_id = %self.request.task.aspect.aspect_id,
                     duration_ms = elapsed_ms(model_started.elapsed()),
                     error_code = ?error.code(),
-                    retryable = error.to_tool_error().retryable,
+                    retryable = error.retryable(),
                     status = "failed",
                     "model turn failed"
                 );
@@ -228,6 +228,14 @@ impl<'a> AgentRuntime<'a> {
         Ok(model_response)
     }
 
+    /// Dispatches a single model-requested tool call through the policy guard,
+    /// the budget guard, and the relevant provider.
+    ///
+    /// This method is intentionally long-lived: it owns the search-tool fast
+    /// path, evidence collection, and the policy-rejection branch. A finer
+    /// split is planned alongside the Commit 3 tool-boundary rework; until
+    /// then `clippy::too_many_lines` is suppressed locally.
+    #[allow(clippy::too_many_lines)]
     async fn execute_tool_call(
         &self,
         tool_call: &ModelToolCall,
@@ -246,7 +254,7 @@ impl<'a> AgentRuntime<'a> {
                     tool_call_id = %tool_call.id,
                     tool_name = %tool_call.name,
                     error_code = ?error.code(),
-                    retryable = error.to_tool_error().retryable,
+                    retryable = error.retryable(),
                     status = "denied",
                     "tool call denied"
                 );
@@ -269,7 +277,7 @@ impl<'a> AgentRuntime<'a> {
                 search_calls_used = budget_usage.search_calls_used,
                 elapsed_ms = budget_usage.elapsed_ms,
                 error_code = ?error.code(),
-                retryable = error.to_tool_error().retryable,
+                retryable = error.retryable(),
                 status = "rejected",
                 "search tool call budget rejected"
             );
@@ -304,7 +312,7 @@ impl<'a> AgentRuntime<'a> {
                     provider = %search_provider,
                     duration_ms = elapsed_ms(search_started.elapsed()),
                     error_code = ?error.code(),
-                    retryable = error.to_tool_error().retryable,
+                    retryable = error.retryable(),
                     status = "failed",
                     "search call failed"
                 );
@@ -358,7 +366,7 @@ impl<'a> AgentRuntime<'a> {
     ) -> std::result::Result<AgentRuntimeOutput, Box<AgentRuntimeFailure>> {
         let (result, _) = match validator.validate_content(content, &state.candidate_evidence) {
             Ok(result) => result,
-            Err(error) => return Err(Box::new(self.failure(error, state, budget))),
+            Err(error) => return Err(Box::new(self.failure(error, &state, budget))),
         };
         let budget_usage = budget.usage();
         tracing::info!(
@@ -510,10 +518,16 @@ impl<'a> AgentRuntime<'a> {
         AgentRuntimeFailure { error }
     }
 
+    /// Records a terminal agent failure with full diagnostic context and
+    /// wraps the error in `AgentRuntimeFailure` so the caller can surface a
+    /// per-aspect failure to the orchestrator.
+    ///
+    /// `state` is borrowed because only the candidate evidence count is read
+    /// here; the runtime state is otherwise owned by the caller.
     fn failure(
         &self,
         error: Error,
-        state: RuntimeState,
+        state: &RuntimeState,
         budget: &AgentBudgetGuard,
     ) -> AgentRuntimeFailure {
         let budget_usage = budget.usage();
@@ -525,8 +539,8 @@ impl<'a> AgentRuntime<'a> {
             search_calls_used = budget_usage.search_calls_used,
             elapsed_ms = budget_usage.elapsed_ms,
             evidence_count = state.candidate_evidence.len(),
-            error_code = ?error.code(),
-            retryable = error.to_tool_error().retryable,
+            error_code = error.code().as_str(),
+            retryable = error.retryable(),
             status = "failed",
             "agent runtime failed"
         );

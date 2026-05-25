@@ -75,14 +75,14 @@ pub async fn deep_research(
             search_calls_used = run.budget_usage.search_calls_used,
             elapsed_ms = run.budget_usage.elapsed_ms,
             error_code = ?error.code(),
-            retryable = error.to_tool_error().retryable,
+            retryable = error.retryable(),
             status = "failed",
             "deep research budget check failed"
         );
         return Err(error);
     }
 
-    let result = finalize_deep_result(request, run, run_id.clone());
+    let result = finalize_deep_result(&request, run, run_id.clone());
     match &result {
         Ok(result) => tracing::info!(
             request_id = %request_id,
@@ -100,7 +100,7 @@ pub async fn deep_research(
             run_id = %run_id,
             requested_aspects,
             error_code = ?error.code(),
-            retryable = error.to_tool_error().retryable,
+            retryable = error.retryable(),
             status = "failed",
             "deep research failed"
         ),
@@ -247,8 +247,13 @@ fn namespace_aspect_evidence(result: &mut AspectResearchResult) {
     }
 }
 
+/// Finalizes a `DeepResearchRun` into either a `DeepResearchResult` or a
+/// terminal error, honoring the `allow_partial_results` execution policy.
+///
+/// `request` is borrowed so the partial-result decision can read the policy
+/// without taking ownership of the deep-research request.
 fn finalize_deep_result(
-    request: DeepResearchRequest,
+    request: &DeepResearchRequest,
     run: DeepResearchRun,
     run_id: String,
 ) -> Result<DeepResearchResult> {
@@ -267,8 +272,14 @@ fn finalize_deep_result(
     Ok(deep_result(request, run, run_id))
 }
 
+/// Builds the public `DeepResearchResult` from the request shape and the
+/// accumulated `DeepResearchRun` state.
+///
+/// `request` is borrowed because we only need `aspect_tasks.len()` for the
+/// coverage summary; `run` is consumed because the aggregated reports and
+/// evidence are moved into the result.
 fn deep_result(
-    request: DeepResearchRequest,
+    request: &DeepResearchRequest,
     run: DeepResearchRun,
     run_id: String,
 ) -> DeepResearchResult {
@@ -280,7 +291,7 @@ fn deep_result(
         evidence_count: evidence_index.len(),
     };
     DeepResearchResult {
-        run_id: run_id.clone(),
+        run_id,
         completed_aspects: run.completed,
         failed_aspects: run.failures,
         confidence_summary: confidence_summary(&run.aspect_reports),
@@ -292,12 +303,19 @@ fn deep_result(
     }
 }
 
+/// Builds the per-aspect failure record embedded inside a partial or failed
+/// `DeepResearchResult`.
+///
+/// `error_code` is the `snake_case` `ToolErrorCode` identifier (matching the
+/// MCP envelope's `error.code` field) rather than `Debug` output, so external
+/// clients can dispatch on a single, stable string. `message` is the same
+/// redacted summary used in the public envelope.
 fn aspect_failure(aspect_id: &str, error: &Error) -> AspectFailure {
     AspectFailure {
         aspect_id: aspect_id.to_owned(),
-        error_code: format!("{:?}", error.code()),
-        message: error.to_string(),
-        retryable: error.to_tool_error().retryable,
+        error_code: error.code().as_str().to_owned(),
+        message: error.public_message(),
+        retryable: error.retryable(),
     }
 }
 
