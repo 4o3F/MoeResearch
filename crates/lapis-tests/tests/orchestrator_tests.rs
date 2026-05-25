@@ -8,7 +8,7 @@ use lapis_core::error::{Error, Result};
 use lapis_core::model::provider::ModelProvider;
 use lapis_core::model::service::ModelService;
 use lapis_core::orchestrator::agent_loop::AgentRuntime;
-use lapis_core::orchestrator::budget::AgentBudgetGuard;
+use lapis_core::orchestrator::budget::{AgentBudgetGuard, ResearchBudgetGuard};
 use lapis_core::orchestrator::workflow::aspect_research;
 use lapis_core::schema::budget::{AgentBudget, BudgetConfig, ResearchBudget};
 use lapis_core::schema::limit::Limit;
@@ -746,7 +746,7 @@ async fn fake_model_and_search_complete_successfully() {
         final_response(valid_report_json()),
     ]);
 
-    let output = AgentRuntime::new(&model_service, &search_service, &request)
+    let output = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect("runtime output");
@@ -772,7 +772,7 @@ async fn success_output_includes_resource_accounting() {
         final_response(valid_report_json()),
     ]);
 
-    let output = AgentRuntime::new(&model_service, &search_service, &request)
+    let output = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect("runtime output");
@@ -791,7 +791,7 @@ async fn search_tool_keeps_query_in_business_evidence() {
         final_response(valid_report_json()),
     ]);
 
-    let output = AgentRuntime::new(&model_service, &search_service, &request)
+    let output = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect("runtime output");
@@ -819,7 +819,7 @@ async fn model_tool_outputs_use_ordered_responses_items() {
         calls: search_calls.clone(),
     });
 
-    AgentRuntime::new(&model_service, &search_service, &request)
+    AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect("agent output");
@@ -871,7 +871,7 @@ async fn search_tool_output_includes_full_results_for_layer2() {
         calls: search_calls.clone(),
     });
 
-    AgentRuntime::new(&model_service, &search_service, &request)
+    AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect("agent output");
@@ -910,7 +910,7 @@ async fn rejects_selected_evidence_not_seen_in_tool_output() {
         final_response(UNKNOWN_EVIDENCE_SENTINEL.to_owned()),
     ]);
 
-    let error = AgentRuntime::new(&model_service, &search_service, &request)
+    let error = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect_err("unknown evidence rejected");
@@ -926,7 +926,7 @@ async fn rejects_tampered_evidence_provenance() {
         final_response(TAMPERED_EVIDENCE_SENTINEL.to_owned()),
     ]);
 
-    let error = AgentRuntime::new(&model_service, &search_service, &request)
+    let error = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect_err("tampered evidence rejected");
@@ -942,7 +942,7 @@ async fn allows_layer2_to_set_interpretive_evidence_fields() {
         final_response(INTERPRETIVE_EVIDENCE_SENTINEL.to_owned()),
     ]);
 
-    let output = AgentRuntime::new(&model_service, &search_service, &request)
+    let output = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect("interpretive fields accepted");
@@ -974,7 +974,7 @@ async fn model_tool_outputs_fallback_replays_tool_calls() {
         calls: search_calls.clone(),
     });
 
-    AgentRuntime::new(&model_service, &search_service, &request)
+    AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect("agent output");
@@ -1019,7 +1019,7 @@ async fn model_tool_outputs_use_previous_response_id_when_available() {
         calls: search_calls.clone(),
     });
 
-    AgentRuntime::new(&model_service, &search_service, &request)
+    AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect("agent output");
@@ -1061,7 +1061,7 @@ async fn model_tool_outputs_can_fall_back_after_previous_response_id() {
         calls: search_calls.clone(),
     });
 
-    AgentRuntime::new(&model_service, &search_service, &request)
+    AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect("agent output");
@@ -1103,7 +1103,7 @@ async fn evidence_includes_structured_sources() {
         final_response(valid_report_json()),
     ]);
 
-    let output = AgentRuntime::new(&model_service, &search_service, &request)
+    let output = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect("runtime output");
@@ -1125,7 +1125,7 @@ async fn success_output_retains_budget_usage_and_token_usage() {
         final_response(valid_report_json()),
     ]);
 
-    let output = AgentRuntime::new(&model_service, &search_service, &request)
+    let output = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect("runtime output");
@@ -1150,7 +1150,7 @@ async fn budget_failure_stops_after_completed_searches() {
         tool_response("search"),
     ]);
 
-    let failure = AgentRuntime::new(&model_service, &search_service, &request)
+    let failure = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect_err("budget failure");
@@ -1185,7 +1185,7 @@ async fn provider_failure_returns_error_after_prior_successful_search() {
         ),
     });
 
-    let failure = AgentRuntime::new(&model_service, &search_service, &request)
+    let failure = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect_err("provider failure");
@@ -1200,10 +1200,15 @@ async fn budget_exhaustion_stops_before_actions() {
     zero_turn_request.task.budget.max_turns = Limit::limited(0);
     let (model_service, search_service, model_calls, search_calls) = services(vec![]);
 
-    let error = AgentRuntime::new(&model_service, &search_service, &zero_turn_request)
-        .run()
-        .await
-        .expect_err("budget error");
+    let error = AgentRuntime::new(
+        &model_service,
+        &search_service,
+        &zero_turn_request,
+        ResearchBudgetGuard::unlimited(),
+    )
+    .run()
+    .await
+    .expect_err("budget error");
 
     assert!(matches!(error.error, Error::BudgetExceeded { .. }));
     assert_eq!(model_calls.load(Ordering::SeqCst), 0);
@@ -1214,7 +1219,7 @@ async fn budget_exhaustion_stops_before_actions() {
     let (model_service, search_service, model_calls, search_calls) =
         services(vec![tool_response("search")]);
 
-    let error = AgentRuntime::new(&model_service, &search_service, &request)
+    let error = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect_err("search budget error");
@@ -1234,7 +1239,7 @@ async fn slow_final_model_call_exhausts_effective_timeout() {
         Some(Duration::from_millis(5)),
     );
 
-    let error = AgentRuntime::new(&model_service, &search_service, &request)
+    let error = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect_err("execution timeout error");
@@ -1254,7 +1259,7 @@ async fn lower_execution_timeout_is_enforced_before_search() {
         Some(Duration::from_millis(5)),
     );
 
-    let error = AgentRuntime::new(&model_service, &search_service, &request)
+    let error = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect_err("execution timeout error");
@@ -1270,7 +1275,7 @@ async fn invalid_tool_stops_without_search() {
     let (model_service, search_service, _model_calls, search_calls) =
         services(vec![tool_response("filesystem")]);
 
-    let error = AgentRuntime::new(&model_service, &search_service, &request)
+    let error = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect_err("tool policy error");
@@ -1285,7 +1290,7 @@ async fn invalid_final_output_returns_schema_failure() {
     let (model_service, search_service, _model_calls, _search_calls) =
         services(vec![final_response("{}".to_owned())]);
 
-    let error = AgentRuntime::new(&model_service, &search_service, &request)
+    let error = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect_err("schema error");
@@ -1329,7 +1334,7 @@ async fn duplicate_tool_call_ids_are_rejected_before_dispatch() {
     let (model_service, search_service, _model_calls, search_calls) =
         services(vec![duplicate_id_tool_response()]);
 
-    let error = AgentRuntime::new(&model_service, &search_service, &request)
+    let error = AgentRuntime::new(&model_service, &search_service, &request, ResearchBudgetGuard::unlimited())
         .run()
         .await
         .expect_err("duplicate tool call must fail");

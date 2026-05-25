@@ -144,6 +144,11 @@ impl ResearchBudget {
             self.total_timeout_ms,
             limits.research.total_timeout_ms,
         )?;
+        ensure_within(
+            "research tokens",
+            self.max_tokens,
+            limits.research.max_tokens,
+        )?;
 
         Ok(())
     }
@@ -164,7 +169,29 @@ impl ResearchBudget {
             Limit::limited(usage.elapsed_ms),
             self.total_timeout_ms,
         )?;
+        if let Some(total_tokens) = usage
+            .token_usage
+            .as_ref()
+            .and_then(super::report::TokenUsage::total_or_sum)
+        {
+            self.ensure_tokens_within(total_tokens)?;
+        }
         Ok(())
+    }
+
+    /// Asserts that the supplied cumulative token total stays within
+    /// `max_tokens`.
+    ///
+    /// # Errors
+    /// Returns `Error::BudgetExceeded` when `total_tokens` exceeds the cap.
+    /// Untracked usage (provider reported nothing) is reported as `None` by
+    /// the caller and therefore does not advance the counter.
+    pub(crate) fn ensure_tokens_within(&self, total_tokens: u64) -> Result<()> {
+        ensure_usage_within(
+            "research token",
+            Limit::limited(total_tokens),
+            self.max_tokens,
+        )
     }
 }
 

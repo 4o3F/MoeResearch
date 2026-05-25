@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -5,7 +6,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::error::{Error, Result};
 use crate::model::service::ModelService;
-use crate::orchestrator::budget::AgentBudgetGuard;
+use crate::orchestrator::budget::{AgentBudgetGuard, ResearchBudgetGuard};
 use crate::orchestrator::tool_policy::ToolPolicyGuard;
 use crate::orchestrator::validator::OutputValidator;
 use crate::schema::limit::{DurationLimitMs, Limit};
@@ -24,6 +25,7 @@ pub struct AgentRuntime<'a> {
     model_service: &'a ModelService,
     search_service: &'a SearchService,
     request: &'a AspectResearchRequest,
+    research_budget: Arc<ResearchBudgetGuard>,
 }
 
 #[derive(Debug)]
@@ -106,11 +108,13 @@ impl<'a> AgentRuntime<'a> {
         model_service: &'a ModelService,
         search_service: &'a SearchService,
         request: &'a AspectResearchRequest,
+        research_budget: Arc<ResearchBudgetGuard>,
     ) -> Self {
         Self {
             model_service,
             search_service,
             request,
+            research_budget,
         }
     }
 
@@ -226,6 +230,17 @@ impl<'a> AgentRuntime<'a> {
         tool_policy: &ToolPolicyGuard,
     ) -> Result<ModelResponse> {
         budget.consume_model_turn()?;
+        if let Err(error) = self.research_budget.try_consume_model_call() {
+            tracing::warn!(
+                request_id = %self.request.request_id,
+                aspect_id = %self.request.task.aspect.aspect_id,
+                error_code = error.code().as_str(),
+                retryable = error.retryable(),
+                status = "rejected",
+                "research model budget rejected before model dispatch"
+            );
+            return Err(error);
+        }
         let model_started = Instant::now();
         let model_response = match self
             .complete_model(
@@ -252,6 +267,17 @@ impl<'a> AgentRuntime<'a> {
         let model_duration = elapsed_ms(model_started.elapsed());
         let usage = model_response.usage.clone();
         add_token_usage(&mut state.token_usage, usage.clone());
+        if let Err(error) = self.research_budget.record_token_usage(usage.clone()) {
+            tracing::warn!(
+                request_id = %self.request.request_id,
+                aspect_id = %self.request.task.aspect.aspect_id,
+                error_code = error.code().as_str(),
+                retryable = error.retryable(),
+                status = "rejected",
+                "research token budget exhausted after model dispatch"
+            );
+            return Err(error);
+        }
 
         tracing::info!(
             request_id = %self.request.request_id,
@@ -320,6 +346,20 @@ impl<'a> AgentRuntime<'a> {
                 retryable = error.retryable(),
                 status = "rejected",
                 "search tool call budget rejected"
+            );
+            return Err(error);
+        }
+        if let Err(error) = self.research_budget.try_consume_search_call() {
+            tracing::warn!(
+                request_id = %self.request.request_id,
+                aspect_id = %self.request.task.aspect.aspect_id,
+                tool_call_id = %tool_call.id,
+                tool_name = %tool_call.name,
+                provider = %search_provider,
+                error_code = error.code().as_str(),
+                retryable = error.retryable(),
+                status = "rejected",
+                "research search budget rejected before search dispatch"
             );
             return Err(error);
         }

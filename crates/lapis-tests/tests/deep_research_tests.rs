@@ -82,6 +82,7 @@ struct AdaptiveModelProvider {
     in_flight: Arc<AtomicUsize>,
     max_in_flight: Arc<AtomicUsize>,
     delay: Duration,
+    usage: Option<lapis_core::schema::report::TokenUsage>,
 }
 
 #[async_trait]
@@ -100,21 +101,21 @@ impl ModelProvider for AdaptiveModelProvider {
         let aspect_id = aspect_field(&request.input, "Aspect ID");
         let aspect_name = aspect_field(&request.input, "Aspect name");
 
-        if !has_tool_output(&request.input) {
-            return Ok(tool_response());
-        }
-
-        if self.failing_aspects.contains(&aspect_id) {
-            return Ok(final_response("{}".to_owned()));
-        }
-
-        let evidence = first_evidence_from_tool_output(&request.input);
-        Ok(final_response(result_json(
-            &aspect_id,
-            &aspect_name,
-            Confidence::Medium,
-            evidence,
-        )))
+        let mut response = if !has_tool_output(&request.input) {
+            tool_response()
+        } else if self.failing_aspects.contains(&aspect_id) {
+            final_response("{}".to_owned())
+        } else {
+            let evidence = first_evidence_from_tool_output(&request.input);
+            final_response(result_json(
+                &aspect_id,
+                &aspect_name,
+                Confidence::Medium,
+                evidence,
+            ))
+        };
+        response.usage = self.usage.clone();
+        Ok(response)
     }
 }
 
@@ -152,6 +153,13 @@ struct Services {
 }
 
 fn services(failing_aspects: &[&str]) -> Services {
+    services_with_token_usage(failing_aspects, None)
+}
+
+fn services_with_token_usage(
+    failing_aspects: &[&str],
+    usage: Option<lapis_core::schema::report::TokenUsage>,
+) -> Services {
     let model_calls = Arc::new(AtomicUsize::new(0));
     let search_calls = Arc::new(AtomicUsize::new(0));
     let in_flight = Arc::new(AtomicUsize::new(0));
@@ -166,6 +174,7 @@ fn services(failing_aspects: &[&str]) -> Services {
         in_flight,
         max_in_flight: max_in_flight.clone(),
         delay: Duration::from_millis(10),
+        usage,
     });
     let mut search = SearchService::new();
     search.register(StaticSearchProvider {
@@ -555,10 +564,15 @@ async fn rejects_agent_budget_above_configured_limits() {
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
 }
 
+/// Global search-call budget is enforced pre-dispatch: the second aspect's
+/// search call must be rejected before reaching the search provider, so the
+/// underlying counter advances exactly once.
 #[tokio::test]
-async fn global_search_budget_is_checked_after_aggregation() {
+async fn global_search_budget_blocks_further_calls() {
     let mut request = deep_request(2);
     request.budget.max_total_search_calls = Limit::limited(1);
+    request.budget.max_concurrent_agents = Limit::limited(1);
+    request.execution_policy.allow_partial_results = false;
     let services = services(&[]);
 
     let error = deep_research(
@@ -571,5 +585,133 @@ async fn global_search_budget_is_checked_after_aggregation() {
     .expect_err("global search budget");
 
     assert!(matches!(error, Error::BudgetExceeded { .. }));
-    assert_eq!(services.search_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(services.search_calls.load(Ordering::SeqCst), 1);
+}
+
+/// Global model-call budget is enforced pre-dispatch: once the cap is hit,
+/// the next aspect must be rejected before its first model turn dispatches.
+#[tokio::test]
+async fn global_model_budget_stops_before_extra_model_call() {
+    let mut request = deep_request(2);
+    request.budget.max_total_model_calls = Limit::limited(2);
+    request.budget.max_concurrent_agents = Limit::limited(1);
+    request.execution_policy.allow_partial_results = false;
+    let services = services(&[]);
+
+    let error = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect_err("global model budget");
+
+    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
+}
+
+/// `max_tokens` rejects the run as soon as the merged provider-reported
+/// `total_tokens` exceeds the cap, even if call counters are still in range.
+#[tokio::test]
+async fn global_token_budget_stops_when_total_exceeds_max() {
+    use lapis_core::schema::report::TokenUsage;
+    let mut request = deep_request(1);
+    request.budget.max_tokens = Limit::limited(100);
+    let services = services_with_token_usage(
+        &[],
+        Some(TokenUsage {
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: Some(200),
+        }),
+    );
+
+    let error = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect_err("global token budget");
+
+    assert!(matches!(error, Error::BudgetExceeded { .. }));
+}
+
+/// When the provider omits `total_tokens`, the guard must fall back to
+/// `input_tokens + output_tokens` so an under-reporting provider still
+/// counts against the cap.
+#[tokio::test]
+async fn global_token_budget_falls_back_to_input_plus_output() {
+    use lapis_core::schema::report::TokenUsage;
+    let mut request = deep_request(1);
+    request.budget.max_tokens = Limit::limited(100);
+    let services = services_with_token_usage(
+        &[],
+        Some(TokenUsage {
+            input_tokens: Some(80),
+            output_tokens: Some(40),
+            total_tokens: None,
+        }),
+    );
+
+    let error = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect_err("global token budget fallback");
+
+    assert!(matches!(error, Error::BudgetExceeded { .. }));
+}
+
+/// `ResearchBudget::max_tokens` is checked against the corresponding
+/// configured cap during request validation, so an unbounded request is
+/// rejected when the operator restricts tokens.
+#[tokio::test]
+async fn request_budget_max_tokens_validated_against_config_cap() {
+    let mut request = deep_request(1);
+    request.budget.max_tokens = Limit::limited(1_000_000);
+    let services = services(&[]);
+    let limits = BudgetConfig {
+        research: ResearchBudget {
+            max_tokens: Limit::limited(1_000),
+            ..ResearchBudget::unlimited()
+        },
+        per_agent: AgentBudget::unlimited(),
+    };
+
+    let error = deep_research(request, &services.model, &services.search, &limits)
+        .await
+        .expect_err("token budget exceeds configured cap");
+
+    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
+}
+
+/// Two concurrent aspects share the same cross-aspect guard: with
+/// `max_total_search_calls = 1`, exactly one aspect must succeed at search
+/// while the other is rejected pre-dispatch.
+#[tokio::test]
+async fn concurrent_aspects_share_global_budget_guard() {
+    let mut request = deep_request(2);
+    request.budget.max_concurrent_agents = Limit::limited(2);
+    request.budget.max_total_search_calls = Limit::limited(1);
+    let services = services(&[]);
+
+    let result = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect("partial result");
+
+    assert_eq!(services.search_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(result.completed_aspects.len(), 1);
+    assert_eq!(result.failed_aspects.len(), 1);
 }

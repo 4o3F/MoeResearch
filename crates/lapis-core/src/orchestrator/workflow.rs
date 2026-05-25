@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::time::Instant;
+use std::sync::Arc;
 
 use futures::{StreamExt, stream};
 use uuid::Uuid;
@@ -7,11 +7,12 @@ use uuid::Uuid;
 use crate::error::{Error, Result};
 use crate::model::service::ModelService;
 use crate::orchestrator::agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
+use crate::orchestrator::budget::ResearchBudgetGuard;
 use crate::orchestrator::tool_policy::SEARCH_TOOL_NAME;
 use crate::schema::budget::BudgetConfig;
 use crate::schema::report::{
     AspectFailure, AspectReport, AspectResearchResult, Confidence, CoverageSummary,
-    DeepResearchResult, Evidence, OpenQuestion, ResearchBudgetUsage, TokenUsage,
+    DeepResearchResult, Evidence, OpenQuestion, ResearchBudgetUsage,
 };
 use crate::schema::research::{
     AspectResearchRequest, DeepResearchRequest, WorkflowValidationContext,
@@ -33,7 +34,9 @@ pub async fn aspect_research(
             supported_tool_name: SEARCH_TOOL_NAME,
         })
         .map_err(|error| AgentRuntimeFailure { error })?;
-    AgentRuntime::new(model_service, search_service, &request)
+    let research_budget = ResearchBudgetGuard::unlimited();
+    research_budget.record_agent_started();
+    AgentRuntime::new(model_service, search_service, &request, research_budget)
         .run()
         .await
 }
@@ -50,7 +53,6 @@ pub async fn deep_research(
         supported_tool_name: SEARCH_TOOL_NAME,
     })?;
 
-    let started = Instant::now();
     let run_id = Uuid::new_v4().to_string();
     let request_id = request.request_id.clone();
     let requested_aspects = request.aspect_tasks.len();
@@ -61,8 +63,16 @@ pub async fn deep_research(
         "deep research started"
     );
 
-    let mut run = execute_aspects(&request, model_service, search_service, budget_config).await;
-    run.budget_usage.elapsed_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
+    let research_budget = ResearchBudgetGuard::new(request.budget.clone());
+    let mut run = execute_aspects(
+        &request,
+        model_service,
+        search_service,
+        budget_config,
+        research_budget.clone(),
+    )
+    .await;
+    run.budget_usage = research_budget.snapshot();
     if let Err(error) = request.budget.ensure_usage_within(&run.budget_usage) {
         tracing::warn!(
             request_id = %request_id,
@@ -137,16 +147,26 @@ async fn execute_aspects(
     model_service: &ModelService,
     search_service: &SearchService,
     budget_config: &BudgetConfig,
+    research_budget: Arc<ResearchBudgetGuard>,
 ) -> DeepResearchRun {
     let mut run = DeepResearchRun::new();
     let mut results = stream::iter(aspect_requests(request).into_iter().map(
-        |aspect_request| async move {
-            let aspect_id = aspect_request.task.aspect.aspect_id.clone();
-            let result =
-                aspect_research(aspect_request, model_service, search_service, budget_config)
-                    .await
-                    .map_err(|failure| failure.error);
-            (aspect_id, result)
+        |aspect_request| {
+            let research_budget = research_budget.clone();
+            async move {
+                research_budget.record_agent_started();
+                let aspect_id = aspect_request.task.aspect.aspect_id.clone();
+                let result = aspect_research_with_guard(
+                    aspect_request,
+                    model_service,
+                    search_service,
+                    budget_config,
+                    research_budget,
+                )
+                .await
+                .map_err(|failure| failure.error);
+                (aspect_id, result)
+            }
         },
     ))
     .buffer_unordered(
@@ -157,7 +177,6 @@ async fn execute_aspects(
     );
 
     while let Some((aspect_id, result)) = results.next().await {
-        run.budget_usage.agents_started += 1;
         record_aspect_result(&mut run, &aspect_id, result);
         if request.execution_policy.fail_fast && !run.failures.is_empty() {
             break;
@@ -165,6 +184,32 @@ async fn execute_aspects(
     }
 
     run
+}
+
+/// Runs one aspect of a deep research using the supplied cross-aspect guard.
+///
+/// Re-validates the request shape locally (the deep request was already
+/// validated by `deep_research`, but each aspect carries its own copy of
+/// the policies that the agent loop needs to honor) and then dispatches the
+/// loop with the shared guard so concurrent aspects observe the same global
+/// counters.
+async fn aspect_research_with_guard(
+    request: AspectResearchRequest,
+    model_service: &ModelService,
+    search_service: &SearchService,
+    budget_config: &BudgetConfig,
+    research_budget: Arc<ResearchBudgetGuard>,
+) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
+    request
+        .validate_for_execution(&WorkflowValidationContext {
+            budget_config,
+            supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
+            supported_tool_name: SEARCH_TOOL_NAME,
+        })
+        .map_err(|error| AgentRuntimeFailure { error })?;
+    AgentRuntime::new(model_service, search_service, &request, research_budget)
+        .run()
+        .await
 }
 
 fn aspect_requests(request: &DeepResearchRequest) -> Vec<AspectResearchRequest> {
@@ -205,16 +250,6 @@ fn record_aspect_result(
 
 fn record_aspect_success(run: &mut DeepResearchRun, mut output: AgentRuntimeOutput) {
     namespace_aspect_evidence(&mut output.result);
-    run.budget_usage.model_calls_used += output.budget_usage.turns_used;
-    run.budget_usage.search_calls_used += output.budget_usage.search_calls_used;
-    run.budget_usage.elapsed_ms = run
-        .budget_usage
-        .elapsed_ms
-        .saturating_add(output.budget_usage.elapsed_ms);
-    run.budget_usage.token_usage = merge_token_usage(
-        run.budget_usage.token_usage.take(),
-        output.token_usage.clone(),
-    );
     run.completed
         .push(output.result.aspect_report.aspect_id.clone());
     run.open_questions
@@ -333,22 +368,3 @@ fn confidence_summary(
     summary
 }
 
-fn merge_token_usage(left: Option<TokenUsage>, right: Option<TokenUsage>) -> Option<TokenUsage> {
-    match (left, right) {
-        (None, None) => None,
-        (Some(usage), None) | (None, Some(usage)) => Some(usage),
-        (Some(left), Some(right)) => Some(TokenUsage {
-            input_tokens: sum_options(left.input_tokens, right.input_tokens),
-            output_tokens: sum_options(left.output_tokens, right.output_tokens),
-            total_tokens: sum_options(left.total_tokens, right.total_tokens),
-        }),
-    }
-}
-
-fn sum_options(left: Option<u64>, right: Option<u64>) -> Option<u64> {
-    match (left, right) {
-        (None, None) => None,
-        (Some(value), None) | (None, Some(value)) => Some(value),
-        (Some(left), Some(right)) => Some(left.saturating_add(right)),
-    }
-}

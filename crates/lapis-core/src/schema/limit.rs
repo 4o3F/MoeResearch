@@ -99,6 +99,19 @@ impl Limit<usize> {
             Self::Limited(value) => value,
         }
     }
+
+    /// Returns `true` if the supplied `used` value strictly exceeds this cap.
+    ///
+    /// Mirrors `Limit::permits_next` but expresses the post-increment
+    /// perspective used by atomic counters (`fetch_add` returns the previous
+    /// value; the caller checks `previous + 1 > max`).
+    #[must_use]
+    pub fn is_exceeded_by(self, used: usize) -> bool {
+        match self {
+            Self::Unlimited => false,
+            Self::Limited(max) => used > max,
+        }
+    }
 }
 
 impl Limit<u64> {
@@ -106,6 +119,19 @@ impl Limit<u64> {
         match self {
             Self::Unlimited => false,
             Self::Limited(limit_ms) => elapsed_ms >= limit_ms,
+        }
+    }
+
+    /// Returns `true` if the supplied `used` total strictly exceeds this cap.
+    ///
+    /// Used by the cross-aspect token guard: providers report cumulative
+    /// usage as `u64`, and we want to reject the call that pushes the total
+    /// past the configured ceiling.
+    #[must_use]
+    pub fn is_exceeded_by_u64(self, used: u64) -> bool {
+        match self {
+            Self::Unlimited => false,
+            Self::Limited(max) => used > max,
         }
     }
 }
