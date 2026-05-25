@@ -65,10 +65,26 @@ impl RedactionPolicy {
 
     fn is_sensitive_name(name: &str) -> bool {
         let lower = name.to_ascii_lowercase();
+        if Self::is_safe_token_metric_name(&lower) {
+            return false;
+        }
+
         Self::sensitive_name_fragments()
             .iter()
             .any(|fragment| lower.contains(fragment))
             || lower == "x-api-key"
+    }
+
+    fn is_safe_token_metric_name(name: &str) -> bool {
+        matches!(
+            name,
+            "token_usage"
+                | "input_tokens"
+                | "output_tokens"
+                | "total_tokens"
+                | "max_tokens"
+                | "max_output_tokens"
+        )
     }
 
     fn sensitive_name_fragments() -> &'static [&'static str] {

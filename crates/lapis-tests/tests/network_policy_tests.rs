@@ -50,6 +50,33 @@ fn redaction_policy_masks_nested_json_sensitive_fields() {
 }
 
 #[test]
+fn redaction_policy_keeps_token_usage_metrics() {
+    let policy = RedactionPolicy;
+    let value = json!({
+        "token_usage": {
+            "input_tokens": 3,
+            "output_tokens": 5,
+            "total_tokens": 8
+        },
+        "max_tokens": 128,
+        "access_token": "secret"
+    });
+
+    assert_eq!(
+        policy.redact_json_value(&value),
+        json!({
+            "token_usage": {
+                "input_tokens": 3,
+                "output_tokens": 5,
+                "total_tokens": 8
+            },
+            "max_tokens": 128,
+            "access_token": "[REDACTED]"
+        })
+    );
+}
+
+#[test]
 fn redaction_policy_redacts_json_text_body() {
     let policy = RedactionPolicy;
     let redacted = policy.redact_body_text(r#"{"error":"bad","api_key":"secret"}"#);
