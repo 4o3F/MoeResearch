@@ -74,7 +74,7 @@ fn execution_policy(timeout_ms: Option<u64>) -> ExecutionPolicy {
     ExecutionPolicy {
         allow_partial_results: true,
         fail_fast: false,
-        timeout_ms,
+        timeout_ms: timeout_ms.map_or(Limit::unlimited(), Limit::limited),
     }
 }
 
@@ -766,7 +766,7 @@ async fn non_search_aspect_runs_without_search_provider() {
 async fn rejects_execution_timeout_above_budget() {
     let mut request = aspect_request();
     request.task.budget.timeout_ms = Limit::limited(100);
-    request.execution_policy.timeout_ms = Some(101);
+    request.execution_policy.timeout_ms = Limit::limited(101);
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -1298,7 +1298,7 @@ async fn budget_exhaustion_stops_before_actions() {
 async fn slow_final_model_call_exhausts_effective_timeout() {
     let mut request = aspect_request();
     request.task.budget.timeout_ms = Limit::limited(60_000);
-    request.execution_policy.timeout_ms = Some(1);
+    request.execution_policy.timeout_ms = Limit::limited(1);
     let (model_service, search_service, model_calls, search_calls) = services_with_delay(
         vec![final_response("{}".to_owned())],
         Some(Duration::from_millis(5)),
@@ -1318,7 +1318,7 @@ async fn slow_final_model_call_exhausts_effective_timeout() {
 async fn lower_execution_timeout_is_enforced_before_search() {
     let mut request = aspect_request();
     request.task.budget.timeout_ms = Limit::limited(60_000);
-    request.execution_policy.timeout_ms = Some(1);
+    request.execution_policy.timeout_ms = Limit::limited(1);
     let (model_service, search_service, model_calls, search_calls) = services_with_delay(
         vec![tool_response("search")],
         Some(Duration::from_millis(5)),

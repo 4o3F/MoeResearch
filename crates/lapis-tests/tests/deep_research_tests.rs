@@ -72,7 +72,7 @@ fn execution_policy(timeout_ms: Option<u64>) -> ExecutionPolicy {
     ExecutionPolicy {
         allow_partial_results: true,
         fail_fast: false,
-        timeout_ms,
+        timeout_ms: timeout_ms.map_or(Limit::unlimited(), Limit::limited),
     }
 }
 

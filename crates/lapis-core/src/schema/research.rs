@@ -162,8 +162,10 @@ impl DeepResearchRequest {
             });
         }
 
-        if let Some(timeout_ms) = self.execution_policy.timeout_ms
-            && Limit::limited(timeout_ms).exceeds(self.budget.total_timeout_ms)
+        if self
+            .execution_policy
+            .timeout_ms
+            .exceeds(self.budget.total_timeout_ms)
         {
             return Err(Error::BudgetExceeded {
                 message: "execution timeout must not exceed research budget timeout".to_owned(),
@@ -212,9 +214,13 @@ fn validate_aspect_task(
     validate_explicit_search_provider(aspect, search_policy, ctx.supported_tool_name)?;
     task.budget.validate_against_config(ctx.budget_config)?;
 
-    let effective_timeout = execution_policy
-        .timeout_ms
-        .map_or(parent_timeout, Limit::limited);
+    // Treat an unset `execution_policy.timeout_ms` as "inherit the
+    // parent budget", so an `Unlimited` policy does not silently widen
+    // a finite parent budget.
+    let effective_timeout = match execution_policy.timeout_ms {
+        Limit::Unlimited => parent_timeout,
+        Limit::Limited(_) => execution_policy.timeout_ms,
+    };
     if effective_timeout.exceeds(parent_timeout) {
         return Err(Error::BudgetExceeded {
             message: timeout_violation_message.to_owned(),

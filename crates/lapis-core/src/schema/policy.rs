@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::schema::limit::DurationLimitMs;
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ToolName(pub String);
@@ -123,5 +124,10 @@ pub struct OutputPolicy {
 pub struct ExecutionPolicy {
     pub allow_partial_results: bool,
     pub fail_fast: bool,
-    pub timeout_ms: Option<u64>,
+    /// Per-call execution deadline. Promoted from `Option<u64>` to
+    /// [`DurationLimitMs`] so callers can express "unlimited" with the
+    /// same `-1` sentinel that [`AgentBudget`] and [`BudgetConfig`]
+    /// accept, instead of mixing two encodings for the same concept.
+    #[serde(default = "DurationLimitMs::unlimited")]
+    pub timeout_ms: DurationLimitMs,
 }

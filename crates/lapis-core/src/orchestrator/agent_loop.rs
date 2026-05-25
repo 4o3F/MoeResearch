@@ -248,7 +248,9 @@ impl<'a> AgentRuntime<'a> {
 
     fn effective_budget(&self) -> crate::schema::budget::AgentBudget {
         let mut budget = self.request.task.budget.clone();
-        if let Some(timeout_ms) = self.request.execution_policy.timeout_ms {
+        // ExecutionPolicy.timeout_ms is a `Limit<u64>`; only overwrite
+        // the agent budget when the caller pinned a finite value.
+        if let Limit::Limited(timeout_ms) = self.request.execution_policy.timeout_ms {
             budget.timeout_ms = Limit::limited(timeout_ms);
         }
         budget
