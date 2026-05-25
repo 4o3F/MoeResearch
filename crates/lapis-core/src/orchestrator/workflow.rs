@@ -74,7 +74,7 @@ pub async fn deep_research(
             model_calls_used = run.budget_usage.model_calls_used,
             search_calls_used = run.budget_usage.search_calls_used,
             elapsed_ms = run.budget_usage.elapsed_ms,
-            error_code = ?error.code(),
+            error_code = error.code().as_str(),
             retryable = error.retryable(),
             status = "failed",
             "deep research budget check failed"
@@ -99,7 +99,7 @@ pub async fn deep_research(
             request_id = %request_id,
             run_id = %run_id,
             requested_aspects,
-            error_code = ?error.code(),
+            error_code = error.code().as_str(),
             retryable = error.retryable(),
             status = "failed",
             "deep research failed"

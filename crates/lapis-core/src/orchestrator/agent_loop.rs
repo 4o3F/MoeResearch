@@ -201,7 +201,7 @@ impl<'a> AgentRuntime<'a> {
                     request_id = %self.request.request_id,
                     aspect_id = %self.request.task.aspect.aspect_id,
                     duration_ms = elapsed_ms(model_started.elapsed()),
-                    error_code = ?error.code(),
+                    error_code = error.code().as_str(),
                     retryable = error.retryable(),
                     status = "failed",
                     "model turn failed"
@@ -253,7 +253,7 @@ impl<'a> AgentRuntime<'a> {
                     aspect_id = %self.request.task.aspect.aspect_id,
                     tool_call_id = %tool_call.id,
                     tool_name = %tool_call.name,
-                    error_code = ?error.code(),
+                    error_code = error.code().as_str(),
                     retryable = error.retryable(),
                     status = "denied",
                     "tool call denied"
@@ -276,7 +276,7 @@ impl<'a> AgentRuntime<'a> {
                 tool_calls_used = budget_usage.tool_calls_used,
                 search_calls_used = budget_usage.search_calls_used,
                 elapsed_ms = budget_usage.elapsed_ms,
-                error_code = ?error.code(),
+                error_code = error.code().as_str(),
                 retryable = error.retryable(),
                 status = "rejected",
                 "search tool call budget rejected"
@@ -311,7 +311,7 @@ impl<'a> AgentRuntime<'a> {
                     aspect_id = %self.request.task.aspect.aspect_id,
                     provider = %search_provider,
                     duration_ms = elapsed_ms(search_started.elapsed()),
-                    error_code = ?error.code(),
+                    error_code = error.code().as_str(),
                     retryable = error.retryable(),
                     status = "failed",
                     "search call failed"

@@ -101,8 +101,9 @@ pub enum ToolErrorCode {
     /// Server-side configuration is invalid (missing API key, unknown provider,
     /// malformed TOML). Not retryable.
     ConfigInvalid,
-    /// Provider rejected the request or is otherwise unreachable in a way that
-    /// is not a transient network condition. Retryability is provider-specific.
+    /// Provider rejected the request or is not configured/allowed. Not
+    /// retryable under the current public error mapping; transient network
+    /// failures are reported as `NetworkFailed` or `Timeout` instead.
     ProviderUnavailable,
     /// Transient network condition (connection reset, DNS failure, etc.).
     /// Retryable.
@@ -118,8 +119,10 @@ pub enum ToolErrorCode {
     SchemaValidationFailed,
     /// Operation exceeded its configured timeout. Retryable.
     Timeout,
-    /// One or more aspects failed but at least one succeeded; the envelope
-    /// status is `partial` and `data` contains the partial result.
+    /// Partial-result condition. Reported either inside a `partial` success
+    /// envelope (as an embedded aspect failure) or as a `failed` envelope's
+    /// top-level code when partial results are disabled by execution policy
+    /// or no aspect succeeded.
     PartialResult,
     /// Catch-all internal error. Not retryable; indicates a Lapis bug.
     Internal,

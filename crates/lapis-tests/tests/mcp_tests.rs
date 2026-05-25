@@ -542,6 +542,8 @@ async fn deep_research_all_success_returns_ok_envelope() {
     assert!(data.failed_aspects.is_empty());
 }
 
+/// Partial deep-research envelopes MUST report failed aspects with stable
+/// snake_case error codes matching the public `ToolErrorCode` contract.
 #[tokio::test]
 async fn deep_research_partial_success_returns_partial_envelope() {
     let envelope = mcp_server(services(&["aspect-2"]))
@@ -733,19 +735,51 @@ async fn tool_envelope_failed_deep_research_aspect_id_is_none() {
 }
 
 /// `ToolError.message` MUST be a stable, redacted summary; detailed context
-/// (provider names, request bodies, header values) belongs in `tracing`,
-/// never in the public envelope.
+/// (provider names, request bodies, header values, caller-supplied schema
+/// versions, paths) belongs in `tracing`, never in the public envelope.
+///
+/// Covers the three known leak paths: `HttpTransport.message`,
+/// `ProviderUnavailable.provider`, and `UnsupportedSchemaVersion.version`.
 #[test]
 fn tool_envelope_message_redacts_provider_path_and_api_key() {
-    let error = Error::HttpTransport {
-        message: "POST https://api.openai.com/v1/responses Authorization=sk-abcdef".to_owned(),
-        retryable: true,
-    };
-    let tool_error = error.to_tool_error();
-    assert_eq!(tool_error.code, ToolErrorCode::NetworkFailed);
-    assert!(!tool_error.message.contains("Authorization"));
-    assert!(!tool_error.message.contains("sk-abcdef"));
-    assert!(!tool_error.message.contains("api.openai.com"));
+    let cases = vec![
+        (
+            Error::HttpTransport {
+                message: "POST https://api.openai.com/v1/responses Authorization=sk-abcdef"
+                    .to_owned(),
+                retryable: true,
+            },
+            ToolErrorCode::NetworkFailed,
+            vec!["Authorization", "sk-abcdef", "api.openai.com"],
+        ),
+        (
+            Error::ProviderUnavailable {
+                provider: "openai".to_owned(),
+                message: "missing OPENAI_API_KEY in /home/user/lapis.toml".to_owned(),
+            },
+            ToolErrorCode::ProviderUnavailable,
+            vec!["openai", "OPENAI_API_KEY", "/home/user/lapis.toml"],
+        ),
+        (
+            Error::UnsupportedSchemaVersion {
+                version: "../../Authorization=sk-abcdef".to_owned(),
+            },
+            ToolErrorCode::UnsupportedSchemaVersion,
+            vec!["Authorization", "sk-abcdef", "../"],
+        ),
+    ];
+
+    for (error, expected_code, forbidden_fragments) in cases {
+        let tool_error = error.to_tool_error();
+        assert_eq!(tool_error.code, expected_code);
+        for forbidden in forbidden_fragments {
+            assert!(
+                !tool_error.message.contains(forbidden),
+                "public message leaked forbidden fragment `{forbidden}`: {}",
+                tool_error.message
+            );
+        }
+    }
 }
 
 /// An unsupported `schema_version` MUST produce the dedicated

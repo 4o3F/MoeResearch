@@ -189,9 +189,7 @@ impl Error {
             Self::ConfigInvalid { .. } | Self::ConfigIo { .. } | Self::ConfigParse { .. } => {
                 "configuration is invalid".to_owned()
             }
-            Self::ProviderUnavailable { provider, .. } => {
-                format!("provider unavailable: {provider}")
-            }
+            Self::ProviderUnavailable { .. } => "provider unavailable".to_owned(),
             Self::NetworkFailed { .. } | Self::HttpTransport { .. } => {
                 "network request failed".to_owned()
             }
@@ -200,9 +198,7 @@ impl Error {
             }
             Self::BudgetExceeded { .. } => "research budget exceeded".to_owned(),
             Self::ToolPolicyDenied { .. } => "tool policy denied request".to_owned(),
-            Self::UnsupportedSchemaVersion { version } => {
-                format!("unsupported schema version: {version}")
-            }
+            Self::UnsupportedSchemaVersion { .. } => "unsupported schema version".to_owned(),
             Self::SchemaValidationFailed { .. } | Self::Json { .. } => {
                 "schema validation failed".to_owned()
             }
