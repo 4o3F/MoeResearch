@@ -306,90 +306,78 @@ Rust Core 承担 Reasoning Layer、Retrieval Layer 和 MCP 边界的主要实现
 
 MVP 阶段采用单 Rust crate、module-first 的结构。`schema`、`mcp`、`orchestrator`、`model`、`search`、`net` 等作为 crate 内部 module 存在；它们保持清晰边界，但不提前拆成独立 crate。
 
-建议模块划分：
+当前模块结构（基于 `crates/lapis-core/src/` 实际状态）：
 
 ```text
-.
-├── Cargo.toml
-├── src
-│   ├── main.rs
-│   ├── lib.rs
-│   ├── schema
-│   │   ├── mod.rs
-│   │   ├── model.rs
-│   │   ├── search.rs
-│   │   ├── mcp.rs
-│   │   ├── report.rs
-│   │   └── config.rs
-│   ├── mcp
-│   │   ├── mod.rs
-│   │   ├── server.rs
-│   │   └── tools.rs
-│   ├── orchestrator
-│   │   ├── mod.rs
-│   │   ├── workflow.rs
-│   │   ├── planner.rs
-│   │   ├── agent_loop.rs
-│   │   ├── specialist.rs
-│   │   └── judge.rs
-│   ├── model
-│   │   ├── mod.rs
-│   │   ├── client.rs
-│   │   ├── provider.rs
-│   │   └── providers
-│   │       ├── mod.rs
-│   │       ├── openai.rs
-│   │       └── anthropic_compatible.rs
-│   ├── search
-│   │   ├── mod.rs
-│   │   ├── service.rs
-│   │   ├── provider.rs
-│   │   └── providers
-│   │       ├── mod.rs
-│   │       ├── exa.rs
-│   │       └── grok.rs
-│   ├── net
-│   │   ├── mod.rs
-│   │   ├── client.rs
-│   │   ├── reqwest_client.rs
-│   │   └── policy.rs
-│   └── config
-│       ├── mod.rs
-│       └── loader.rs
-├── skills
-│   └── deep-research.md
-└── prompts
-    ├── layer1
-    │   ├── task-decomposition.md
-    │   ├── agent-allocation.md
-    │   └── final-report.md
-    └── layer2
-        ├── aspect-agent.md
-        ├── search-planner.md
-        └── evidence-extractor.md
+src/
+├── lib.rs
+├── error.rs
+├── logging.rs
+├── config/
+│   ├── mod.rs
+│   └── loader.rs
+├── schema/
+│   ├── mod.rs
+│   ├── budget.rs
+│   ├── config.rs
+│   ├── limit.rs
+│   ├── mcp.rs
+│   ├── model.rs
+│   ├── network.rs
+│   ├── policy.rs
+│   ├── report.rs
+│   ├── research.rs
+│   └── search.rs
+├── mcp/
+│   ├── mod.rs
+│   ├── server.rs
+│   └── tools.rs
+├── orchestrator/
+│   ├── mod.rs
+│   ├── agent_loop.rs
+│   ├── budget.rs
+│   ├── tool_policy.rs
+│   ├── validator.rs
+│   └── workflow.rs
+├── model/
+│   ├── mod.rs
+│   ├── provider.rs           # registry + ModelProvider trait
+│   ├── provider/             # provider adapters
+│   │   └── openai.rs
+│   └── service.rs
+├── search/
+│   ├── mod.rs
+│   ├── provider.rs           # registry + SearchProvider trait
+│   ├── provider/             # provider adapters
+│   │   ├── exa.rs
+│   │   └── grok.rs
+│   └── service.rs
+└── net/
+    ├── mod.rs
+    ├── client.rs
+    ├── policy.rs
+    └── reqwest_client.rs
 ```
 
 分层原则：
 
-- `schema/` 放 crate 内共享的中立数据结构，例如 `ModelRequest`、`ModelResponse`、`SearchRequest`、`SearchResponse`、MCP request/response、方面报告结构和配置结构。
+- `schema/` 放 crate 内共享的中立数据结构，例如 `ModelRequest`、`ModelResponse`、`SearchRequest`、`SearchResponse`、MCP request/response、方面报告结构、网络/预算/限制配置结构。
 - `mcp/` 是 Claude Code Skill 的稳定工具接口层，只负责协议暴露、参数校验和调用 orchestrator，不暴露内部 provider 细节。
-- `orchestrator/` 负责任务编排、Agent loop、预算控制、中间结果校验和 trace 汇总；它不负责撰写最终自然语言报告。
-- `model/providers/` 与 `search/providers/` 放 provider adapter，负责把具体厂商协议转换为 `schema/` 中的中立结构。
+- `orchestrator/` 负责任务编排、Agent loop、预算控制（`AgentBudgetGuard` 与 `ResearchBudgetGuard`）、工具策略、中间结果校验；它不负责撰写最终自然语言报告。
+- `model/provider/` 与 `search/provider/` 放 provider adapter，负责把具体厂商协议转换为 `schema/` 中的中立结构。
 - 如果某个 provider 需要私有 serde DTO，应放在对应 provider 模块内部，不进入公共 `schema/` module。
 - `net/` 是所有 outbound network requests 的唯一出口，provider 不应绕过它直接创建 HTTP client。
-- `skills/` 与 `prompts/` 放 Markdown 资产，承载 Claude Code Skill、Orchestration Layer 任务拆分、Agent 分配、最终报告生成，以及 Reasoning Layer 方面 Agent 的 prompt。
+- `skills/` 与 `prompts/` 放 Markdown 资产，由 Layer 1 在生成 MCP 请求时**内联**进 `AspectSpec.aspect_agent_prompt` 字段；Rust core 不再在运行时读取 prompt 文件。
 - 当 `schema` 需要被多个独立 crate 复用，或 MCP server 需要单独发布、单独版本管理时，再将对应 module 提升为独立 crate。
 
 ### 10.1 MCP 边界
 
 Rust MCP 服务向 Orchestration Layer 暴露稳定工具，而不是暴露内部 provider。
 
-建议 MCP 工具：
+当前实现的 MCP 工具（见 `crates/lapis-core/src/mcp/tools.rs`）：
 
-- `deep_research_request`：根据任务生成可直接执行的深度研究请求。
-- `deep_research`：执行完整多 Agent 调研工作流。
-- `aspect_research`：只执行单个方面 Agent。
-- `compare_reports`：比较多个方面报告或多次研究结果。
+- `deep_research`：执行完整多 aspect 工作流，返回 `DeepResearchResult`。
+- `aspect_research`：执行单一 aspect 工作流，返回 `AspectResearchResult`。
 
 Orchestration Layer 不应直接知道 Exa/Grok 的具体请求结构。它只需要调用 MCP 工具并接收结构化结果。
 
@@ -434,29 +422,33 @@ Orchestrator 不应包含具体 provider 的 HTTP 请求细节，也不应绑定
 
 Model Provider 层负责将统一的 Agent 请求转换为具体模型 API 请求，并将不同 provider 的响应标准化为统一内部结构。
 
-建议标准请求：
+实际标准请求（`schema/model.rs`）：
 
 ```text
 ModelRequest
-  - model
-  - messages
-  - tools
-  - temperature
-  - max_tokens
-  - response_schema
+  - provider
+  - model: string | null
+  - previous_response_id: string | null
+  - input: ModelInputItem[]      # 统一 message / tool_call / tool_output
+  - tools: ModelTool[]
+  - temperature: number | null
+  - max_tokens: integer | null
 ```
 
-建议标准响应：
+实际标准响应：
 
 ```text
 ModelResponse
-  - content
-  - tool_calls[]
+  - provider
+  - model: string | null
+  - response_id: string | null
+  - content: string | null
+  - tool_calls: ModelToolCall[]
     - id
     - name
     - arguments
-  - usage
-  - finish_reason
+  - output_items: ModelInputItem[]   # provider-replayable form
+  - usage: TokenUsage | null
 ```
 
 概念性接口：
@@ -489,34 +481,44 @@ model = "gpt-4o"
 
 Search Provider 层负责将标准化搜索请求转换为具体 API 请求。
 
-建议标准请求：
+实际标准请求（`schema/search.rs`）：
 
 ```text
 SearchRequest
-  - provider
+  - provider                      # 由 Layer 1 选定，恰好一个
   - query
-  - freshness
   - max_results
-  - language
-  - region
-  - include_domains
-  - exclude_domains
+  - freshness: Freshness | null
+  - language: string | null
+  - region: string | null
+  - include_domains: string[]
+  - exclude_domains: string[]
 ```
 
-建议标准响应：
+实际标准响应：
 
 ```text
 SearchResponse
   - provider
-  - query
-  - results[]
+  - results: SearchResult[]
     - title
-    - url
+    - url: string | null
     - snippet
-    - published_at
-    - source_type
-    - score
+    - summary: string | null
+    - published_at: string | null
 ```
+
+`source_type`、`confidence`、`supports_findings` 等评估字段不在 Layer 3 输出中，而是在 Layer 2 把搜索结果转换为 `Evidence` 时由 aspect agent 注入。
+
+### 10.5 Schema Version
+
+当前 Rust core 接受的 `schema_version` 取值（见 `crates/lapis-core/src/orchestrator/workflow.rs` 的 `SUPPORTED_SCHEMA_VERSIONS` 常量）：`m4`、`m5`、`1`、`1.0`。任何其他取值会触发 `ToolErrorCode::unsupported_schema_version`，并通过 MCP envelope 的 `error` 字段返回。
+
+新增 schema version 时必须：
+
+1. 在 `SUPPORTED_SCHEMA_VERSIONS` 中显式声明新值；
+2. 在本文档列出该版本与既有版本的差异；
+3. 为不兼容的 schema 变更提供迁移指引或保留向后兼容路径。
 
 ## 11. 统一网络请求出口 trait
 
