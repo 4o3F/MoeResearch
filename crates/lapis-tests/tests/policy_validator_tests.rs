@@ -2,21 +2,30 @@ use lapis_core::error::Error;
 use lapis_core::net::policy::RedactionPolicy;
 use lapis_core::orchestrator::tool_policy::{SEARCH_TOOL_NAME, ToolPolicyGuard, search_model_tool};
 use lapis_core::orchestrator::validator::validate_output;
-use lapis_core::schema::budget::AgentBudget;
 use lapis_core::schema::model::ModelToolCall;
-use lapis_core::schema::policy::{
-    EvidencePolicy, EvidenceRequirement, ModelSelector, OutputPolicy, SearchSelector, ToolName,
-};
+use lapis_core::schema::policy::{EvidencePolicy, OutputPolicy, ToolName};
 use lapis_core::schema::report::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
     SourceType,
 };
-use lapis_core::schema::research::{AspectSpec, PromptAssets};
+use lapis_core::schema::research::AspectSpec;
 use serde_json::json;
 
-fn prompt_assets() -> PromptAssets {
-    PromptAssets {
-        aspect_agent_prompt_path: "prompts/layer2/aspect-agent.md".to_owned(),
+fn prompt_path() -> String {
+    "prompts/layer2/aspect-agent.md".to_owned()
+}
+
+fn evidence_policy() -> EvidencePolicy {
+    EvidencePolicy {
+        require_evidence_for_findings: true,
+        min_evidence_per_finding: 1,
+    }
+}
+
+fn output_policy() -> OutputPolicy {
+    OutputPolicy {
+        language: "zh-CN".to_owned(),
+        max_findings_per_aspect: None,
     }
 }
 
@@ -29,12 +38,10 @@ fn aspect_with_tools(allowed_tools: Vec<ToolName>) -> AspectSpec {
         scope: vec![],
         boundaries: vec![],
         success_criteria: vec![],
-        prompt_assets: prompt_assets(),
-        required_evidence: EvidenceRequirement::default(),
+        aspect_agent_prompt_path: prompt_path(),
         allowed_tools,
-        model_override: None,
-        search_override: None,
-        budget_override: Some(AgentBudget::default()),
+        model_provider: None,
+        search_provider: Some("exa".to_owned()),
     }
 }
 
@@ -55,12 +62,10 @@ fn validator_aspect() -> AspectSpec {
         scope: vec!["market".to_owned()],
         boundaries: Vec::new(),
         success_criteria: Vec::new(),
-        prompt_assets: prompt_assets(),
-        required_evidence: EvidenceRequirement::default(),
+        aspect_agent_prompt_path: prompt_path(),
         allowed_tools: vec![ToolName("search".to_owned())],
-        model_override: None::<ModelSelector>,
-        search_override: None::<SearchSelector>,
-        budget_override: None::<AgentBudget>,
+        model_provider: None::<String>,
+        search_provider: Some("exa".to_owned()),
     }
 }
 
@@ -131,8 +136,8 @@ fn validate_result(
         &serde_json::to_string(result).expect("serialize result"),
         &validator_aspect(),
         &evidence(),
-        &EvidencePolicy::default(),
-        &OutputPolicy::default(),
+        &evidence_policy(),
+        &output_policy(),
     )
 }
 
@@ -196,6 +201,21 @@ fn rejects_empty_query_and_malformed_arguments() {
 }
 
 #[test]
+fn rejects_provider_field_in_search_tool_args() {
+    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
+        SEARCH_TOOL_NAME.to_owned(),
+    )]));
+
+    assert!(matches!(
+        guard.validate_search_call(&call(
+            SEARCH_TOOL_NAME,
+            json!({ "query": "rust async runtime", "max_results": 3, "provider": "exa" }),
+        )),
+        Err(Error::ToolPolicyDenied { .. })
+    ));
+}
+
+#[test]
 fn search_model_tool_uses_provider_neutral_schema() {
     let tool = search_model_tool();
 
@@ -219,8 +239,8 @@ fn rejects_malformed_json() {
         "{not json",
         &validator_aspect(),
         &evidence(),
-        &EvidencePolicy::default(),
-        &OutputPolicy::default(),
+        &evidence_policy(),
+        &output_policy(),
     )
     .expect_err("malformed JSON must fail");
 
@@ -261,16 +281,14 @@ fn rejects_unknown_evidence_ref() {
 fn rejects_too_many_findings() {
     let mut report = report();
     report.findings.push(report.findings[0].clone());
-    let output_policy = OutputPolicy {
-        max_findings_per_aspect: Some(1),
-        ..OutputPolicy::default()
-    };
+    let mut output_policy = output_policy();
+    output_policy.max_findings_per_aspect = Some(1);
 
     let err = validate_output(
         &serde_json::to_string(&result(report, evidence())).expect("serialize result"),
         &validator_aspect(),
         &evidence(),
-        &EvidencePolicy::default(),
+        &evidence_policy(),
         &output_policy,
     )
     .expect_err("too many findings must fail");

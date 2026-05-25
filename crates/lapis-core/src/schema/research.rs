@@ -3,16 +3,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 
-use super::budget::{AgentBudget, ResearchBudget};
-use super::config::BudgetConfig;
+use super::budget::{AgentBudget, BudgetConfig, ResearchBudget};
 use super::limit::Limit;
 use super::policy::{
-    EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, ModelSelector, OutputPolicy,
-    SearchPolicy, SearchSelector, ToolName,
+    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
 };
 use super::report::Evidence;
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct ResearchContext {
     pub summary: String,
     pub known_facts: Vec<String>,
@@ -20,23 +18,18 @@ pub struct ResearchContext {
     pub prior_sources: Vec<Evidence>,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct DeliverableSpec {
-    pub kind: String,
-    pub language: String,
-    pub expected_sections: Vec<String>,
-    pub notes: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct ResearchConstraint {
-    pub key: String,
-    pub value: String,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct PromptAssets {
-    pub aspect_agent_prompt_path: String,
+impl ResearchContext {
+    /// Explicitly construct an empty research context that carries no prior
+    /// knowledge.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            summary: String::new(),
+            known_facts: Vec::new(),
+            excluded_assumptions: Vec::new(),
+            prior_sources: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -48,39 +41,28 @@ pub struct AspectSpec {
     pub scope: Vec<String>,
     pub boundaries: Vec<String>,
     pub success_criteria: Vec<String>,
-    pub prompt_assets: PromptAssets,
-    pub required_evidence: EvidenceRequirement,
+    pub aspect_agent_prompt_path: String,
     pub allowed_tools: Vec<ToolName>,
-    pub model_override: Option<ModelSelector>,
-    pub search_override: Option<SearchSelector>,
-    pub budget_override: Option<AgentBudget>,
+    pub model_provider: Option<String>,
+    pub search_provider: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct ResearchPlan {
-    pub plan_id: String,
-    pub user_question: String,
-    pub deliverable: DeliverableSpec,
-    pub constraints: Vec<ResearchConstraint>,
-    pub aspects: Vec<AspectSpec>,
-    pub budget: ResearchBudget,
-    pub model_policy: ModelPolicy,
-    pub search_policy: SearchPolicy,
-    pub evidence_policy: EvidencePolicy,
-    pub output_policy: OutputPolicy,
+pub struct AspectResearchTask {
+    pub aspect: AspectSpec,
+    pub budget: AgentBudget,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct AspectResearchRequest {
     pub schema_version: String,
     pub request_id: String,
-    pub aspect: AspectSpec,
+    pub task: AspectResearchTask,
     pub shared_context: ResearchContext,
     pub model_policy: ModelPolicy,
     pub search_policy: SearchPolicy,
     pub evidence_policy: EvidencePolicy,
     pub output_policy: OutputPolicy,
-    pub budget: AgentBudget,
     pub execution_policy: ExecutionPolicy,
 }
 
@@ -88,7 +70,13 @@ pub struct AspectResearchRequest {
 pub struct DeepResearchRequest {
     pub schema_version: String,
     pub request_id: String,
-    pub plan: ResearchPlan,
+    pub user_question: String,
+    pub aspect_tasks: Vec<AspectResearchTask>,
+    pub budget: ResearchBudget,
+    pub model_policy: ModelPolicy,
+    pub search_policy: SearchPolicy,
+    pub evidence_policy: EvidencePolicy,
+    pub output_policy: OutputPolicy,
     pub shared_context: ResearchContext,
     pub execution_policy: ExecutionPolicy,
 }
@@ -103,33 +91,20 @@ impl AspectResearchRequest {
     pub(crate) fn validate_for_execution(&self, ctx: &WorkflowValidationContext<'_>) -> Result<()> {
         ensure_non_empty("schema_version", &self.schema_version)?;
         ensure_non_empty("request_id", &self.request_id)?;
-        ensure_non_empty("aspect.aspect_id", &self.aspect.aspect_id)?;
-        ensure_non_empty("aspect.name", &self.aspect.name)?;
-        ensure_non_empty("aspect.research_question", &self.aspect.research_question)?;
+        ensure_schema_version_supported(&self.schema_version, ctx.supported_schema_versions)?;
 
-        if !ctx
-            .supported_schema_versions
-            .contains(&self.schema_version.as_str())
-        {
-            return Err(Error::SchemaValidationFailed {
-                message: format!("unsupported schema version: {}", self.schema_version),
-            });
-        }
-
-        ensure_non_empty(
-            "aspect.prompt_assets.aspect_agent_prompt_path",
-            &self.aspect.prompt_assets.aspect_agent_prompt_path,
-        )?;
         self.search_policy.validate_for_search()?;
-        self.budget.validate_against_config(ctx.budget_config)?;
-        if let Some(timeout_ms) = self.execution_policy.timeout_ms
-            && Limit::limited(timeout_ms).exceeds(self.budget.timeout_ms)
-        {
-            return Err(Error::BudgetExceeded {
-                message: "execution timeout must not exceed agent budget timeout".to_owned(),
-            });
-        }
-        ensure_runtime_tools_allowed(&self.aspect.allowed_tools, ctx.supported_tool_name)
+
+        let parent_timeout = self.task.budget.timeout_ms;
+        validate_aspect_task(
+            &self.task,
+            &self.model_policy,
+            &self.search_policy,
+            &self.execution_policy,
+            parent_timeout,
+            ctx,
+            "execution timeout must not exceed agent budget timeout",
+        )
     }
 }
 
@@ -137,99 +112,153 @@ impl DeepResearchRequest {
     pub(crate) fn validate_for_execution(&self, ctx: &WorkflowValidationContext<'_>) -> Result<()> {
         ensure_non_empty("schema_version", &self.schema_version)?;
         ensure_non_empty("request_id", &self.request_id)?;
-        ensure_non_empty("plan.plan_id", &self.plan.plan_id)?;
+        ensure_schema_version_supported(&self.schema_version, ctx.supported_schema_versions)?;
 
-        if !ctx
-            .supported_schema_versions
-            .contains(&self.schema_version.as_str())
-        {
-            return Err(Error::SchemaValidationFailed {
-                message: format!("unsupported schema version: {}", self.schema_version),
-            });
-        }
-
-        if self.plan.aspects.is_empty() {
+        if self.aspect_tasks.is_empty() {
             return Err(Error::InvalidInput {
-                message: "plan.aspects must not be empty".to_owned(),
+                message: "aspect_tasks must not be empty".to_owned(),
             });
         }
 
-        self.plan
-            .budget
-            .validate_against_config(ctx.budget_config)?;
+        self.budget.validate_against_config(ctx.budget_config)?;
 
-        if Limit::limited(self.plan.aspects.len()).exceeds(self.plan.budget.max_agents) {
+        if Limit::limited(self.aspect_tasks.len()).exceeds(self.budget.max_agents) {
             return Err(Error::BudgetExceeded {
-                message: "plan aspect count exceeds max_agents".to_owned(),
+                message: "aspect task count exceeds max_agents".to_owned(),
             });
         }
 
         if let Some(timeout_ms) = self.execution_policy.timeout_ms
-            && Limit::limited(timeout_ms).exceeds(self.plan.budget.total_timeout_ms)
+            && Limit::limited(timeout_ms).exceeds(self.budget.total_timeout_ms)
         {
             return Err(Error::BudgetExceeded {
                 message: "execution timeout must not exceed research budget timeout".to_owned(),
             });
         }
 
-        self.plan.search_policy.validate_for_search()?;
+        self.search_policy.validate_for_search()?;
 
-        for aspect in &self.plan.aspects {
-            ensure_non_empty("aspect.aspect_id", &aspect.aspect_id)?;
-            ensure_non_empty("aspect.name", &aspect.name)?;
-            ensure_non_empty("aspect.research_question", &aspect.research_question)?;
-            ensure_non_empty(
-                "aspect.prompt_assets.aspect_agent_prompt_path",
-                &aspect.prompt_assets.aspect_agent_prompt_path,
+        for task in &self.aspect_tasks {
+            validate_aspect_task(
+                task,
+                &self.model_policy,
+                &self.search_policy,
+                &self.execution_policy,
+                self.budget.total_timeout_ms,
+                ctx,
+                "aspect budget timeout exceeds research budget timeout",
             )?;
-            ensure_runtime_tools_allowed(&aspect.allowed_tools, ctx.supported_tool_name)?;
-
-            if let Some(model_override) = &aspect.model_override
-                && !self
-                    .plan
-                    .model_policy
-                    .allowed_providers
-                    .contains(&model_override.provider)
-            {
-                return Err(Error::ProviderUnavailable {
-                    provider: model_override.provider.clone(),
-                    message: "aspect model override is not allowed by policy".to_owned(),
-                });
-            }
-
-            if let Some(search_override) = &aspect.search_override
-                && let Some(provider) = search_override.providers.iter().find(|provider| {
-                    !self
-                        .plan
-                        .search_policy
-                        .allowed_providers
-                        .contains(*provider)
-                })
-            {
-                return Err(Error::ProviderUnavailable {
-                    provider: provider.clone(),
-                    message: "aspect search override is not allowed by policy".to_owned(),
-                });
-            }
-
-            let aspect_budget = aspect
-                .budget_override
-                .as_ref()
-                .map_or_else(AgentBudget::default, std::clone::Clone::clone);
-            aspect_budget.validate_against_config(ctx.budget_config)?;
-            let aspect_timeout = self
-                .execution_policy
-                .timeout_ms
-                .map_or(aspect_budget.timeout_ms, Limit::limited);
-            if aspect_timeout.exceeds(self.plan.budget.total_timeout_ms) {
-                return Err(Error::BudgetExceeded {
-                    message: "aspect budget timeout exceeds research budget timeout".to_owned(),
-                });
-            }
         }
 
         Ok(())
     }
+}
+
+fn validate_aspect_task(
+    task: &AspectResearchTask,
+    model_policy: &ModelPolicy,
+    search_policy: &SearchPolicy,
+    execution_policy: &ExecutionPolicy,
+    parent_timeout: Limit<u64>,
+    ctx: &WorkflowValidationContext<'_>,
+    timeout_violation_message: &str,
+) -> Result<()> {
+    let aspect = &task.aspect;
+    ensure_non_empty("aspect.aspect_id", &aspect.aspect_id)?;
+    ensure_non_empty("aspect.name", &aspect.name)?;
+    ensure_non_empty("aspect.research_question", &aspect.research_question)?;
+    ensure_non_empty(
+        "aspect.aspect_agent_prompt_path",
+        &aspect.aspect_agent_prompt_path,
+    )?;
+    ensure_runtime_tools_allowed(&aspect.allowed_tools, ctx.supported_tool_name)?;
+    validate_explicit_model_provider(aspect, model_policy)?;
+    validate_explicit_search_provider(aspect, search_policy, ctx.supported_tool_name)?;
+    task.budget.validate_against_config(ctx.budget_config)?;
+
+    let effective_timeout = execution_policy
+        .timeout_ms
+        .map_or(parent_timeout, Limit::limited);
+    if effective_timeout.exceeds(parent_timeout) {
+        return Err(Error::BudgetExceeded {
+            message: timeout_violation_message.to_owned(),
+        });
+    }
+    Ok(())
+}
+
+fn ensure_schema_version_supported(version: &str, supported: &[&str]) -> Result<()> {
+    if supported.contains(&version) {
+        return Ok(());
+    }
+    Err(Error::SchemaValidationFailed {
+        message: format!("unsupported schema version: {version}"),
+    })
+}
+
+fn validate_explicit_model_provider(aspect: &AspectSpec, policy: &ModelPolicy) -> Result<()> {
+    let provider = validate_explicit_provider_name(
+        aspect.model_provider.as_deref(),
+        "aspect must specify model_provider",
+        "model_provider must be a non-empty provider name",
+    )?;
+
+    if !policy.allowed_providers.iter().any(|p| p == provider) {
+        return Err(Error::ProviderUnavailable {
+            provider: provider.to_owned(),
+            message: "aspect model provider is not allowed by policy".to_owned(),
+        });
+    }
+
+    Ok(())
+}
+
+fn validate_explicit_search_provider(
+    aspect: &AspectSpec,
+    policy: &SearchPolicy,
+    supported_tool_name: &str,
+) -> Result<()> {
+    if !aspect
+        .allowed_tools
+        .iter()
+        .any(|tool| tool.0 == supported_tool_name)
+    {
+        return Ok(());
+    }
+
+    let provider = validate_explicit_provider_name(
+        aspect.search_provider.as_deref(),
+        "search-enabled aspect must specify search_provider",
+        "search_provider must be a non-empty provider name",
+    )?;
+
+    if !policy.allowed_providers.iter().any(|p| p == provider) {
+        return Err(Error::ProviderUnavailable {
+            provider: provider.to_owned(),
+            message: "aspect search provider is not allowed by policy".to_owned(),
+        });
+    }
+
+    Ok(())
+}
+
+fn validate_explicit_provider_name<'a>(
+    provider: Option<&'a str>,
+    missing_message: &str,
+    invalid_message: &str,
+) -> Result<&'a str> {
+    let provider = provider.ok_or_else(|| Error::InvalidInput {
+        message: missing_message.to_owned(),
+    })?;
+
+    let trimmed = provider.trim();
+    if trimmed.is_empty() || trimmed != provider {
+        return Err(Error::InvalidInput {
+            message: invalid_message.to_owned(),
+        });
+    }
+
+    Ok(provider)
 }
 
 fn ensure_runtime_tools_allowed(tools: &[ToolName], supported_tool_name: &str) -> Result<()> {

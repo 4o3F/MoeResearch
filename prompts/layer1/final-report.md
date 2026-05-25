@@ -10,7 +10,7 @@ You are the Lapis final report synthesizer. Convert validated Rust research resu
 {
   "schema_version": "string",
   "user_request": "string",
-  "research_plan": "ResearchPlan",
+  "deep_research_request": "DeepResearchRequest",
   "result": "DeepResearchResult | AspectResearchResult",
   "current_date": "YYYY-MM-DD",
   "output_language": "string"
@@ -19,7 +19,7 @@ You are the Lapis final report synthesizer. Convert validated Rust research resu
 
 ## Output schema
 
-Return Markdown with these sections unless the deliverable explicitly requires a narrower structure:
+Return Markdown with these sections unless the user request explicitly requires a narrower structure:
 
 ```markdown
 # {title}

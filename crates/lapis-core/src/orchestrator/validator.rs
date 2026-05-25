@@ -55,6 +55,7 @@ impl<'a> OutputValidator<'a> {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     fn validate_report(
         &self,
         report: &AspectReport,

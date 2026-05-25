@@ -1,13 +1,12 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::net::NetworkClient;
 use crate::schema::config::LapisConfig;
 use crate::schema::policy::SearchPolicy;
-use crate::schema::search::{ProviderSearchRequest, SearchRequest, SearchResponse};
-use crate::search::provider::SearchProvider;
-use crate::search::providers::{ExaSearchProvider, GrokSearchProvider};
+use crate::schema::search::{SearchRequest, SearchResponse};
+use crate::search::provider::{ExaSearchProvider, GrokSearchProvider, SearchProvider};
 
 #[derive(Default)]
 pub struct SearchService {
@@ -27,10 +26,6 @@ impl SearchService {
             .insert(provider.name().to_owned(), Arc::new(provider));
     }
 
-    pub fn register_arc(&mut self, provider: Arc<dyn SearchProvider>) {
-        self.providers.insert(provider.name().to_owned(), provider);
-    }
-
     pub fn provider_names(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
     }
@@ -41,53 +36,16 @@ impl SearchService {
         policy: &SearchPolicy,
     ) -> Result<SearchResponse> {
         request.validate_with_policy(policy)?;
-        let provider_names = self.candidate_providers(policy);
-        let mut last_error = None;
+        let provider_name = request.provider.clone();
+        let provider =
+            self.providers
+                .get(&provider_name)
+                .ok_or_else(|| Error::ProviderUnavailable {
+                    provider: provider_name.clone(),
+                    message: "search provider is not configured".to_owned(),
+                })?;
 
-        let provider_request = ProviderSearchRequest::from_policy(request, policy);
-        for name in provider_names {
-            let Some(provider) = self.providers.get(&name) else {
-                continue;
-            };
-
-            match provider.search(provider_request.clone()).await {
-                Ok(response) => return Ok(response),
-                Err(error) => {
-                    tracing::warn!(provider = name, error = %error, "search provider failed");
-                    last_error = Some(error);
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| Error::ProviderUnavailable {
-            provider: "search".to_owned(),
-            message: "no configured search provider matched the request policy".to_owned(),
-        }))
-    }
-
-    fn candidate_providers(&self, policy: &SearchPolicy) -> Vec<String> {
-        let allowed = if policy.allowed_providers.is_empty() {
-            self.providers.keys().cloned().collect::<BTreeSet<_>>()
-        } else {
-            policy
-                .allowed_providers
-                .iter()
-                .cloned()
-                .collect::<BTreeSet<_>>()
-        };
-
-        let mut names = Vec::new();
-        for provider in &policy.preferred_providers {
-            if allowed.contains(provider) && !names.contains(provider) {
-                names.push(provider.clone());
-            }
-        }
-        for provider in allowed {
-            if !names.contains(&provider) {
-                names.push(provider);
-            }
-        }
-        names
+        provider.search(request.with_policy(policy)).await
     }
 }
 

@@ -8,15 +8,36 @@ use crate::error::{Error, Result};
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ToolName(pub String);
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct ModelSelector {
-    pub provider: String,
-    pub model: Option<String>,
+impl ToolName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct SearchSelector {
-    pub providers: Vec<String>,
+impl From<&str> for ToolName {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<String> for ToolName {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl AsRef<str> for ToolName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+pub struct ModelPolicy {
+    pub allowed_providers: Vec<String>,
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+    pub require_tool_call_support: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
@@ -26,70 +47,14 @@ pub struct Freshness {
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct EvidenceRequirement {
-    pub min_sources: usize,
-    pub min_independent_sources: usize,
-    pub allow_low_confidence_findings: bool,
-}
-
-impl Default for EvidenceRequirement {
-    fn default() -> Self {
-        Self {
-            min_sources: 2,
-            min_independent_sources: 2,
-            allow_low_confidence_findings: false,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct ModelPolicy {
-    pub default_provider: String,
-    pub default_model: Option<String>,
-    pub allowed_providers: Vec<String>,
-    pub temperature: Option<f32>,
-    pub max_tokens: Option<u32>,
-    pub require_tool_call_support: bool,
-}
-
-impl Default for ModelPolicy {
-    fn default() -> Self {
-        Self {
-            default_provider: "openai".to_owned(),
-            default_model: None,
-            allowed_providers: vec!["openai".to_owned()],
-            temperature: Some(0.2),
-            max_tokens: None,
-            require_tool_call_support: true,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct SearchPolicy {
     pub allowed_providers: Vec<String>,
-    pub preferred_providers: Vec<String>,
     pub max_results_per_query: usize,
     pub freshness: Option<Freshness>,
     pub language: Option<String>,
     pub region: Option<String>,
     pub include_domains: Vec<String>,
     pub exclude_domains: Vec<String>,
-}
-
-impl Default for SearchPolicy {
-    fn default() -> Self {
-        Self {
-            allowed_providers: vec!["exa".to_owned(), "grok".to_owned()],
-            preferred_providers: vec!["exa".to_owned(), "grok".to_owned()],
-            max_results_per_query: 5,
-            freshness: None,
-            language: None,
-            region: None,
-            include_domains: vec![],
-            exclude_domains: vec![],
-        }
-    }
 }
 
 impl SearchPolicy {
@@ -127,30 +92,10 @@ pub struct EvidencePolicy {
     pub min_evidence_per_finding: usize,
 }
 
-impl Default for EvidencePolicy {
-    fn default() -> Self {
-        Self {
-            require_evidence_for_findings: true,
-            min_evidence_per_finding: 1,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct OutputPolicy {
     pub language: String,
-    pub include_trace_summary: bool,
     pub max_findings_per_aspect: Option<usize>,
-}
-
-impl Default for OutputPolicy {
-    fn default() -> Self {
-        Self {
-            language: "zh-CN".to_owned(),
-            include_trace_summary: true,
-            max_findings_per_aspect: None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
@@ -158,14 +103,4 @@ pub struct ExecutionPolicy {
     pub allow_partial_results: bool,
     pub fail_fast: bool,
     pub timeout_ms: Option<u64>,
-}
-
-impl Default for ExecutionPolicy {
-    fn default() -> Self {
-        Self {
-            allow_partial_results: true,
-            fail_fast: false,
-            timeout_ms: Some(300_000),
-        }
-    }
 }

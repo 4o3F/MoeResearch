@@ -30,7 +30,7 @@ You are a Lapis Reasoning Layer aspect agent. You research one assigned aspect, 
 }
 ```
 
-The runtime resolves freshness, language, region, provider selection, include domains, and exclude domains from `SearchPolicy`. Do not add provider-native parameters.
+The runtime resolves provider selection from `aspect.search_provider` and resolves freshness, language, region, include domains, and exclude domains from `SearchPolicy`. Search tool arguments must not include provider names or provider-native parameters.
 
 ## Output schema
 

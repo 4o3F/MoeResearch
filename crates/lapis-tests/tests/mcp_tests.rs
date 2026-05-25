@@ -12,30 +12,34 @@ use lapis_core::mcp::LapisMcpServer;
 use lapis_core::model::provider::ModelProvider;
 use lapis_core::model::service::ModelService;
 use lapis_core::orchestrator::workflow::deep_research;
-use lapis_core::schema::budget::{AgentBudget, ResearchBudget};
-use lapis_core::schema::config::BudgetConfig;
+use lapis_core::schema::budget::{AgentBudget, BudgetConfig, ResearchBudget};
 use lapis_core::schema::limit::Limit;
 use lapis_core::schema::mcp::{ToolEnvelope, ToolErrorCode, ToolStatus};
 use lapis_core::schema::model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
 use lapis_core::schema::policy::{
-    EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
-    ToolName,
+    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
 };
 use lapis_core::schema::report::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
-    OpenQuestion, TerminationReason,
+    OpenQuestion,
 };
 use lapis_core::schema::research::{
-    AspectResearchRequest, AspectSpec, DeepResearchRequest, DeliverableSpec, PromptAssets,
-    ResearchContext, ResearchPlan,
+    AspectResearchRequest, AspectResearchTask, AspectSpec, DeepResearchRequest, ResearchContext,
 };
-use lapis_core::schema::search::{ProviderSearchRequest, SearchResponse, SearchResult};
+use lapis_core::schema::search::{SearchRequest, SearchResponse, SearchResult};
 use lapis_core::search::provider::SearchProvider;
 use lapis_core::search::service::SearchService;
 use rmcp::ServerHandler;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::schemars::schema_for;
 use serde_json::json;
+
+fn unlimited_budget_config() -> BudgetConfig {
+    BudgetConfig {
+        research: ResearchBudget::unlimited(),
+        per_agent: AgentBudget::unlimited(),
+    }
+}
 
 struct AdaptiveModelProvider {
     failing_aspects: BTreeSet<String>,
@@ -114,7 +118,7 @@ impl SearchProvider for StaticSearchProvider {
         "searcher"
     }
 
-    async fn search(&self, _request: ProviderSearchRequest) -> Result<SearchResponse> {
+    async fn search(&self, _request: SearchRequest) -> Result<SearchResponse> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(SearchResponse {
             provider: "searcher".to_owned(),
@@ -181,27 +185,24 @@ fn sequence_services(responses: Vec<ModelResponse>) -> Services {
     }
 }
 
-fn prompt_assets() -> PromptAssets {
-    PromptAssets {
-        aspect_agent_prompt_path: "prompts/layer2/aspect-agent.md".to_owned(),
-    }
+fn prompt_path() -> String {
+    "prompts/layer2/aspect-agent.md".to_owned()
 }
 
 fn aspect_request() -> AspectResearchRequest {
     AspectResearchRequest {
         schema_version: "m4".to_owned(),
         request_id: "request-1".to_owned(),
-        aspect: aspect(1),
-        shared_context: ResearchContext::default(),
+        task: AspectResearchTask {
+            aspect: aspect(1),
+            budget: AgentBudget::unlimited(),
+        },
+        shared_context: ResearchContext::empty(),
         model_policy: model_policy(),
         search_policy: search_policy(),
-        evidence_policy: EvidencePolicy::default(),
-        output_policy: OutputPolicy::default(),
-        budget: AgentBudget::default(),
-        execution_policy: ExecutionPolicy {
-            timeout_ms: Some(180_000),
-            ..ExecutionPolicy::default()
-        },
+        evidence_policy: evidence_policy(),
+        output_policy: output_policy(),
+        execution_policy: execution_policy(Some(180_000)),
     }
 }
 
@@ -209,35 +210,22 @@ fn deep_request(count: usize) -> DeepResearchRequest {
     DeepResearchRequest {
         schema_version: "m5".to_owned(),
         request_id: "request-1".to_owned(),
-        plan: ResearchPlan {
-            plan_id: "plan-1".to_owned(),
-            user_question: "What is true?".to_owned(),
-            deliverable: DeliverableSpec {
-                kind: "brief".to_owned(),
-                language: "en".to_owned(),
-                expected_sections: vec!["summary".to_owned()],
-                notes: vec![],
-            },
-            constraints: vec![],
-            aspects: (1..=count).map(aspect).collect(),
-            budget: ResearchBudget {
-                max_agents: Limit::limited(count),
-                max_concurrent_agents: Limit::limited(2),
-                max_total_model_calls: Limit::limited(20),
-                max_total_search_calls: Limit::limited(20),
-                total_timeout_ms: Limit::limited(180_000),
-                max_tokens: Limit::unlimited(),
-            },
-            model_policy: model_policy(),
-            search_policy: search_policy(),
-            evidence_policy: EvidencePolicy::default(),
-            output_policy: OutputPolicy::default(),
+        user_question: "What is true?".to_owned(),
+        aspect_tasks: (1..=count).map(aspect_task).collect(),
+        budget: ResearchBudget {
+            max_agents: Limit::limited(count),
+            max_concurrent_agents: Limit::limited(2),
+            max_total_model_calls: Limit::limited(20),
+            max_total_search_calls: Limit::limited(20),
+            total_timeout_ms: Limit::limited(180_000),
+            max_tokens: Limit::unlimited(),
         },
-        shared_context: ResearchContext::default(),
-        execution_policy: ExecutionPolicy {
-            timeout_ms: Some(180_000),
-            ..ExecutionPolicy::default()
-        },
+        model_policy: model_policy(),
+        search_policy: search_policy(),
+        evidence_policy: evidence_policy(),
+        output_policy: output_policy(),
+        shared_context: ResearchContext::empty(),
+        execution_policy: execution_policy(Some(180_000)),
     }
 }
 
@@ -250,29 +238,60 @@ fn aspect(index: usize) -> AspectSpec {
         scope: vec!["scope".to_owned()],
         boundaries: vec![],
         success_criteria: vec!["answer".to_owned()],
-        prompt_assets: prompt_assets(),
-        required_evidence: EvidenceRequirement::default(),
+        aspect_agent_prompt_path: prompt_path(),
         allowed_tools: vec![ToolName("search".to_owned())],
-        model_override: None,
-        search_override: None,
-        budget_override: Some(AgentBudget::default()),
+        model_provider: Some("model".to_owned()),
+        search_provider: Some("searcher".to_owned()),
+    }
+}
+
+fn aspect_task(index: usize) -> AspectResearchTask {
+    AspectResearchTask {
+        aspect: aspect(index),
+        budget: AgentBudget::unlimited(),
     }
 }
 
 fn model_policy() -> ModelPolicy {
     ModelPolicy {
-        default_provider: "model".to_owned(),
         allowed_providers: vec!["model".to_owned()],
-        ..ModelPolicy::default()
+        temperature: Some(0.2),
+        max_tokens: None,
+        require_tool_call_support: true,
     }
 }
 
 fn search_policy() -> SearchPolicy {
     SearchPolicy {
         allowed_providers: vec!["searcher".to_owned()],
-        preferred_providers: vec!["searcher".to_owned()],
         max_results_per_query: 2,
-        ..SearchPolicy::default()
+        freshness: None,
+        language: None,
+        region: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+    }
+}
+
+fn evidence_policy() -> EvidencePolicy {
+    EvidencePolicy {
+        require_evidence_for_findings: true,
+        min_evidence_per_finding: 1,
+    }
+}
+
+fn output_policy() -> OutputPolicy {
+    OutputPolicy {
+        language: "zh-CN".to_owned(),
+        max_findings_per_aspect: None,
+    }
+}
+
+fn execution_policy(timeout_ms: Option<u64>) -> ExecutionPolicy {
+    ExecutionPolicy {
+        allow_partial_results: true,
+        fail_fast: false,
+        timeout_ms,
     }
 }
 
@@ -364,8 +383,8 @@ fn has_tool_output(input: &[ModelInputItem]) -> bool {
 
 fn aspect_field(input: &[ModelInputItem], label: &str) -> String {
     let pointer = match label {
-        "Aspect ID" => "/aspect/aspect_id",
-        "Aspect name" => "/aspect/name",
+        "Aspect ID" => "/task/aspect/aspect_id",
+        "Aspect name" => "/task/aspect/name",
         _ => return String::new(),
     };
 
@@ -396,7 +415,7 @@ fn aspect_field(input: &[ModelInputItem], label: &str) -> String {
 }
 
 fn mcp_server(services: Services) -> LapisMcpServer {
-    LapisMcpServer::new(services.model, services.search, BudgetConfig::default())
+    LapisMcpServer::new(services.model, services.search, unlimited_budget_config())
 }
 
 #[test]
@@ -434,7 +453,7 @@ fn aspect_research_tool_schema_uses_limit_wire_format() {
 }
 
 #[test]
-fn tool_envelope_schema_omits_success_trace_and_exposes_partial_trace() {
+fn tool_envelope_schema_omits_trace_payloads() {
     let schema = schema_for!(ToolEnvelope<AspectResearchResult>);
     let schema = serde_json::to_value(&schema).expect("schema json");
     let properties = schema
@@ -442,10 +461,12 @@ fn tool_envelope_schema_omits_success_trace_and_exposes_partial_trace() {
         .and_then(serde_json::Value::as_object)
         .expect("schema properties");
 
+    assert!(!properties.contains_key("partial_trace"));
     assert!(!properties.contains_key("trace_summary"));
     assert!(!properties.contains_key("warnings"));
-    assert!(properties.contains_key("partial_trace"));
-    assert!(!schema.to_string().contains("partialTrace"));
+    let schema_json = schema.to_string();
+    assert!(!schema_json.contains("PartialTrace"));
+    assert!(!schema_json.contains("TraceSummary"));
 }
 
 #[tokio::test]
@@ -462,8 +483,7 @@ async fn aspect_research_success_returns_ok_envelope() {
     assert_eq!(envelope.request_id, "request-1");
     assert!(envelope.data.is_some());
     assert!(envelope.error.is_none());
-    assert!(envelope.run_id.is_some());
-    assert!(envelope.partial_trace.is_none());
+    assert!(envelope.run_id.is_none());
     assert_eq!(model_calls.load(Ordering::SeqCst), 2);
     assert_eq!(search_calls.load(Ordering::SeqCst), 1);
 }
@@ -471,7 +491,7 @@ async fn aspect_research_success_returns_ok_envelope() {
 #[tokio::test]
 async fn aspect_research_invalid_input_returns_failed_envelope() {
     let mut request = aspect_request();
-    request.aspect.research_question.clear();
+    request.task.aspect.research_question.clear();
     let envelope = mcp_server(services(&[]))
         .aspect_research(Parameters(request))
         .await
@@ -479,16 +499,15 @@ async fn aspect_research_invalid_input_returns_failed_envelope() {
 
     assert_eq!(envelope.status, ToolStatus::Failed);
     assert!(envelope.data.is_none());
-    assert!(envelope.partial_trace.is_none());
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::InvalidInput);
     assert!(!error.retryable);
 }
 
 #[tokio::test]
-async fn aspect_research_budget_failure_envelope_includes_partial_trace() {
+async fn aspect_research_budget_failure_envelope_returns_tool_error() {
     let mut request = aspect_request();
-    request.budget.max_search_calls = Limit::limited(2);
+    request.task.budget.max_search_calls = Limit::limited(2);
     let services = sequence_services(vec![tool_response(), tool_response(), tool_response()]);
     let search_calls = services.search_calls.clone();
 
@@ -503,32 +522,8 @@ async fn aspect_research_budget_failure_envelope_includes_partial_trace() {
         envelope.error.expect("tool error").code,
         ToolErrorCode::BudgetExceeded
     );
-    assert!(envelope.run_id.is_some());
+    assert!(envelope.run_id.is_none());
     assert_eq!(search_calls.load(Ordering::SeqCst), 2);
-    let partial = envelope.partial_trace.expect("partial trace");
-    assert_eq!(partial.search_queries.len(), 2);
-    assert_eq!(partial.tool_calls.len(), 2);
-    assert_eq!(partial.provider_usage.search_calls, 2);
-    assert_eq!(partial.budget_usage.tool_calls_used, 2);
-    assert_eq!(partial.budget_usage.search_calls_used, 2);
-    assert_eq!(
-        partial.trace_summary.termination_reason,
-        Some(TerminationReason::BudgetExceeded)
-    );
-    assert_eq!(partial.search_queries[0].query, "private query");
-    assert_eq!(partial.search_queries[0].sources[0].title, "Shared Source");
-    assert_eq!(
-        partial.search_queries[0].sources[0].url.as_deref(),
-        Some("https://example.test/shared")
-    );
-    assert_eq!(
-        partial.tool_calls[0]
-            .search
-            .as_ref()
-            .expect("search trace")
-            .provider,
-        "searcher"
-    );
 }
 
 #[tokio::test]
@@ -575,7 +570,7 @@ async fn deep_research_all_failed_returns_failed_envelope_with_tool_error() {
         request,
         &expected_services.model,
         &expected_services.search,
-        &BudgetConfig::default(),
+        &unlimited_budget_config(),
     )
     .await
     .expect_err("deep error")
@@ -627,6 +622,57 @@ fn cli_serve_writes_startup_logs_to_stderr_not_stdout() {
         .parent()
         .and_then(std::path::Path::parent)
         .expect("workspace root");
+    let config_path =
+        std::env::temp_dir().join(format!("lapis-mcp-stdio-test-{}.toml", std::process::id()));
+    std::fs::write(
+        &config_path,
+        r#"
+[logging]
+format = "json"
+
+[network]
+timeout_ms = 30000
+max_retries = 2
+retry_backoff_ms = 200
+user_agent = "lapis/0.1.0"
+
+[search.providers.exa]
+enabled = false
+base_url = "https://api.exa.ai"
+api_key_env = "EXA_API_KEY"
+timeout_ms = 30000
+
+[search.providers.grok]
+enabled = false
+base_url = "https://api.x.ai"
+api_key_env = "XAI_API_KEY"
+timeout_ms = 30000
+model = "grok-4.20-fast"
+
+[model.providers.openai]
+enabled = false
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+timeout_ms = 30000
+model = "gpt-5.5"
+
+[budget.research]
+max_agents = -1
+max_concurrent_agents = -1
+max_total_model_calls = -1
+max_total_search_calls = -1
+total_timeout_ms = -1
+max_tokens = -1
+
+[budget.per_agent]
+max_turns = -1
+max_tool_calls = -1
+max_search_calls = -1
+timeout_ms = -1
+"#,
+    )
+    .expect("write test config");
+
     let mut child = Command::new(env!("CARGO"))
         .current_dir(workspace)
         .args([
@@ -638,8 +684,8 @@ fn cli_serve_writes_startup_logs_to_stderr_not_stdout() {
             "--",
             "serve",
             "--config",
-            "missing-mcp-stdio-test.toml",
         ])
+        .arg(&config_path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -653,13 +699,13 @@ fn cli_serve_writes_startup_logs_to_stderr_not_stdout() {
     let output = child
         .wait_with_output()
         .expect("collect lapis serve output");
+    let _ = std::fs::remove_file(&config_path);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(!stdout.contains("lapis core initialized"));
-    assert!(!stdout.contains("user config not found"));
     assert!(
-        stderr.contains("lapis core initialized") || stderr.contains("user config not found"),
+        stderr.contains("lapis core initialized"),
         "expected startup logs on stderr, got stderr: {stderr}"
     );
 }

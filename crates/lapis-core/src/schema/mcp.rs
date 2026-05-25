@@ -1,8 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::report::PartialTrace;
-
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct ToolEnvelope<T> {
     pub schema_version: String,
@@ -14,8 +12,6 @@ pub struct ToolEnvelope<T> {
     pub data: Option<T>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ToolError>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub partial_trace: Option<PartialTrace>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]

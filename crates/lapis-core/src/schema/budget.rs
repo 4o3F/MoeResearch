@@ -3,11 +3,52 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 
-use super::config::BudgetConfig;
 use super::limit::{CountLimit, DurationLimitMs, Limit, TokenLimit};
 use super::report::ResearchBudgetUsage;
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BudgetConfig {
+    pub research: ResearchBudget,
+    pub per_agent: AgentBudget,
+}
+
+impl BudgetConfig {
+    pub(crate) fn validate(&self) -> Result<()> {
+        self.research
+            .max_agents
+            .require_non_zero("budget.research.max_agents")?;
+        self.research
+            .max_concurrent_agents
+            .require_non_zero("budget.research.max_concurrent_agents")?;
+        self.research
+            .total_timeout_ms
+            .require_non_zero("budget.research.total_timeout_ms")?;
+        self.per_agent
+            .max_turns
+            .require_non_zero("budget.per_agent.max_turns")?;
+        self.per_agent
+            .timeout_ms
+            .require_non_zero("budget.per_agent.timeout_ms")?;
+
+        if self
+            .research
+            .max_concurrent_agents
+            .exceeds(self.research.max_agents)
+        {
+            return Err(Error::ConfigInvalid {
+                message: "budget.research.max_concurrent_agents must not exceed \
+                          budget.research.max_agents"
+                    .to_owned(),
+            });
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResearchBudget {
     pub max_agents: CountLimit,
     pub max_concurrent_agents: CountLimit,
@@ -17,8 +58,12 @@ pub struct ResearchBudget {
     pub max_tokens: TokenLimit,
 }
 
-impl Default for ResearchBudget {
-    fn default() -> Self {
+impl ResearchBudget {
+    /// Explicitly construct a research budget with no caps on any dimension.
+    /// Intended for tests and controlled environments only; production callers
+    /// must declare each dimension to prevent unbounded resource use.
+    #[must_use]
+    pub fn unlimited() -> Self {
         Self {
             max_agents: Limit::unlimited(),
             max_concurrent_agents: Limit::unlimited(),
@@ -31,6 +76,7 @@ impl Default for ResearchBudget {
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AgentBudget {
     pub max_turns: CountLimit,
     pub max_tool_calls: CountLimit,
@@ -38,8 +84,11 @@ pub struct AgentBudget {
     pub timeout_ms: DurationLimitMs,
 }
 
-impl Default for AgentBudget {
-    fn default() -> Self {
+impl AgentBudget {
+    /// Explicitly construct an agent budget with no caps on any dimension.
+    /// Intended for tests and controlled environments only.
+    #[must_use]
+    pub fn unlimited() -> Self {
         Self {
             max_turns: Limit::unlimited(),
             max_tool_calls: Limit::unlimited(),
@@ -51,23 +100,15 @@ impl Default for AgentBudget {
 
 impl ResearchBudget {
     pub(crate) fn validate_against_config(&self, limits: &BudgetConfig) -> Result<()> {
-        if self.max_agents.is_zero() {
-            return Err(Error::BudgetExceeded {
-                message: "research budget requires at least one agent".to_owned(),
-            });
-        }
-
-        if self.max_concurrent_agents.is_zero() {
-            return Err(Error::BudgetExceeded {
-                message: "research budget requires non-zero concurrency".to_owned(),
-            });
-        }
-
-        if self.total_timeout_ms.is_zero() {
-            return Err(Error::BudgetExceeded {
-                message: "research budget requires a non-zero timeout".to_owned(),
-            });
-        }
+        ensure_budget_non_zero("research budget requires at least one agent", self.max_agents)?;
+        ensure_budget_non_zero(
+            "research budget requires non-zero concurrency",
+            self.max_concurrent_agents,
+        )?;
+        ensure_budget_non_zero(
+            "research budget requires a non-zero timeout",
+            self.total_timeout_ms,
+        )?;
 
         if self.max_concurrent_agents.exceeds(self.max_agents) {
             return Err(Error::BudgetExceeded {
@@ -75,118 +116,122 @@ impl ResearchBudget {
             });
         }
 
-        if self.max_agents.exceeds(limits.max_agents) {
-            return Err(Error::BudgetExceeded {
-                message: "research max_agents exceeds configured budget limit".to_owned(),
-            });
-        }
-
-        if self
-            .max_concurrent_agents
-            .exceeds(limits.max_concurrent_agents)
-        {
-            return Err(Error::BudgetExceeded {
-                message: "research concurrency exceeds configured budget limit".to_owned(),
-            });
-        }
-
-        if self
-            .max_total_model_calls
-            .exceeds(limits.max_total_model_calls)
-        {
-            return Err(Error::BudgetExceeded {
-                message: "research model calls exceed configured budget limit".to_owned(),
-            });
-        }
-
-        if self
-            .max_total_search_calls
-            .exceeds(limits.max_total_search_calls)
-        {
-            return Err(Error::BudgetExceeded {
-                message: "research search calls exceed configured budget limit".to_owned(),
-            });
-        }
-
-        if self.total_timeout_ms.exceeds(limits.max_total_timeout_ms) {
-            return Err(Error::BudgetExceeded {
-                message: "research timeout exceeds configured budget limit".to_owned(),
-            });
-        }
+        ensure_within(
+            "research max_agents",
+            self.max_agents,
+            limits.research.max_agents,
+        )?;
+        ensure_within(
+            "research concurrency",
+            self.max_concurrent_agents,
+            limits.research.max_concurrent_agents,
+        )?;
+        ensure_within(
+            "research model calls",
+            self.max_total_model_calls,
+            limits.research.max_total_model_calls,
+        )?;
+        ensure_within(
+            "research search calls",
+            self.max_total_search_calls,
+            limits.research.max_total_search_calls,
+        )?;
+        ensure_within(
+            "research timeout",
+            self.total_timeout_ms,
+            limits.research.total_timeout_ms,
+        )?;
 
         Ok(())
     }
 
     pub(crate) fn ensure_usage_within(&self, usage: &ResearchBudgetUsage) -> Result<()> {
-        if Limit::limited(usage.model_calls_used).exceeds(self.max_total_model_calls) {
-            return Err(Error::BudgetExceeded {
-                message: "research model call budget exhausted".to_owned(),
-            });
-        }
-
-        if Limit::limited(usage.search_calls_used).exceeds(self.max_total_search_calls) {
-            return Err(Error::BudgetExceeded {
-                message: "research search call budget exhausted".to_owned(),
-            });
-        }
-
-        if Limit::limited(usage.elapsed_ms).exceeds(self.total_timeout_ms) {
-            return Err(Error::BudgetExceeded {
-                message: "research timeout budget exhausted".to_owned(),
-            });
-        }
-
+        ensure_usage_within(
+            "research model call",
+            Limit::limited(usage.model_calls_used),
+            self.max_total_model_calls,
+        )?;
+        ensure_usage_within(
+            "research search call",
+            Limit::limited(usage.search_calls_used),
+            self.max_total_search_calls,
+        )?;
+        ensure_usage_within(
+            "research timeout",
+            Limit::limited(usage.elapsed_ms),
+            self.total_timeout_ms,
+        )?;
         Ok(())
     }
 }
 
 impl AgentBudget {
     pub(crate) fn ensure_runnable(&self) -> Result<()> {
-        if self.max_turns.is_zero() {
-            return Err(Error::BudgetExceeded {
-                message: "agent budget requires at least one model turn".to_owned(),
-            });
-        }
-
-        if self.timeout_ms.is_zero() {
-            return Err(Error::BudgetExceeded {
-                message: "agent budget requires a non-zero timeout".to_owned(),
-            });
-        }
-
+        ensure_budget_non_zero(
+            "agent budget requires at least one model turn",
+            self.max_turns,
+        )?;
+        ensure_budget_non_zero(
+            "agent budget requires a non-zero timeout",
+            self.timeout_ms,
+        )?;
         Ok(())
     }
 
     pub(crate) fn validate_against_config(&self, limits: &BudgetConfig) -> Result<()> {
         self.ensure_runnable()?;
-
-        if self.max_turns.exceeds(limits.max_turns_per_agent) {
-            return Err(Error::BudgetExceeded {
-                message: "agent turns exceed configured budget limit".to_owned(),
-            });
-        }
-
-        if self.max_tool_calls.exceeds(limits.max_tool_calls_per_agent) {
-            return Err(Error::BudgetExceeded {
-                message: "agent tool calls exceed configured budget limit".to_owned(),
-            });
-        }
-
-        if self
-            .max_search_calls
-            .exceeds(limits.max_search_calls_per_agent)
-        {
-            return Err(Error::BudgetExceeded {
-                message: "agent search calls exceed configured budget limit".to_owned(),
-            });
-        }
-
-        if self.timeout_ms.exceeds(limits.max_agent_timeout_ms) {
-            return Err(Error::BudgetExceeded {
-                message: "agent timeout exceeds configured budget limit".to_owned(),
-            });
-        }
-
+        ensure_within("agent turns", self.max_turns, limits.per_agent.max_turns)?;
+        ensure_within(
+            "agent tool calls",
+            self.max_tool_calls,
+            limits.per_agent.max_tool_calls,
+        )?;
+        ensure_within(
+            "agent search calls",
+            self.max_search_calls,
+            limits.per_agent.max_search_calls,
+        )?;
+        ensure_within(
+            "agent timeout",
+            self.timeout_ms,
+            limits.per_agent.timeout_ms,
+        )?;
         Ok(())
     }
+}
+
+fn ensure_within<T>(label: &str, value: Limit<T>, max: Limit<T>) -> Result<()>
+where
+    T: Copy + Ord,
+{
+    if value.exceeds(max) {
+        return Err(Error::BudgetExceeded {
+            message: format!("{label} exceeds configured budget limit"),
+        });
+    }
+    Ok(())
+}
+
+fn ensure_usage_within<T>(label: &str, used: Limit<T>, max: Limit<T>) -> Result<()>
+where
+    T: Copy + Ord,
+{
+    if used.exceeds(max) {
+        return Err(Error::BudgetExceeded {
+            message: format!("{label} budget exhausted"),
+        });
+    }
+    Ok(())
+}
+
+fn ensure_budget_non_zero<T>(message: &str, value: Limit<T>) -> Result<()>
+where
+    T: Copy + PartialEq + Default,
+{
+    if value.is_zero() {
+        return Err(Error::BudgetExceeded {
+            message: message.to_owned(),
+        });
+    }
+    Ok(())
 }

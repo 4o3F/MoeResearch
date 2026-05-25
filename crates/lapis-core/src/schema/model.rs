@@ -2,6 +2,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::error::{Error, Result};
+
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct ModelRequest {
     pub provider: String,
@@ -14,11 +16,9 @@ pub struct ModelRequest {
 }
 
 impl ModelRequest {
-    pub fn validate(&self) -> crate::error::Result<()> {
+    pub fn validate(&self) -> Result<()> {
         if self.input.is_empty() {
-            return Err(crate::error::Error::SchemaValidationFailed {
-                message: "model input must not be empty".to_string(),
-            });
+            return Err(schema_error("model input must not be empty"));
         }
 
         if self
@@ -26,58 +26,54 @@ impl ModelRequest {
             .as_deref()
             .is_some_and(|value| value.trim().is_empty())
         {
-            return Err(crate::error::Error::SchemaValidationFailed {
-                message: "model previous_response_id must not be empty".to_string(),
-            });
+            return Err(schema_error("model previous_response_id must not be empty"));
         }
 
         for item in &self.input {
             match item {
-                ModelInputItem::Message(message) if message.content.trim().is_empty() => {
-                    return Err(crate::error::Error::SchemaValidationFailed {
-                        message: "model message content must not be empty".to_string(),
-                    });
+                ModelInputItem::Message(message) => {
+                    ensure_non_empty_str(&message.content, "model message content")?;
                 }
-                ModelInputItem::ToolCall(call) if call.id.trim().is_empty() => {
-                    return Err(crate::error::Error::SchemaValidationFailed {
-                        message: "model tool call id must not be empty".to_string(),
-                    });
+                ModelInputItem::ToolCall(call) => {
+                    ensure_non_empty_str(&call.id, "model tool call id")?;
+                    ensure_non_empty_str(&call.name, "model tool call name")?;
                 }
-                ModelInputItem::ToolCall(call) if call.name.trim().is_empty() => {
-                    return Err(crate::error::Error::SchemaValidationFailed {
-                        message: "model tool call name must not be empty".to_string(),
-                    });
+                ModelInputItem::ToolOutput(output) => {
+                    ensure_non_empty_str(&output.call_id, "model tool output call_id")?;
                 }
-                ModelInputItem::ToolOutput(output) if output.call_id.trim().is_empty() => {
-                    return Err(crate::error::Error::SchemaValidationFailed {
-                        message: "model tool output call_id must not be empty".to_string(),
-                    });
-                }
-                _ => {}
             }
         }
 
-        if self.tools.iter().any(|tool| tool.name.trim().is_empty()) {
-            return Err(crate::error::Error::SchemaValidationFailed {
-                message: "model tool names must not be empty".to_string(),
-            });
+        for tool in &self.tools {
+            ensure_non_empty_str(&tool.name, "model tool names")?;
         }
 
         if let Some(temperature) = self.temperature
             && (!temperature.is_finite() || !(0.0..=2.0).contains(&temperature))
         {
-            return Err(crate::error::Error::SchemaValidationFailed {
-                message: "model temperature must be finite and between 0.0 and 2.0".to_string(),
-            });
+            return Err(schema_error(
+                "model temperature must be finite and between 0.0 and 2.0",
+            ));
         }
 
         if self.max_tokens == Some(0) {
-            return Err(crate::error::Error::SchemaValidationFailed {
-                message: "model max_tokens must be greater than 0".to_string(),
-            });
+            return Err(schema_error("model max_tokens must be greater than 0"));
         }
 
         Ok(())
+    }
+}
+
+fn ensure_non_empty_str(value: &str, label: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        return Err(schema_error(&format!("{label} must not be empty")));
+    }
+    Ok(())
+}
+
+fn schema_error(message: &str) -> Error {
+    Error::SchemaValidationFailed {
+        message: message.to_owned(),
     }
 }
 

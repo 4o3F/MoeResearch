@@ -4,7 +4,7 @@ use rmcp::service::serve_server;
 
 use crate::error::{Error, Result};
 use crate::model::service::ModelService;
-use crate::schema::config::BudgetConfig;
+use crate::schema::budget::BudgetConfig;
 use crate::search::service::SearchService;
 
 #[derive(Clone)]

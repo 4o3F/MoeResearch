@@ -8,7 +8,7 @@ use snafu::ResultExt;
 use crate::error::{Error, JsonSnafu, Result};
 use crate::net::NetworkClient;
 use crate::schema::network::{Header, NetworkRequest};
-use crate::schema::search::{ProviderSearchRequest, SearchResponse, SearchResult};
+use crate::schema::search::{SearchRequest, SearchResponse, SearchResult};
 use crate::search::provider::SearchProvider;
 
 pub struct GrokSearchProvider {
@@ -43,7 +43,7 @@ impl SearchProvider for GrokSearchProvider {
         "grok"
     }
 
-    async fn search(&self, request: ProviderSearchRequest) -> Result<SearchResponse> {
+    async fn search(&self, request: SearchRequest) -> Result<SearchResponse> {
         let max_results = request.max_results;
         let body = serde_json::to_value(GrokSearchRequest {
             model: self.model.clone(),
@@ -98,7 +98,7 @@ impl SearchProvider for GrokSearchProvider {
     }
 }
 
-fn grok_filters(request: &ProviderSearchRequest) -> Option<GrokWebSearchFilters> {
+fn grok_filters(request: &SearchRequest) -> Option<GrokWebSearchFilters> {
     if request.include_domains.is_empty() {
         None
     } else {
@@ -108,7 +108,7 @@ fn grok_filters(request: &ProviderSearchRequest) -> Option<GrokWebSearchFilters>
     }
 }
 
-fn search_prompt(request: &ProviderSearchRequest) -> String {
+fn search_prompt(request: &SearchRequest) -> String {
     let mut prompt = format!(
         "Search the web for: {}\nReturn concise sourced findings.\nMaximum results: {}",
         request.query, request.max_results

@@ -3,7 +3,6 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
-use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::model::service::ModelService;
@@ -16,9 +15,7 @@ use crate::schema::model::{
 };
 use crate::schema::policy::SearchPolicy;
 use crate::schema::report::{
-    AgentBudgetUsage, AspectResearchResult, Confidence, Evidence, PartialTrace,
-    ProviderCallSummary, ProviderType, ProviderUsage, SearchQueryTrace, SearchSourceTrace,
-    SearchToolCallTrace, SourceType, TerminationReason, TokenUsage, ToolCallTrace, TraceSummary,
+    AgentBudgetUsage, AspectResearchResult, Confidence, Evidence, SourceType, TokenUsage,
 };
 use crate::schema::research::AspectResearchRequest;
 use crate::schema::search::{SearchRequest, SearchResponse, SearchResult};
@@ -33,17 +30,13 @@ pub struct AgentRuntime<'a> {
 #[derive(Debug)]
 pub struct AgentRuntimeOutput {
     pub result: AspectResearchResult,
-    pub search_queries: Vec<SearchQueryTrace>,
-    pub tool_calls: Vec<ToolCallTrace>,
-    pub provider_usage: ProviderUsage,
     pub budget_usage: AgentBudgetUsage,
-    pub trace_summary: TraceSummary,
+    pub token_usage: Option<TokenUsage>,
 }
 
 #[derive(Debug)]
 pub struct AgentRuntimeFailure {
     pub error: Error,
-    pub partial_trace: Option<PartialTrace>,
 }
 
 impl AgentRuntimeOutput {
@@ -58,23 +51,17 @@ struct RuntimeState {
     replay_input: Vec<ModelInputItem>,
     previous_response_id: Option<String>,
     candidate_evidence: Vec<Evidence>,
-    search_queries: Vec<SearchQueryTrace>,
-    tool_calls: Vec<ToolCallTrace>,
-    provider_usage: ProviderUsage,
-    trace_summary: TraceSummary,
+    token_usage: Option<TokenUsage>,
 }
 
 impl RuntimeState {
-    fn new(input: Vec<ModelInputItem>, trace_summary: TraceSummary) -> Self {
+    fn new(input: Vec<ModelInputItem>) -> Self {
         Self {
             replay_input: input.clone(),
             input,
             previous_response_id: None,
             candidate_evidence: Vec::new(),
-            search_queries: Vec::new(),
-            tool_calls: Vec::new(),
-            provider_usage: ProviderUsage::default(),
-            trace_summary,
+            token_usage: None,
         }
     }
 
@@ -132,25 +119,23 @@ impl<'a> AgentRuntime<'a> {
         let effective_budget = self.effective_budget();
         let deadline = RuntimeDeadline::new(effective_budget.timeout_ms);
         let mut budget = AgentBudgetGuard::new(effective_budget).map_err(Self::untraced_failure)?;
-        let tool_policy = ToolPolicyGuard::new(&self.request.aspect);
+        let tool_policy = ToolPolicyGuard::new(&self.request.task.aspect);
         let validator = OutputValidator::new(
-            &self.request.aspect,
+            &self.request.task.aspect,
             &self.request.evidence_policy,
             &self.request.output_policy,
         );
-        let search_policy = self.effective_search_policy();
-        let mut state = RuntimeState::new(
-            self.initial_input().map_err(Self::untraced_failure)?,
-            self.new_trace_summary(),
-        );
+        let search_policy = self.request.search_policy.clone();
+        let search_provider = self.selected_search_provider();
+        let mut state = RuntimeState::new(self.initial_input().map_err(Self::untraced_failure)?);
 
         loop {
             let model_response = match self.complete_model_turn(&mut state, &mut budget).await {
                 Ok(response) => response,
-                Err(error) => return Err(Self::failure(error, state, &budget)),
+                Err(error) => return Err(self.failure(error, state, &budget)),
             };
             if let Err(error) = deadline.ensure_not_elapsed() {
-                return Err(Self::failure(error, state, &budget));
+                return Err(self.failure(error, state, &budget));
             }
             if model_response.tool_calls.is_empty() {
                 let content = match model_response.content.as_deref().ok_or_else(|| {
@@ -159,7 +144,7 @@ impl<'a> AgentRuntime<'a> {
                     }
                 }) {
                     Ok(content) => content,
-                    Err(error) => return Err(Self::failure(error, state, &budget)),
+                    Err(error) => return Err(self.failure(error, state, &budget)),
                 };
                 return self
                     .finish(content, state, &budget, &validator)
@@ -174,15 +159,16 @@ impl<'a> AgentRuntime<'a> {
                         &tool_policy,
                         &mut budget,
                         &search_policy,
+                        search_provider.as_deref(),
                         &mut state,
                     )
                     .await
                 {
                     Ok(output) => output,
-                    Err(error) => return Err(Self::failure(error, state, &budget)),
+                    Err(error) => return Err(self.failure(error, state, &budget)),
                 };
                 if let Err(error) = deadline.ensure_not_elapsed() {
-                    return Err(Self::failure(error, state, &budget));
+                    return Err(self.failure(error, state, &budget));
                 }
                 tool_outputs.push(output);
             }
@@ -191,7 +177,7 @@ impl<'a> AgentRuntime<'a> {
     }
 
     fn effective_budget(&self) -> crate::schema::budget::AgentBudget {
-        let mut budget = self.request.budget.clone();
+        let mut budget = self.request.task.budget.clone();
         if let Some(timeout_ms) = self.request.execution_policy.timeout_ms {
             budget.timeout_ms = Limit::limited(timeout_ms);
         }
@@ -205,23 +191,39 @@ impl<'a> AgentRuntime<'a> {
     ) -> Result<ModelResponse> {
         budget.consume_model_turn()?;
         let model_started = Instant::now();
-        let model_response = self
+        let model_response = match self
             .complete_model(state.previous_response_id.clone(), state.input.clone())
-            .await?;
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::warn!(
+                    request_id = %self.request.request_id,
+                    aspect_id = %self.request.task.aspect.aspect_id,
+                    duration_ms = elapsed_ms(model_started.elapsed()),
+                    error_code = ?error.code(),
+                    retryable = error.to_tool_error().retryable,
+                    status = "failed",
+                    "model turn failed"
+                );
+                return Err(error);
+            }
+        };
         let model_duration = elapsed_ms(model_started.elapsed());
+        let usage = model_response.usage.clone();
+        add_token_usage(&mut state.token_usage, usage.clone());
 
-        state.provider_usage.model_calls += 1;
-        add_token_usage(
-            &mut state.provider_usage.token_usage,
-            model_response.usage.clone(),
+        tracing::info!(
+            request_id = %self.request.request_id,
+            aspect_id = %self.request.task.aspect.aspect_id,
+            provider = %model_response.provider,
+            duration_ms = model_duration,
+            input_tokens = ?usage.as_ref().and_then(|usage| usage.input_tokens),
+            output_tokens = ?usage.as_ref().and_then(|usage| usage.output_tokens),
+            total_tokens = ?usage.as_ref().and_then(|usage| usage.total_tokens),
+            status = "ok",
+            "model turn completed"
         );
-        state.trace_summary.model_calls.push(ProviderCallSummary {
-            provider: model_response.provider.clone(),
-            provider_type: ProviderType::Model,
-            status: "ok".to_owned(),
-            duration_ms: model_duration,
-            retry_count: 0,
-        });
 
         Ok(model_response)
     }
@@ -232,64 +234,116 @@ impl<'a> AgentRuntime<'a> {
         tool_policy: &ToolPolicyGuard,
         budget: &mut AgentBudgetGuard,
         search_policy: &SearchPolicy,
+        search_provider: Option<&str>,
         state: &mut RuntimeState,
     ) -> Result<ModelToolOutput> {
-        let args = tool_policy.validate_search_call(tool_call)?;
-        budget.consume_search_tool_call()?;
+        let args = match tool_policy.validate_search_call(tool_call) {
+            Ok(args) => args,
+            Err(error) => {
+                tracing::warn!(
+                    request_id = %self.request.request_id,
+                    aspect_id = %self.request.task.aspect.aspect_id,
+                    tool_call_id = %tool_call.id,
+                    tool_name = %tool_call.name,
+                    error_code = ?error.code(),
+                    retryable = error.to_tool_error().retryable,
+                    status = "denied",
+                    "tool call denied"
+                );
+                return Err(error);
+            }
+        };
+        let search_provider = search_provider.ok_or_else(|| Error::InvalidInput {
+            message: "search provider must be explicitly selected".to_owned(),
+        })?;
+        if let Err(error) = budget.consume_search_tool_call() {
+            let budget_usage = budget.usage();
+            tracing::warn!(
+                request_id = %self.request.request_id,
+                aspect_id = %self.request.task.aspect.aspect_id,
+                tool_call_id = %tool_call.id,
+                tool_name = %tool_call.name,
+                provider = %search_provider,
+                turns_used = budget_usage.turns_used,
+                tool_calls_used = budget_usage.tool_calls_used,
+                search_calls_used = budget_usage.search_calls_used,
+                elapsed_ms = budget_usage.elapsed_ms,
+                error_code = ?error.code(),
+                retryable = error.to_tool_error().retryable,
+                status = "rejected",
+                "search tool call budget rejected"
+            );
+            return Err(error);
+        }
 
         let max_results = args
             .max_results
             .unwrap_or(self.request.search_policy.max_results_per_query);
-        let search_started_at = now_rfc3339();
+        tracing::debug!(
+            request_id = %self.request.request_id,
+            aspect_id = %self.request.task.aspect.aspect_id,
+            tool_call_id = %tool_call.id,
+            tool_name = %tool_call.name,
+            provider = %search_provider,
+            max_results,
+            status = "accepted",
+            "search tool call accepted"
+        );
         let search_started = Instant::now();
-        let search_request = self.search_request(&args.query, max_results);
-        let response = self
+        let search_request = self.search_request(search_provider, &args.query, max_results);
+        let response = match self
             .search_service
             .search(search_request, search_policy)
-            .await?;
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::warn!(
+                    request_id = %self.request.request_id,
+                    aspect_id = %self.request.task.aspect.aspect_id,
+                    provider = %search_provider,
+                    duration_ms = elapsed_ms(search_started.elapsed()),
+                    error_code = ?error.code(),
+                    retryable = error.to_tool_error().retryable,
+                    status = "failed",
+                    "search call failed"
+                );
+                return Err(error);
+            }
+        };
         let search_duration = elapsed_ms(search_started.elapsed());
+        let result_count = response.results.len();
 
-        state.provider_usage.search_calls += 1;
-        state.trace_summary.search_calls.push(ProviderCallSummary {
-            provider: response.provider.clone(),
-            provider_type: ProviderType::Search,
-            status: "ok".to_owned(),
-            duration_ms: search_duration,
-            retry_count: 0,
-        });
+        tracing::info!(
+            request_id = %self.request.request_id,
+            aspect_id = %self.request.task.aspect.aspect_id,
+            provider = %response.provider,
+            result_count,
+            duration_ms = search_duration,
+            status = "ok",
+            "search call completed"
+        );
 
-        let new_evidence = self.evidence_from_search(
+        let search_index = budget.usage().search_calls_used;
+        let new_evidence = Self::evidence_from_search(
             &args.query,
             &response,
             state.candidate_evidence.len(),
-            state.search_queries.len() + 1,
+            search_index,
         );
-        let result_count = response.results.len();
-        let sources = self.source_traces_from_response(&response);
-        state.search_queries.push(SearchQueryTrace {
-            provider: response.provider.clone(),
-            query: args.query.clone(),
+        tracing::debug!(
+            request_id = %self.request.request_id,
+            aspect_id = %self.request.task.aspect.aspect_id,
+            tool_call_id = %tool_call.id,
+            tool_name = %tool_call.name,
+            provider = %response.provider,
             result_count,
-            sources: sources.clone(),
-            started_at: search_started_at.clone(),
-            duration_ms: search_duration,
-        });
-        state.tool_calls.push(ToolCallTrace {
-            tool_call_id: Some(tool_call.id.clone()),
-            tool_name: tool_call.name.clone(),
-            input_summary: Self::tool_input_summary(max_results),
-            output_summary: format!("{result_count} result(s) from {}", response.provider),
-            search: Some(SearchToolCallTrace {
-                provider: response.provider.clone(),
-                query: args.query.clone(),
-                result_count,
-                sources,
-            }),
-            started_at: search_started_at,
-            duration_ms: search_duration,
-        });
+            duration_ms = search_duration,
+            status = "completed",
+            "tool call completed"
+        );
 
-        let tool_output = self.search_result_message(&args.query, &response, &new_evidence);
+        let tool_output = Self::search_result_message(&args.query, &response, &new_evidence);
         state.candidate_evidence.extend(new_evidence);
 
         Ok(ModelToolOutput::new(tool_call.id.clone(), tool_output))
@@ -298,24 +352,31 @@ impl<'a> AgentRuntime<'a> {
     fn finish(
         &self,
         content: &str,
-        mut state: RuntimeState,
+        state: RuntimeState,
         budget: &AgentBudgetGuard,
         validator: &OutputValidator<'_>,
     ) -> std::result::Result<AgentRuntimeOutput, Box<AgentRuntimeFailure>> {
         let (result, _) = match validator.validate_content(content, &state.candidate_evidence) {
             Ok(result) => result,
-            Err(error) => return Err(Box::new(Self::failure(error, state, budget))),
+            Err(error) => return Err(Box::new(self.failure(error, state, budget))),
         };
-        state.trace_summary.finished_at = Some(now_rfc3339());
-        state.trace_summary.termination_reason = Some(TerminationReason::Completed);
+        let budget_usage = budget.usage();
+        tracing::info!(
+            request_id = %self.request.request_id,
+            aspect_id = %self.request.task.aspect.aspect_id,
+            turns_used = budget_usage.turns_used,
+            tool_calls_used = budget_usage.tool_calls_used,
+            search_calls_used = budget_usage.search_calls_used,
+            elapsed_ms = budget_usage.elapsed_ms,
+            evidence_count = state.candidate_evidence.len(),
+            status = "completed",
+            "agent runtime completed"
+        );
 
         Ok(AgentRuntimeOutput {
             result,
-            search_queries: state.search_queries,
-            tool_calls: state.tool_calls,
-            provider_usage: state.provider_usage,
-            budget_usage: budget.usage(),
-            trace_summary: state.trace_summary,
+            budget_usage,
+            token_usage: state.token_usage,
         })
     }
 
@@ -327,7 +388,7 @@ impl<'a> AgentRuntime<'a> {
     }
 
     fn system_prompt(&self) -> Result<String> {
-        read_prompt_asset(&self.request.aspect.prompt_assets.aspect_agent_prompt_path)
+        read_prompt_asset(&self.request.task.aspect.aspect_agent_prompt_path)
     }
 
     fn user_prompt(&self) -> String {
@@ -342,10 +403,15 @@ impl<'a> AgentRuntime<'a> {
         previous_response_id: Option<String>,
         input: Vec<ModelInputItem>,
     ) -> Result<ModelResponse> {
-        let model_override = self.request.aspect.model_override.as_ref();
         let request = ModelRequest {
-            provider: model_override.map_or_else(String::new, |selector| selector.provider.clone()),
-            model: model_override.and_then(|selector| selector.model.clone()),
+            provider: self
+                .request
+                .task
+                .aspect
+                .model_provider
+                .clone()
+                .unwrap_or_default(),
+            model: None,
             previous_response_id,
             input,
             tools: vec![search_model_tool()],
@@ -357,30 +423,25 @@ impl<'a> AgentRuntime<'a> {
             .await
     }
 
-    fn effective_search_policy(&self) -> SearchPolicy {
-        let mut policy = self.request.search_policy.clone();
-        if let Some(selector) = &self.request.aspect.search_override
-            && !selector.providers.is_empty()
-        {
-            policy.allowed_providers.clone_from(&selector.providers);
-            policy.preferred_providers.clone_from(&selector.providers);
-        }
-        policy
+    fn selected_search_provider(&self) -> Option<String> {
+        self.request
+            .task
+            .aspect
+            .search_provider
+            .clone()
+            .filter(|provider| !provider.trim().is_empty())
     }
 
-    fn search_request(&self, query: &str, max_results: usize) -> SearchRequest {
+    fn search_request(&self, provider: &str, query: &str, max_results: usize) -> SearchRequest {
         let policy = &self.request.search_policy;
-        SearchRequest {
-            query: query.to_owned(),
-            max_results: max_results.min(policy.max_results_per_query),
-            freshness: policy.freshness.clone(),
-            language: policy.language.clone(),
-            region: policy.region.clone(),
-        }
+        SearchRequest::new(
+            provider,
+            query,
+            max_results.min(policy.max_results_per_query),
+        )
     }
 
     fn evidence_from_search(
-        &self,
         query: &str,
         response: &SearchResponse,
         existing_count: usize,
@@ -391,7 +452,7 @@ impl<'a> AgentRuntime<'a> {
             .iter()
             .enumerate()
             .map(|(index, result)| {
-                self.evidence_from_result(
+                Self::evidence_from_result(
                     query,
                     &response.provider,
                     result,
@@ -403,7 +464,6 @@ impl<'a> AgentRuntime<'a> {
     }
 
     fn evidence_from_result(
-        &self,
         query: &str,
         provider: &str,
         result: &SearchResult,
@@ -432,7 +492,6 @@ impl<'a> AgentRuntime<'a> {
     }
 
     fn search_result_message(
-        &self,
         query: &str,
         response: &SearchResponse,
         evidence: &[Evidence],
@@ -447,74 +506,31 @@ impl<'a> AgentRuntime<'a> {
         .to_string()
     }
 
-    fn source_traces_from_response(&self, response: &SearchResponse) -> Vec<SearchSourceTrace> {
-        response
-            .results
-            .iter()
-            .map(|result| SearchSourceTrace {
-                title: result.title.clone(),
-                url: result.url.clone(),
-            })
-            .collect()
-    }
-
     fn untraced_failure(error: Error) -> AgentRuntimeFailure {
-        AgentRuntimeFailure {
-            error,
-            partial_trace: None,
-        }
+        AgentRuntimeFailure { error }
     }
 
     fn failure(
+        &self,
         error: Error,
-        mut state: RuntimeState,
+        state: RuntimeState,
         budget: &AgentBudgetGuard,
     ) -> AgentRuntimeFailure {
-        state.trace_summary.finished_at = Some(now_rfc3339());
-        state.trace_summary.termination_reason = Some(Self::termination_reason_for_error(&error));
-        let partial_trace = PartialTrace {
-            trace_summary: state.trace_summary,
-            search_queries: state.search_queries,
-            tool_calls: state.tool_calls,
-            provider_usage: state.provider_usage,
-            budget_usage: budget.usage(),
-            evidence_count: state.candidate_evidence.len(),
-        };
-        AgentRuntimeFailure {
-            error,
-            partial_trace: Some(partial_trace),
-        }
-    }
-
-    fn termination_reason_for_error(error: &Error) -> TerminationReason {
-        match error {
-            Error::BudgetExceeded { message } if message.contains("timeout") => {
-                TerminationReason::Timeout
-            }
-            Error::BudgetExceeded { .. } => TerminationReason::BudgetExceeded,
-            Error::Timeout { .. } => TerminationReason::Timeout,
-            Error::ToolPolicyDenied { .. } => TerminationReason::ToolPolicyDenied,
-            Error::SchemaValidationFailed { .. } | Error::Json { .. } => {
-                TerminationReason::SchemaValidationFailed
-            }
-            _ => TerminationReason::ProviderError,
-        }
-    }
-
-    fn tool_input_summary(max_results: usize) -> String {
-        format!("search query accepted, max_results={max_results}")
-    }
-
-    fn new_trace_summary(&self) -> TraceSummary {
-        TraceSummary {
-            trace_id: Uuid::new_v4().to_string(),
-            root_span: format!("aspect_research:{}", self.request.aspect.aspect_id),
-            started_at: now_rfc3339(),
-            finished_at: None,
-            model_calls: Vec::new(),
-            search_calls: Vec::new(),
-            termination_reason: None,
-        }
+        let budget_usage = budget.usage();
+        tracing::warn!(
+            request_id = %self.request.request_id,
+            aspect_id = %self.request.task.aspect.aspect_id,
+            turns_used = budget_usage.turns_used,
+            tool_calls_used = budget_usage.tool_calls_used,
+            search_calls_used = budget_usage.search_calls_used,
+            elapsed_ms = budget_usage.elapsed_ms,
+            evidence_count = state.candidate_evidence.len(),
+            error_code = ?error.code(),
+            retryable = error.to_tool_error().retryable,
+            status = "failed",
+            "agent runtime failed"
+        );
+        AgentRuntimeFailure { error }
     }
 }
 
@@ -612,7 +628,7 @@ fn add_token_usage(total: &mut Option<TokenUsage>, delta: Option<TokenUsage>) {
     let Some(delta) = delta else {
         return;
     };
-    let usage = total.get_or_insert_with(TokenUsage::default);
+    let usage = total.get_or_insert_with(TokenUsage::zero);
     usage.input_tokens = sum_optional(usage.input_tokens, delta.input_tokens);
     usage.output_tokens = sum_optional(usage.output_tokens, delta.output_tokens);
     usage.total_tokens = sum_optional(usage.total_tokens, delta.total_tokens);

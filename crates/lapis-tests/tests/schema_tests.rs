@@ -1,17 +1,18 @@
 use lapis_core::schema::budget::{AgentBudget, ResearchBudget};
+use lapis_core::schema::limit::{CountLimit, DurationLimitMs, Limit};
 use lapis_core::schema::model::{ModelInputItem, ModelMessageRole, ModelRequest};
 use lapis_core::schema::policy::{
-    EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
-    ToolName,
+    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
 };
 use lapis_core::schema::report::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
     SourceType,
 };
 use lapis_core::schema::research::{
-    AspectResearchRequest, AspectSpec, DeliverableSpec, PromptAssets, ResearchConstraint,
-    ResearchContext, ResearchPlan,
+    AspectResearchRequest, AspectResearchTask, AspectSpec, DeepResearchRequest, ResearchContext,
 };
+use schemars::schema_for;
+use serde_json::json;
 
 fn aspect() -> AspectSpec {
     AspectSpec {
@@ -22,12 +23,10 @@ fn aspect() -> AspectSpec {
         scope: vec!["market sizing".to_owned()],
         boundaries: vec!["no private data".to_owned()],
         success_criteria: vec!["evidence-backed findings".to_owned()],
-        prompt_assets: prompt_assets(),
-        required_evidence: EvidenceRequirement::default(),
+        aspect_agent_prompt_path: prompt_path(),
         allowed_tools: vec![ToolName("search".to_owned())],
-        model_override: None,
-        search_override: None,
-        budget_override: None,
+        model_provider: Some("openai".to_owned()),
+        search_provider: Some("exa".to_owned()),
     }
 }
 
@@ -43,54 +42,95 @@ fn minimal_request() -> ModelRequest {
     }
 }
 
-fn prompt_assets() -> PromptAssets {
-    PromptAssets {
-        aspect_agent_prompt_path: "prompts/layer2/aspect-agent.md".to_owned(),
+fn prompt_path() -> String {
+    "prompts/layer2/aspect-agent.md".to_owned()
+}
+
+fn model_policy(allowed_providers: &[&str]) -> ModelPolicy {
+    ModelPolicy {
+        allowed_providers: allowed_providers
+            .iter()
+            .map(|provider| (*provider).to_owned())
+            .collect(),
+        temperature: Some(0.2),
+        max_tokens: None,
+        require_tool_call_support: true,
+    }
+}
+
+fn search_policy(allowed_providers: &[&str]) -> SearchPolicy {
+    SearchPolicy {
+        allowed_providers: allowed_providers
+            .iter()
+            .map(|provider| (*provider).to_owned())
+            .collect(),
+        max_results_per_query: 5,
+        freshness: None,
+        language: None,
+        region: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+    }
+}
+
+fn evidence_policy() -> EvidencePolicy {
+    EvidencePolicy {
+        require_evidence_for_findings: true,
+        min_evidence_per_finding: 1,
+    }
+}
+
+fn output_policy() -> OutputPolicy {
+    OutputPolicy {
+        language: "zh-CN".to_owned(),
+        max_findings_per_aspect: None,
+    }
+}
+
+fn execution_policy(timeout_ms: Option<u64>) -> ExecutionPolicy {
+    ExecutionPolicy {
+        allow_partial_results: true,
+        fail_fast: false,
+        timeout_ms,
     }
 }
 
 #[test]
-fn research_plan_roundtrips_json() {
-    let plan = ResearchPlan {
-        plan_id: "plan-1".to_owned(),
+fn deep_research_request_roundtrips_plan_fields_json() {
+    let request = DeepResearchRequest {
+        schema_version: "m5".to_owned(),
+        request_id: "request-1".to_owned(),
         user_question: "What should Lapis build first?".to_owned(),
-        deliverable: DeliverableSpec {
-            kind: "implementation_plan".to_owned(),
-            language: "zh-CN".to_owned(),
-            expected_sections: vec!["summary".to_owned()],
-            notes: vec![],
-        },
-        constraints: vec![ResearchConstraint {
-            key: "scope".to_owned(),
-            value: "mvp".to_owned(),
+        aspect_tasks: vec![AspectResearchTask {
+            aspect: AspectSpec {
+                aspect_id: "schema".to_owned(),
+                name: "Schema".to_owned(),
+                role: "contract reviewer".to_owned(),
+                research_question: "Are contracts stable?".to_owned(),
+                scope: vec!["schema".to_owned()],
+                boundaries: vec![],
+                success_criteria: vec!["roundtrip".to_owned()],
+                aspect_agent_prompt_path: prompt_path(),
+                allowed_tools: vec![ToolName("search".to_owned())],
+                model_provider: Some("openai".to_owned()),
+                search_provider: Some("exa".to_owned()),
+            },
+            budget: AgentBudget::unlimited(),
         }],
-        aspects: vec![AspectSpec {
-            aspect_id: "schema".to_owned(),
-            name: "Schema".to_owned(),
-            role: "contract reviewer".to_owned(),
-            research_question: "Are contracts stable?".to_owned(),
-            scope: vec!["schema".to_owned()],
-            boundaries: vec![],
-            success_criteria: vec!["roundtrip".to_owned()],
-            prompt_assets: prompt_assets(),
-            required_evidence: EvidenceRequirement::default(),
-            allowed_tools: vec![ToolName("search".to_owned())],
-            model_override: None,
-            search_override: None,
-            budget_override: None,
-        }],
-        budget: ResearchBudget::default(),
-        model_policy: ModelPolicy::default(),
-        search_policy: SearchPolicy::default(),
-        evidence_policy: EvidencePolicy::default(),
-        output_policy: OutputPolicy::default(),
+        budget: ResearchBudget::unlimited(),
+        model_policy: model_policy(&["openai"]),
+        search_policy: search_policy(&["exa"]),
+        evidence_policy: evidence_policy(),
+        output_policy: output_policy(),
+        shared_context: ResearchContext::empty(),
+        execution_policy: execution_policy(Some(300_000)),
     };
 
-    let value = serde_json::to_string(&plan).expect("serialize plan");
-    let decoded: ResearchPlan = serde_json::from_str(&value).expect("deserialize plan");
+    let value = serde_json::to_string(&request).expect("serialize request");
+    let decoded: DeepResearchRequest = serde_json::from_str(&value).expect("deserialize request");
 
-    assert_eq!(decoded.plan_id, plan.plan_id);
-    assert_eq!(decoded.aspects[0].role, "contract reviewer");
+    assert_eq!(decoded.user_question, request.user_question);
+    assert_eq!(decoded.aspect_tasks[0].aspect.role, "contract reviewer");
 }
 
 #[test]
@@ -98,17 +138,19 @@ fn aspect_research_request_roundtrips_json() {
     let request = AspectResearchRequest {
         schema_version: "m4".to_owned(),
         request_id: "req-1".to_owned(),
-        aspect: aspect(),
+        task: AspectResearchTask {
+            aspect: aspect(),
+            budget: AgentBudget::unlimited(),
+        },
         shared_context: ResearchContext {
             summary: "shared context".to_owned(),
-            ..ResearchContext::default()
+            ..ResearchContext::empty()
         },
-        model_policy: ModelPolicy::default(),
-        search_policy: SearchPolicy::default(),
-        evidence_policy: EvidencePolicy::default(),
-        output_policy: OutputPolicy::default(),
-        budget: AgentBudget::default(),
-        execution_policy: ExecutionPolicy::default(),
+        model_policy: model_policy(&["openai"]),
+        search_policy: search_policy(&["exa"]),
+        evidence_policy: evidence_policy(),
+        output_policy: output_policy(),
+        execution_policy: execution_policy(Some(300_000)),
     };
 
     let value = serde_json::to_string(&request).expect("serialize request");
@@ -183,7 +225,7 @@ fn research_budget_accepts_minus_one_as_unlimited() {
 
 #[test]
 fn budget_defaults_are_unlimited() {
-    let research = ResearchBudget::default();
+    let research = ResearchBudget::unlimited();
     assert!(research.max_agents.is_unlimited());
     assert!(research.max_concurrent_agents.is_unlimited());
     assert!(research.max_total_model_calls.is_unlimited());
@@ -191,7 +233,7 @@ fn budget_defaults_are_unlimited() {
     assert!(research.total_timeout_ms.is_unlimited());
     assert!(research.max_tokens.is_unlimited());
 
-    let agent = AgentBudget::default();
+    let agent = AgentBudget::unlimited();
     assert!(agent.max_turns.is_unlimited());
     assert!(agent.max_tool_calls.is_unlimited());
     assert!(agent.max_search_calls.is_unlimited());
@@ -231,6 +273,17 @@ fn aspect_research_result_schema_excludes_runtime_metadata() {
     assert!(!properties.contains_key("trace_summary"));
     assert!(!properties.contains_key("search_queries"));
     assert!(!properties.contains_key("tool_calls"));
+}
+
+#[test]
+fn output_policy_schema_omits_trace_controls() {
+    let schema =
+        serde_json::to_value(rmcp::schemars::schema_for!(OutputPolicy)).expect("schema json");
+    let properties = schema["properties"].as_object().expect("properties");
+
+    assert!(properties.contains_key("language"));
+    assert!(properties.contains_key("max_findings_per_aspect"));
+    assert!(!properties.contains_key("include_trace_summary"));
 }
 
 #[test]
@@ -277,4 +330,39 @@ fn aspect_research_result_roundtrips_json() {
     let decoded = serde_json::from_str::<AspectResearchResult>(&json).expect("decode result");
 
     assert_eq!(decoded, result);
+}
+
+#[test]
+fn count_limit_schema_matches_wire_format() {
+    let schema = schema_for!(CountLimit);
+    let schema = serde_json::to_value(&schema).expect("schema json");
+
+    assert_eq!(schema.get("type"), Some(&json!(["integer", "null"])));
+    assert_eq!(schema.get("minimum"), Some(&json!(-1)));
+}
+
+#[test]
+fn duration_limit_schema_matches_wire_format() {
+    let schema = schema_for!(DurationLimitMs);
+    let schema = serde_json::to_value(&schema).expect("schema json");
+
+    assert_eq!(schema.get("type"), Some(&json!(["integer", "null"])));
+    assert_eq!(schema.get("minimum"), Some(&json!(-1)));
+}
+
+#[test]
+fn limit_deserializes_schema_advertised_values() {
+    assert_eq!(
+        serde_json::from_value::<CountLimit>(json!(null)).expect("null limit"),
+        Limit::Unlimited
+    );
+    assert_eq!(
+        serde_json::from_value::<CountLimit>(json!(-1)).expect("unlimited limit"),
+        Limit::Unlimited
+    );
+    assert_eq!(
+        serde_json::from_value::<CountLimit>(json!(3)).expect("finite limit"),
+        Limit::Limited(3)
+    );
+    assert!(serde_json::from_value::<CountLimit>(json!(-2)).is_err());
 }

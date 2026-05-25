@@ -7,15 +7,7 @@ use super::policy::{Freshness, SearchPolicy};
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct SearchRequest {
-    pub query: String,
-    pub max_results: usize,
-    pub freshness: Option<Freshness>,
-    pub language: Option<String>,
-    pub region: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProviderSearchRequest {
+    pub provider: String,
     pub query: String,
     pub max_results: usize,
     pub freshness: Option<Freshness>,
@@ -40,22 +32,38 @@ pub struct SearchResult {
     pub published_at: Option<String>,
 }
 
-impl ProviderSearchRequest {
-    pub fn from_policy(request: SearchRequest, policy: &SearchPolicy) -> Self {
+impl SearchRequest {
+    #[must_use]
+    pub fn new(provider: impl Into<String>, query: impl Into<String>, max_results: usize) -> Self {
         Self {
-            query: request.query,
-            max_results: request.max_results,
-            freshness: request.freshness.or_else(|| policy.freshness.clone()),
-            language: request.language.or_else(|| policy.language.clone()),
-            region: request.region.or_else(|| policy.region.clone()),
-            include_domains: policy.include_domains.clone(),
-            exclude_domains: policy.exclude_domains.clone(),
+            provider: provider.into(),
+            query: query.into(),
+            max_results,
+            freshness: None,
+            language: None,
+            region: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
         }
     }
-}
 
-impl SearchRequest {
-    pub fn validate(&self) -> Result<()> {
+    #[must_use]
+    pub fn with_policy(mut self, policy: &SearchPolicy) -> Self {
+        self.freshness = self.freshness.or_else(|| policy.freshness.clone());
+        self.language = self.language.or_else(|| policy.language.clone());
+        self.region = self.region.or_else(|| policy.region.clone());
+        self.include_domains.clone_from(&policy.include_domains);
+        self.exclude_domains.clone_from(&policy.exclude_domains);
+        self
+    }
+
+    pub(crate) fn validate_with_policy(&self, policy: &SearchPolicy) -> Result<()> {
+        if self.provider.trim().is_empty() || self.provider.trim() != self.provider {
+            return Err(Error::InvalidInput {
+                message: "search provider must be explicitly selected".to_owned(),
+            });
+        }
+
         if self.query.trim().is_empty() {
             return Err(Error::InvalidInput {
                 message: "search query must not be empty".to_owned(),
@@ -68,13 +76,14 @@ impl SearchRequest {
             });
         }
 
-        Ok(())
-    }
-
-    pub(crate) fn validate_with_policy(&self, policy: &SearchPolicy) -> Result<()> {
-        self.validate()?;
-
         policy.validate_for_search()?;
+
+        if !policy.allowed_providers.contains(&self.provider) {
+            return Err(Error::ProviderUnavailable {
+                provider: self.provider.clone(),
+                message: "search provider is not allowed by policy".to_owned(),
+            });
+        }
 
         if self.max_results > policy.max_results_per_query {
             return Err(Error::InvalidInput {
@@ -84,15 +93,5 @@ impl SearchRequest {
         }
 
         Ok(())
-    }
-
-    pub fn from_query(query: impl Into<String>, max_results: usize) -> Self {
-        Self {
-            query: query.into(),
-            max_results,
-            freshness: None,
-            language: None,
-            region: None,
-        }
     }
 }

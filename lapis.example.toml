@@ -11,14 +11,6 @@ max_retries = 2
 retry_backoff_ms = 200
 user_agent = "lapis/0.1.0"
 
-[network.limits]
-max_timeout_ms = 120000
-max_retries = 5
-max_retry_backoff_ms = 5000
-
-[search]
-preferred_providers = ["exa", "grok"]
-
 [search.providers.exa]
 enabled = false
 base_url = "https://api.exa.ai"
@@ -33,9 +25,6 @@ api_key_env = "XAI_API_KEY"
 timeout_ms = 30000
 model = "grok-4.20-fast"
 
-[model]
-default_provider = "openai"
-
 [model.providers.openai]
 enabled = false
 base_url = "https://api.openai.com/v1"
@@ -43,14 +32,17 @@ api_key_env = "OPENAI_API_KEY"
 timeout_ms = 30000
 model = "gpt-5.5"
 
-[budget]
-# Set a budget value to -1 to make that limit unlimited.
+# Set any budget value to -1 to make that limit unlimited.
+[budget.research]
 max_agents = -1
 max_concurrent_agents = -1
-max_search_calls_per_agent = -1
-max_tool_calls_per_agent = -1
-max_turns_per_agent = -1
 max_total_model_calls = -1
 max_total_search_calls = -1
-max_agent_timeout_ms = -1
-max_total_timeout_ms = -1
+total_timeout_ms = -1
+max_tokens = -1
+
+[budget.per_agent]
+max_turns = -1
+max_tool_calls = -1
+max_search_calls = -1
+timeout_ms = -1

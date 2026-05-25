@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct AspectReport {
     pub aspect_id: String,
     pub aspect_name: String,
@@ -62,11 +62,10 @@ pub struct Evidence {
     pub confidence: Confidence,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Confidence {
     Low,
-    #[default]
     Medium,
     High,
 }
@@ -99,114 +98,26 @@ pub struct AspectFailure {
     pub retryable: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct TraceSummary {
-    pub trace_id: String,
-    pub root_span: String,
-    pub started_at: String,
-    pub finished_at: Option<String>,
-    pub model_calls: Vec<ProviderCallSummary>,
-    pub search_calls: Vec<ProviderCallSummary>,
-    pub termination_reason: Option<TerminationReason>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct SearchSourceTrace {
-    pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct SearchToolCallTrace {
-    pub provider: String,
-    pub query: String,
-    pub result_count: usize,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sources: Vec<SearchSourceTrace>,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct SearchQueryTrace {
-    pub provider: String,
-    pub query: String,
-    pub result_count: usize,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sources: Vec<SearchSourceTrace>,
-    pub started_at: String,
-    pub duration_ms: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct ToolCallTrace {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
-    pub tool_name: String,
-    pub input_summary: String,
-    pub output_summary: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub search: Option<SearchToolCallTrace>,
-    pub started_at: String,
-    pub duration_ms: u64,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct PartialTrace {
-    pub trace_summary: TraceSummary,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub search_queries: Vec<SearchQueryTrace>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tool_calls: Vec<ToolCallTrace>,
-    pub provider_usage: ProviderUsage,
-    pub budget_usage: AgentBudgetUsage,
-    pub evidence_count: usize,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct ProviderCallSummary {
-    pub provider: String,
-    pub provider_type: ProviderType,
-    pub status: String,
-    pub duration_ms: u64,
-    pub retry_count: usize,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProviderType {
-    Model,
-    Search,
-    Network,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct TokenUsage {
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TerminationReason {
-    Completed,
-    PartialCompleted,
-    BudgetExceeded,
-    Timeout,
-    ToolPolicyDenied,
-    SchemaValidationFailed,
-    ProviderError,
+impl TokenUsage {
+    /// Zero baseline for cumulative statistics: every dimension is unobserved.
+    #[must_use]
+    pub fn zero() -> Self {
+        Self {
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+        }
+    }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct ProviderUsage {
-    pub model_calls: usize,
-    pub search_calls: usize,
-    pub network_calls: usize,
-    pub token_usage: Option<TokenUsage>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct AgentBudgetUsage {
     pub turns_used: usize,
     pub tool_calls_used: usize,
@@ -214,7 +125,20 @@ pub struct AgentBudgetUsage {
     pub elapsed_ms: u64,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+impl AgentBudgetUsage {
+    /// Zero baseline for cumulative statistics.
+    #[must_use]
+    pub fn zero() -> Self {
+        Self {
+            turns_used: 0,
+            tool_calls_used: 0,
+            search_calls_used: 0,
+            elapsed_ms: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ResearchBudgetUsage {
     pub agents_started: usize,
     pub model_calls_used: usize,
@@ -223,10 +147,41 @@ pub struct ResearchBudgetUsage {
     pub token_usage: Option<TokenUsage>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+impl ResearchBudgetUsage {
+    /// Zero baseline for cumulative statistics.
+    #[must_use]
+    pub fn zero() -> Self {
+        Self {
+            agents_started: 0,
+            model_calls_used: 0,
+            search_calls_used: 0,
+            elapsed_ms: 0,
+            token_usage: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ValidationStatus {
     pub ok: bool,
     pub issues: Vec<ValidationIssue>,
+}
+
+impl ValidationStatus {
+    /// Explicitly construct a "passed" validation status.
+    #[must_use]
+    pub fn passed() -> Self {
+        Self {
+            ok: true,
+            issues: Vec::new(),
+        }
+    }
+
+    /// Explicitly construct a "failed" validation status with the given issues.
+    #[must_use]
+    pub fn failed(issues: Vec<ValidationIssue>) -> Self {
+        Self { ok: false, issues }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
@@ -236,7 +191,7 @@ pub struct ValidationIssue {
     pub path: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct CoverageSummary {
     pub requested_aspects: usize,
     pub completed_aspects: usize,
@@ -244,11 +199,36 @@ pub struct CoverageSummary {
     pub evidence_count: usize,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+impl CoverageSummary {
+    /// Zero baseline for cumulative statistics.
+    #[must_use]
+    pub fn zero() -> Self {
+        Self {
+            requested_aspects: 0,
+            completed_aspects: 0,
+            failed_aspects: 0,
+            evidence_count: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ConfidenceSummary {
     pub high: usize,
     pub medium: usize,
     pub low: usize,
+}
+
+impl ConfidenceSummary {
+    /// Zero baseline for cumulative statistics.
+    #[must_use]
+    pub fn zero() -> Self {
+        Self {
+            high: 0,
+            medium: 0,
+            low: 0,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -260,7 +240,6 @@ pub struct AspectResearchResult {
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct DeepResearchResult {
     pub run_id: String,
-    pub plan_id: String,
     pub completed_aspects: Vec<String>,
     pub failed_aspects: Vec<AspectFailure>,
     pub aspect_reports: Vec<AspectReport>,
@@ -269,6 +248,4 @@ pub struct DeepResearchResult {
     pub coverage_summary: CoverageSummary,
     pub confidence_summary: ConfidenceSummary,
     pub budget_usage: ResearchBudgetUsage,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trace_summary: Option<TraceSummary>,
 }

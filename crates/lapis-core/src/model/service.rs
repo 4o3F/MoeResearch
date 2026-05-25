@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
-use crate::model::provider::ModelProvider;
-use crate::model::providers::OpenAiProvider;
+use crate::model::provider::{ModelProvider, OpenAiProvider};
 use crate::net::NetworkClient;
 use crate::schema::config::LapisConfig;
 use crate::schema::model::{ModelRequest, ModelResponse};
@@ -50,9 +49,6 @@ impl ModelService {
                 })?;
 
         request.provider = provider_name;
-        if request.model.is_none() {
-            request.model = policy.default_model.clone();
-        }
         if request.temperature.is_none() {
             request.temperature = policy.temperature;
         }
@@ -65,11 +61,13 @@ impl ModelService {
 }
 
 fn selected_provider(request: &ModelRequest, policy: &ModelPolicy) -> Result<String> {
-    let provider = if request.provider.is_empty() {
-        policy.default_provider.clone()
-    } else {
-        request.provider.clone()
-    };
+    if request.provider.trim().is_empty() || request.provider.trim() != request.provider {
+        return Err(Error::InvalidInput {
+            message: "model provider must be explicitly selected".to_owned(),
+        });
+    }
+
+    let provider = request.provider.clone();
 
     if !policy.allowed_providers.is_empty() && !policy.allowed_providers.contains(&provider) {
         return Err(Error::ProviderUnavailable {

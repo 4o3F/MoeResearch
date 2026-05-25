@@ -3,14 +3,13 @@ use lapis_core::error::{Error, Result};
 use lapis_core::net::client::MockNetworkClient;
 use lapis_core::schema::network::NetworkResponse;
 use lapis_core::schema::policy::SearchPolicy;
-use lapis_core::schema::search::{
-    ProviderSearchRequest, SearchRequest, SearchResponse, SearchResult,
-};
+use lapis_core::schema::search::{SearchRequest, SearchResponse, SearchResult};
 use lapis_core::search::provider::SearchProvider;
-use lapis_core::search::providers::{ExaSearchProvider, GrokSearchProvider};
+use lapis_core::search::provider::{ExaSearchProvider, GrokSearchProvider};
 use lapis_core::search::service::SearchService;
 use serde_json::json;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct StaticProvider(&'static str);
 
@@ -20,7 +19,7 @@ impl SearchProvider for StaticProvider {
         self.0
     }
 
-    async fn search(&self, _request: ProviderSearchRequest) -> Result<SearchResponse> {
+    async fn search(&self, _request: SearchRequest) -> Result<SearchResponse> {
         Ok(SearchResponse {
             provider: self.0.to_owned(),
             results: vec![SearchResult {
@@ -34,22 +33,151 @@ impl SearchProvider for StaticProvider {
     }
 }
 
-#[tokio::test]
-async fn searches_preferred_provider_first() {
-    let mut service = SearchService::new();
-    service.register(StaticProvider("exa"));
-    service.register(StaticProvider("grok"));
+struct CountingProvider {
+    name: &'static str,
+    calls: Arc<AtomicUsize>,
+}
 
-    let policy = SearchPolicy {
-        preferred_providers: vec!["grok".to_owned()],
-        ..SearchPolicy::default()
-    };
+#[async_trait]
+impl SearchProvider for CountingProvider {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    async fn search(&self, _request: SearchRequest) -> Result<SearchResponse> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(SearchResponse {
+            provider: self.name.to_owned(),
+            results: Vec::new(),
+        })
+    }
+}
+
+struct FailingProvider(&'static str);
+
+#[async_trait]
+impl SearchProvider for FailingProvider {
+    fn name(&self) -> &'static str {
+        self.0
+    }
+
+    async fn search(&self, _request: SearchRequest) -> Result<SearchResponse> {
+        Err(Error::ProviderUnavailable {
+            provider: self.0.to_owned(),
+            message: "selected provider failed".to_owned(),
+        })
+    }
+}
+
+fn search_policy(allowed_providers: &[&str]) -> SearchPolicy {
+    SearchPolicy {
+        allowed_providers: allowed_providers
+            .iter()
+            .map(|provider| (*provider).to_owned())
+            .collect(),
+        max_results_per_query: 5,
+        freshness: None,
+        language: None,
+        region: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+    }
+}
+
+#[tokio::test]
+async fn dispatches_only_to_explicit_provider() {
+    let mut service = SearchService::new();
+    let exa_calls = Arc::new(AtomicUsize::new(0));
+    let grok_calls = Arc::new(AtomicUsize::new(0));
+    service.register(CountingProvider {
+        name: "exa",
+        calls: exa_calls.clone(),
+    });
+    service.register(CountingProvider {
+        name: "grok",
+        calls: grok_calls.clone(),
+    });
+
+    let policy = search_policy(&["exa", "grok"]);
     let response = service
-        .search(SearchRequest::from_query("lapis", 3), &policy)
+        .search(SearchRequest::new("grok", "lapis", 3), &policy)
         .await
         .expect("search response");
 
     assert_eq!(response.provider, "grok");
+    assert_eq!(exa_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(grok_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn does_not_fallback_when_selected_provider_fails() {
+    let mut service = SearchService::new();
+    service.register(FailingProvider("exa"));
+    service.register(StaticProvider("grok"));
+
+    let policy = search_policy(&["exa", "grok"]);
+    let error = service
+        .search(SearchRequest::new("exa", "lapis", 3), &policy)
+        .await
+        .expect_err("selected provider error");
+
+    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "exa"));
+}
+
+#[tokio::test]
+async fn rejects_missing_explicit_provider() {
+    let mut service = SearchService::new();
+    service.register(StaticProvider("exa"));
+
+    let error = service
+        .search(SearchRequest::new("", "lapis", 1), &search_policy(&["exa"]))
+        .await
+        .expect_err("missing search provider");
+
+    assert!(matches!(error, Error::InvalidInput { .. }));
+}
+
+#[tokio::test]
+async fn rejects_empty_allowlist_for_explicit_provider() {
+    let mut service = SearchService::new();
+    service.register(StaticProvider("exa"));
+
+    let policy = search_policy(&[]);
+    let error = service
+        .search(SearchRequest::new("exa", "lapis", 1), &policy)
+        .await
+        .expect_err("empty allowlist rejects provider");
+
+    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "exa"));
+}
+
+#[tokio::test]
+async fn rejects_disallowed_explicit_provider() {
+    let mut service = SearchService::new();
+    service.register(StaticProvider("grok"));
+
+    let policy = search_policy(&["exa"]);
+    let error = service
+        .search(SearchRequest::new("grok", "lapis", 1), &policy)
+        .await
+        .expect_err("disallowed search provider");
+
+    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "grok"));
+}
+
+#[tokio::test]
+async fn rejects_unconfigured_explicit_provider() {
+    let service = SearchService::new();
+
+    let error = service
+        .search(
+            SearchRequest::new("exa", "lapis", 1),
+            &search_policy(&["exa"]),
+        )
+        .await
+        .expect_err("unconfigured search provider");
+
+    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "exa"));
 }
 
 #[tokio::test]
@@ -58,12 +186,12 @@ async fn rejects_invalid_search_requests_before_provider_dispatch() {
     service.register(StaticProvider("exa"));
 
     for request in [
-        SearchRequest::from_query(" ", 1),
-        SearchRequest::from_query("lapis", 0),
-        SearchRequest::from_query("lapis", 6),
+        SearchRequest::new("exa", " ", 1),
+        SearchRequest::new("exa", "lapis", 0),
+        SearchRequest::new("exa", "lapis", 6),
     ] {
         let error = service
-            .search(request, &SearchPolicy::default())
+            .search(request, &search_policy(&["exa"]))
             .await
             .expect_err("invalid search request");
 
@@ -76,23 +204,19 @@ async fn rejects_invalid_search_policy_before_provider_dispatch() {
     let mut service = SearchService::new();
     service.register(StaticProvider("exa"));
 
-    let zero_limit = SearchPolicy {
-        max_results_per_query: 0,
-        ..SearchPolicy::default()
-    };
+    let mut zero_limit = search_policy(&["exa"]);
+    zero_limit.max_results_per_query = 0;
     let error = service
-        .search(SearchRequest::from_query("lapis", 1), &zero_limit)
+        .search(SearchRequest::new("exa", "lapis", 1), &zero_limit)
         .await
         .expect_err("invalid search policy");
     assert!(matches!(error, Error::InvalidInput { .. }));
 
-    let overlapping_domains = SearchPolicy {
-        include_domains: vec!["example.com".to_owned()],
-        exclude_domains: vec!["EXAMPLE.com".to_owned()],
-        ..SearchPolicy::default()
-    };
+    let mut overlapping_domains = search_policy(&["exa"]);
+    overlapping_domains.include_domains = vec!["example.com".to_owned()];
+    overlapping_domains.exclude_domains = vec!["EXAMPLE.com".to_owned()];
     let error = service
-        .search(SearchRequest::from_query("lapis", 1), &overlapping_domains)
+        .search(SearchRequest::new("exa", "lapis", 1), &overlapping_domains)
         .await
         .expect_err("invalid search policy");
     assert!(matches!(error, Error::InvalidInput { .. }));
@@ -112,15 +236,12 @@ async fn forwards_policy_domain_filters_to_exa_provider() {
         "key".to_owned(),
         None,
     ));
-    let policy = SearchPolicy {
-        allowed_providers: vec!["exa".to_owned()],
-        include_domains: vec!["example.com".to_owned()],
-        exclude_domains: vec!["blocked.com".to_owned()],
-        ..SearchPolicy::default()
-    };
+    let mut policy = search_policy(&["exa"]);
+    policy.include_domains = vec!["example.com".to_owned()];
+    policy.exclude_domains = vec!["blocked.com".to_owned()];
 
     service
-        .search(SearchRequest::from_query("lapis", 1), &policy)
+        .search(SearchRequest::new("exa", "lapis", 1), &policy)
         .await
         .expect("search response");
 
@@ -152,10 +273,7 @@ async fn maps_exa_response_to_standard_search_response() {
     );
 
     let response = provider
-        .search(ProviderSearchRequest::from_policy(
-            SearchRequest::from_query("lapis", 1),
-            &SearchPolicy::default(),
-        ))
+        .search(SearchRequest::new("exa", "lapis", 1))
         .await
         .expect("exa response");
 
@@ -197,10 +315,7 @@ async fn maps_grok_response_to_standard_search_response() {
     );
 
     let response = provider
-        .search(ProviderSearchRequest::from_policy(
-            SearchRequest::from_query("lapis", 1),
-            &SearchPolicy::default(),
-        ))
+        .search(SearchRequest::new("grok", "lapis", 1))
         .await
         .expect("grok response");
 
@@ -232,19 +347,14 @@ async fn grok_search_uses_responses_web_search_request() {
         Some(1000),
         "configured-grok-model".to_owned(),
     );
-    let policy = SearchPolicy {
-        include_domains: vec!["example.com".to_owned()],
-        exclude_domains: vec!["blocked.com".to_owned()],
-        language: Some("en".to_owned()),
-        region: Some("US".to_owned()),
-        ..SearchPolicy::default()
-    };
+    let mut policy = search_policy(&["grok"]);
+    policy.include_domains = vec!["example.com".to_owned()];
+    policy.exclude_domains = vec!["blocked.com".to_owned()];
+    policy.language = Some("en".to_owned());
+    policy.region = Some("US".to_owned());
 
     provider
-        .search(ProviderSearchRequest::from_policy(
-            SearchRequest::from_query("lapis", 2),
-            &policy,
-        ))
+        .search(SearchRequest::new("grok", "lapis", 2).with_policy(&policy))
         .await
         .expect("grok response");
 
@@ -323,10 +433,7 @@ async fn grok_search_uses_annotation_local_text_for_snippets() {
     );
 
     let response = provider
-        .search(ProviderSearchRequest::from_policy(
-            SearchRequest::from_query("lapis", 1),
-            &SearchPolicy::default(),
-        ))
+        .search(SearchRequest::new("grok", "lapis", 1))
         .await
         .expect("grok response");
 
@@ -373,10 +480,7 @@ async fn grok_search_ignores_unknown_content_and_annotations() {
     );
 
     let response = provider
-        .search(ProviderSearchRequest::from_policy(
-            SearchRequest::from_query("lapis", 1),
-            &SearchPolicy::default(),
-        ))
+        .search(SearchRequest::new("grok", "lapis", 1))
         .await
         .expect("grok response");
 
@@ -431,10 +535,7 @@ async fn grok_search_dedupes_citations_and_limits_results() {
     );
 
     let response = provider
-        .search(ProviderSearchRequest::from_policy(
-            SearchRequest::from_query("lapis", 1),
-            &SearchPolicy::default(),
-        ))
+        .search(SearchRequest::new("grok", "lapis", 1))
         .await
         .expect("grok response");
 
@@ -461,10 +562,7 @@ async fn grok_search_rejects_non_success_status() {
     );
 
     let error = provider
-        .search(ProviderSearchRequest::from_policy(
-            SearchRequest::from_query("lapis", 1),
-            &SearchPolicy::default(),
-        ))
+        .search(SearchRequest::new("grok", "lapis", 1))
         .await
         .expect_err("grok status error");
 

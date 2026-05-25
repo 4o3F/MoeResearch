@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use lapis_core::error::{Error, Result};
-use lapis_core::model::provider::ModelProvider;
-use lapis_core::model::providers::OpenAiProvider;
+use lapis_core::model::provider::{ModelProvider, OpenAiProvider};
 use lapis_core::model::service::ModelService;
 use lapis_core::net::client::MockNetworkClient;
 use lapis_core::schema::model::{
@@ -96,15 +95,24 @@ fn user_message(content: &str) -> ModelInputItem {
     ModelInputItem::message(ModelMessageRole::User, content)
 }
 
+fn model_policy(allowed_providers: &[&str]) -> ModelPolicy {
+    ModelPolicy {
+        allowed_providers: allowed_providers
+            .iter()
+            .map(|provider| (*provider).to_owned())
+            .collect(),
+        temperature: Some(0.2),
+        max_tokens: None,
+        require_tool_call_support: true,
+    }
+}
+
 #[tokio::test]
 async fn routes_requested_allowed_provider() {
     let mut service = ModelService::new();
     service.register(StaticProvider("alpha"));
     service.register(StaticProvider("beta"));
-    let policy = ModelPolicy {
-        allowed_providers: vec!["beta".to_owned()],
-        ..ModelPolicy::default()
-    };
+    let policy = model_policy(&["beta"]);
 
     let response = service
         .complete(request("beta"), &policy)
@@ -115,31 +123,24 @@ async fn routes_requested_allowed_provider() {
 }
 
 #[tokio::test]
-async fn uses_default_provider_when_request_provider_is_empty() {
+async fn rejects_empty_request_provider() {
     let mut service = ModelService::new();
     service.register(StaticProvider("alpha"));
-    let policy = ModelPolicy {
-        default_provider: "alpha".to_owned(),
-        allowed_providers: vec!["alpha".to_owned()],
-        ..ModelPolicy::default()
-    };
+    let policy = model_policy(&["alpha"]);
 
-    let response = service
+    let error = service
         .complete(request(""), &policy)
         .await
-        .expect("model response");
+        .expect_err("missing provider error");
 
-    assert_eq!(response.provider, "alpha");
+    assert!(matches!(error, Error::InvalidInput { .. }));
 }
 
 #[tokio::test]
 async fn rejects_disallowed_provider() {
     let mut service = ModelService::new();
     service.register(StaticProvider("beta"));
-    let policy = ModelPolicy {
-        allowed_providers: vec!["alpha".to_owned()],
-        ..ModelPolicy::default()
-    };
+    let policy = model_policy(&["alpha"]);
 
     let error = service
         .complete(request("beta"), &policy)
@@ -150,21 +151,16 @@ async fn rejects_disallowed_provider() {
 }
 
 #[tokio::test]
-async fn applies_policy_defaults_before_dispatch() {
+async fn applies_policy_settings_before_dispatch() {
     let seen = Arc::new(std::sync::Mutex::new(None));
     let mut service = ModelService::new();
     service.register(CapturingProvider { seen: seen.clone() });
-    let policy = ModelPolicy {
-        default_provider: "alpha".to_owned(),
-        default_model: Some("model-a".to_owned()),
-        allowed_providers: vec!["alpha".to_owned()],
-        temperature: Some(0.7),
-        max_tokens: Some(128),
-        ..ModelPolicy::default()
-    };
+    let mut policy = model_policy(&["alpha"]);
+    policy.temperature = Some(0.7);
+    policy.max_tokens = Some(128);
 
     service
-        .complete(request(""), &policy)
+        .complete(request("alpha"), &policy)
         .await
         .expect("model response");
     let request = seen
@@ -174,26 +170,22 @@ async fn applies_policy_defaults_before_dispatch() {
         .expect("captured request");
 
     assert_eq!(request.provider, "alpha");
-    assert_eq!(request.model.as_deref(), Some("model-a"));
+    assert_eq!(request.model, None);
     assert_eq!(request.temperature, Some(0.7));
     assert_eq!(request.max_tokens, Some(128));
 }
 
 #[tokio::test]
-async fn validates_request_after_policy_defaults() {
+async fn validates_request_after_policy_settings() {
     let seen = Arc::new(std::sync::Mutex::new(None));
     let mut service = ModelService::new();
     service.register(CapturingProvider { seen: seen.clone() });
-    let policy = ModelPolicy {
-        default_provider: "alpha".to_owned(),
-        allowed_providers: vec!["alpha".to_owned()],
-        temperature: Some(3.0),
-        max_tokens: Some(128),
-        ..ModelPolicy::default()
-    };
+    let mut policy = model_policy(&["alpha"]);
+    policy.temperature = Some(3.0);
+    policy.max_tokens = Some(128);
 
     let error = service
-        .complete(request(""), &policy)
+        .complete(request("alpha"), &policy)
         .await
         .expect_err("invalid model request");
 
@@ -206,15 +198,11 @@ async fn rejects_zero_policy_max_tokens_before_dispatch() {
     let seen = Arc::new(std::sync::Mutex::new(None));
     let mut service = ModelService::new();
     service.register(CapturingProvider { seen: seen.clone() });
-    let policy = ModelPolicy {
-        default_provider: "alpha".to_owned(),
-        allowed_providers: vec!["alpha".to_owned()],
-        max_tokens: Some(0),
-        ..ModelPolicy::default()
-    };
+    let mut policy = model_policy(&["alpha"]);
+    policy.max_tokens = Some(0);
 
     let error = service
-        .complete(request(""), &policy)
+        .complete(request("alpha"), &policy)
         .await
         .expect_err("invalid model request");
 
@@ -227,12 +215,8 @@ async fn rejects_empty_model_messages_before_dispatch() {
     let seen = Arc::new(std::sync::Mutex::new(None));
     let mut service = ModelService::new();
     service.register(CapturingProvider { seen: seen.clone() });
-    let policy = ModelPolicy {
-        default_provider: "alpha".to_owned(),
-        allowed_providers: vec!["alpha".to_owned()],
-        ..ModelPolicy::default()
-    };
-    let mut invalid = request("");
+    let policy = model_policy(&["alpha"]);
+    let mut invalid = request("alpha");
     invalid.input = vec![];
 
     let error = service

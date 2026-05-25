@@ -35,7 +35,6 @@ async fn main() -> lapis_core::error::Result<()> {
         Command::Serve { config, log_format } => {
             lapis_core::logging::init(log_format)?;
             let config = lapis_core::config::load_config(config.as_deref())?;
-            config.validate()?;
             tracing::info!(
                 search_providers = config.search.enabled_count(),
                 model_providers = config.model.enabled_count(),

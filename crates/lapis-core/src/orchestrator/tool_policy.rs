@@ -12,6 +12,7 @@ use crate::{
 pub const SEARCH_TOOL_NAME: &str = "search";
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SearchToolArgs {
     pub query: String,
     pub max_results: Option<usize>,

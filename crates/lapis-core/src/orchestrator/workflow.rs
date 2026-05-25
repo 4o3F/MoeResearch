@@ -2,18 +2,16 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use futures::{StreamExt, stream};
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::model::service::ModelService;
 use crate::orchestrator::agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
 use crate::orchestrator::tool_policy::SEARCH_TOOL_NAME;
-use crate::schema::config::BudgetConfig;
+use crate::schema::budget::BudgetConfig;
 use crate::schema::report::{
     AspectFailure, AspectReport, AspectResearchResult, Confidence, CoverageSummary,
-    DeepResearchResult, Evidence, OpenQuestion, ResearchBudgetUsage, TerminationReason, TokenUsage,
-    TraceSummary,
+    DeepResearchResult, Evidence, OpenQuestion, ResearchBudgetUsage, TokenUsage,
 };
 use crate::schema::research::{
     AspectResearchRequest, DeepResearchRequest, WorkflowValidationContext,
@@ -34,10 +32,7 @@ pub async fn aspect_research(
             supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
             supported_tool_name: SEARCH_TOOL_NAME,
         })
-        .map_err(|error| AgentRuntimeFailure {
-            error,
-            partial_trace: None,
-        })?;
+        .map_err(|error| AgentRuntimeFailure { error })?;
     AgentRuntime::new(model_service, search_service, &request)
         .run()
         .await
@@ -57,13 +52,62 @@ pub async fn deep_research(
 
     let started = Instant::now();
     let run_id = Uuid::new_v4().to_string();
+    let request_id = request.request_id.clone();
+    let requested_aspects = request.aspect_tasks.len();
+    tracing::info!(
+        request_id = %request_id,
+        run_id = %run_id,
+        requested_aspects,
+        "deep research started"
+    );
+
     let mut run = execute_aspects(&request, model_service, search_service, budget_config).await;
     run.budget_usage.elapsed_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
-    request.plan.budget.ensure_usage_within(&run.budget_usage)?;
-    finalize_deep_result(request, run, run_id)
+    if let Err(error) = request.budget.ensure_usage_within(&run.budget_usage) {
+        tracing::warn!(
+            request_id = %request_id,
+            run_id = %run_id,
+            requested_aspects,
+            agents_started = run.budget_usage.agents_started,
+            completed_aspects = run.completed.len(),
+            failed_aspects = run.failures.len(),
+            model_calls_used = run.budget_usage.model_calls_used,
+            search_calls_used = run.budget_usage.search_calls_used,
+            elapsed_ms = run.budget_usage.elapsed_ms,
+            error_code = ?error.code(),
+            retryable = error.to_tool_error().retryable,
+            status = "failed",
+            "deep research budget check failed"
+        );
+        return Err(error);
+    }
+
+    let result = finalize_deep_result(request, run, run_id.clone());
+    match &result {
+        Ok(result) => tracing::info!(
+            request_id = %request_id,
+            run_id = %run_id,
+            requested_aspects,
+            completed_aspects = result.completed_aspects.len(),
+            failed_aspects = result.failed_aspects.len(),
+            evidence_count = result.coverage_summary.evidence_count,
+            elapsed_ms = result.budget_usage.elapsed_ms,
+            status = if result.failed_aspects.is_empty() { "ok" } else { "partial" },
+            "deep research completed"
+        ),
+        Err(error) => tracing::warn!(
+            request_id = %request_id,
+            run_id = %run_id,
+            requested_aspects,
+            error_code = ?error.code(),
+            retryable = error.to_tool_error().retryable,
+            status = "failed",
+            "deep research failed"
+        ),
+    }
+    result
 }
 
-#[derive(Default)]
 struct DeepResearchRun {
     completed: Vec<String>,
     failures: Vec<AspectFailure>,
@@ -71,9 +115,21 @@ struct DeepResearchRun {
     evidence_by_id: BTreeMap<String, Evidence>,
     open_questions: Vec<OpenQuestion>,
     budget_usage: ResearchBudgetUsage,
-    model_calls: Vec<crate::schema::report::ProviderCallSummary>,
-    search_calls: Vec<crate::schema::report::ProviderCallSummary>,
     first_error: Option<Error>,
+}
+
+impl DeepResearchRun {
+    fn new() -> Self {
+        Self {
+            completed: Vec::new(),
+            failures: Vec::new(),
+            aspect_reports: Vec::new(),
+            evidence_by_id: BTreeMap::new(),
+            open_questions: Vec::new(),
+            budget_usage: ResearchBudgetUsage::zero(),
+            first_error: None,
+        }
+    }
 }
 
 async fn execute_aspects(
@@ -82,10 +138,10 @@ async fn execute_aspects(
     search_service: &SearchService,
     budget_config: &BudgetConfig,
 ) -> DeepResearchRun {
-    let mut run = DeepResearchRun::default();
+    let mut run = DeepResearchRun::new();
     let mut results = stream::iter(aspect_requests(request).into_iter().map(
         |aspect_request| async move {
-            let aspect_id = aspect_request.aspect.aspect_id.clone();
+            let aspect_id = aspect_request.task.aspect.aspect_id.clone();
             let result =
                 aspect_research(aspect_request, model_service, search_service, budget_config)
                     .await
@@ -95,10 +151,9 @@ async fn execute_aspects(
     ))
     .buffer_unordered(
         request
-            .plan
             .budget
             .max_concurrent_agents
-            .as_concurrency(request.plan.aspects.len()),
+            .as_concurrency(request.aspect_tasks.len()),
     );
 
     while let Some((aspect_id, result)) = results.next().await {
@@ -114,24 +169,19 @@ async fn execute_aspects(
 
 fn aspect_requests(request: &DeepResearchRequest) -> Vec<AspectResearchRequest> {
     request
-        .plan
-        .aspects
+        .aspect_tasks
         .iter()
         .cloned()
-        .map(|aspect| {
-            let budget = aspect.budget_override.clone().unwrap_or_default();
-            AspectResearchRequest {
-                schema_version: request.schema_version.clone(),
-                request_id: request.request_id.clone(),
-                aspect,
-                shared_context: request.shared_context.clone(),
-                model_policy: request.plan.model_policy.clone(),
-                search_policy: request.plan.search_policy.clone(),
-                evidence_policy: request.plan.evidence_policy.clone(),
-                output_policy: request.plan.output_policy.clone(),
-                budget,
-                execution_policy: request.execution_policy.clone(),
-            }
+        .map(|task| AspectResearchRequest {
+            schema_version: request.schema_version.clone(),
+            request_id: request.request_id.clone(),
+            task,
+            shared_context: request.shared_context.clone(),
+            model_policy: request.model_policy.clone(),
+            search_policy: request.search_policy.clone(),
+            evidence_policy: request.evidence_policy.clone(),
+            output_policy: request.output_policy.clone(),
+            execution_policy: request.execution_policy.clone(),
         })
         .collect()
 }
@@ -155,7 +205,7 @@ fn record_aspect_result(
 
 fn record_aspect_success(run: &mut DeepResearchRun, mut output: AgentRuntimeOutput) {
     namespace_aspect_evidence(&mut output.result);
-    run.budget_usage.model_calls_used += output.provider_usage.model_calls;
+    run.budget_usage.model_calls_used += output.budget_usage.turns_used;
     run.budget_usage.search_calls_used += output.budget_usage.search_calls_used;
     run.budget_usage.elapsed_ms = run
         .budget_usage
@@ -163,12 +213,8 @@ fn record_aspect_success(run: &mut DeepResearchRun, mut output: AgentRuntimeOutp
         .saturating_add(output.budget_usage.elapsed_ms);
     run.budget_usage.token_usage = merge_token_usage(
         run.budget_usage.token_usage.take(),
-        output.provider_usage.token_usage.clone(),
+        output.token_usage.clone(),
     );
-    run.model_calls
-        .extend(output.trace_summary.model_calls.clone());
-    run.search_calls
-        .extend(output.trace_summary.search_calls.clone());
     run.completed
         .push(output.result.aspect_report.aspect_id.clone());
     run.open_questions
@@ -188,7 +234,7 @@ fn namespace_aspect_evidence(result: &mut AspectResearchResult) {
     for evidence in &mut result.evidence {
         let original_id = evidence.id.clone();
         let namespaced_id = format!("{aspect_id}:{original_id}");
-        evidence.id = namespaced_id.clone();
+        evidence.id.clone_from(&namespaced_id);
         remapped_ids.insert(original_id, namespaced_id);
     }
 
@@ -228,20 +274,13 @@ fn deep_result(
 ) -> DeepResearchResult {
     let evidence_index = run.evidence_by_id.into_values().collect::<Vec<_>>();
     let coverage_summary = CoverageSummary {
-        requested_aspects: request.plan.aspects.len(),
+        requested_aspects: request.aspect_tasks.len(),
         completed_aspects: run.completed.len(),
         failed_aspects: run.failures.len(),
         evidence_count: evidence_index.len(),
     };
-    let termination_reason = if run.failures.is_empty() {
-        TerminationReason::Completed
-    } else {
-        TerminationReason::PartialCompleted
-    };
-
     DeepResearchResult {
         run_id: run_id.clone(),
-        plan_id: request.plan.plan_id,
         completed_aspects: run.completed,
         failed_aspects: run.failures,
         confidence_summary: confidence_summary(&run.aspect_reports),
@@ -250,19 +289,6 @@ fn deep_result(
         open_questions: run.open_questions,
         coverage_summary,
         budget_usage: run.budget_usage,
-        trace_summary: request
-            .plan
-            .output_policy
-            .include_trace_summary
-            .then_some(TraceSummary {
-                trace_id: run_id,
-                root_span: "deep_research".to_owned(),
-                started_at: now_rfc3339(),
-                finished_at: Some(now_rfc3339()),
-                model_calls: run.model_calls,
-                search_calls: run.search_calls,
-                termination_reason: Some(termination_reason),
-            }),
     }
 }
 
@@ -278,7 +304,7 @@ fn aspect_failure(aspect_id: &str, error: &Error) -> AspectFailure {
 fn confidence_summary(
     aspect_reports: &[crate::schema::report::AspectReport],
 ) -> crate::schema::report::ConfidenceSummary {
-    let mut summary = crate::schema::report::ConfidenceSummary::default();
+    let mut summary = crate::schema::report::ConfidenceSummary::zero();
     for report in aspect_reports {
         match report.confidence {
             Confidence::High => summary.high += 1,
@@ -307,10 +333,4 @@ fn sum_options(left: Option<u64>, right: Option<u64>) -> Option<u64> {
         (Some(value), None) | (None, Some(value)) => Some(value),
         (Some(left), Some(right)) => Some(left.saturating_add(right)),
     }
-}
-
-fn now_rfc3339() -> String {
-    OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
 }

@@ -7,7 +7,7 @@ use crate::orchestrator::workflow::{
     aspect_research as run_aspect_research, deep_research as run_deep_research,
 };
 use crate::schema::mcp::{ToolEnvelope, ToolStatus};
-use crate::schema::report::{AspectResearchResult, DeepResearchResult, PartialTrace, TraceSummary};
+use crate::schema::report::{AspectResearchResult, DeepResearchResult};
 use crate::schema::research::{AspectResearchRequest, DeepResearchRequest};
 
 #[tool_router(server_handler)]
@@ -21,6 +21,13 @@ impl LapisMcpServer {
     ) -> Json<ToolEnvelope<AspectResearchResult>> {
         let schema_version = request.schema_version.clone();
         let request_id = request.request_id.clone();
+        let aspect_id = request.task.aspect.aspect_id.clone();
+        tracing::info!(
+            request_id = %request_id,
+            aspect_id = %aspect_id,
+            tool = "aspect_research",
+            "MCP tool started"
+        );
 
         Json(
             match run_aspect_research(
@@ -31,13 +38,28 @@ impl LapisMcpServer {
             )
             .await
             {
-                Ok(output) => aspect_success_envelope(schema_version, request_id, output),
-                Err(failure) => failed_envelope(
-                    schema_version,
-                    request_id,
-                    &failure.error,
-                    failure.partial_trace,
-                ),
+                Ok(output) => {
+                    tracing::info!(
+                        request_id = %request_id,
+                        aspect_id = %aspect_id,
+                        tool = "aspect_research",
+                        status = "ok",
+                        "MCP tool completed"
+                    );
+                    aspect_success_envelope(schema_version, request_id, output)
+                }
+                Err(failure) => {
+                    tracing::warn!(
+                        request_id = %request_id,
+                        aspect_id = %aspect_id,
+                        tool = "aspect_research",
+                        error_code = ?failure.error.code(),
+                        retryable = failure.error.to_tool_error().retryable,
+                        status = "failed",
+                        "MCP tool failed"
+                    );
+                    failed_envelope(schema_version, request_id, &failure.error)
+                }
             },
         )
     }
@@ -51,6 +73,11 @@ impl LapisMcpServer {
     ) -> Json<ToolEnvelope<DeepResearchResult>> {
         let schema_version = request.schema_version.clone();
         let request_id = request.request_id.clone();
+        tracing::info!(
+            request_id = %request_id,
+            tool = "deep_research",
+            "MCP tool started"
+        );
 
         Json(
             match run_deep_research(
@@ -61,8 +88,27 @@ impl LapisMcpServer {
             )
             .await
             {
-                Ok(result) => deep_success_envelope(schema_version, request_id, result),
-                Err(error) => failed_envelope(schema_version, request_id, &error, None),
+                Ok(result) => {
+                    tracing::info!(
+                        request_id = %request_id,
+                        run_id = %result.run_id,
+                        tool = "deep_research",
+                        status = if result.failed_aspects.is_empty() { "ok" } else { "partial" },
+                        "MCP tool completed"
+                    );
+                    deep_success_envelope(schema_version, request_id, result)
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        request_id = %request_id,
+                        tool = "deep_research",
+                        error_code = ?error.code(),
+                        retryable = error.to_tool_error().retryable,
+                        status = "failed",
+                        "MCP tool failed"
+                    );
+                    failed_envelope(schema_version, request_id, &error)
+                }
             },
         )
     }
@@ -73,15 +119,13 @@ fn aspect_success_envelope(
     request_id: String,
     output: AgentRuntimeOutput,
 ) -> ToolEnvelope<AspectResearchResult> {
-    let run_id = non_empty_trace_id(&output.trace_summary);
     ToolEnvelope {
         schema_version,
         request_id,
-        run_id,
+        run_id: None,
         status: ToolStatus::Ok,
         data: Some(output.result),
         error: None,
-        partial_trace: None,
     }
 }
 
@@ -104,7 +148,6 @@ fn deep_success_envelope(
         status,
         data: Some(result),
         error: None,
-        partial_trace: None,
     }
 }
 
@@ -112,27 +155,13 @@ fn failed_envelope<T>(
     schema_version: String,
     request_id: String,
     error: &Error,
-    partial_trace: Option<PartialTrace>,
 ) -> ToolEnvelope<T> {
-    let trace_summary = partial_trace
-        .as_ref()
-        .map(|partial| partial.trace_summary.clone());
-    let run_id = trace_summary.as_ref().and_then(non_empty_trace_id);
     ToolEnvelope {
         schema_version,
         request_id,
-        run_id,
+        run_id: None,
         status: ToolStatus::Failed,
         data: None,
         error: Some(error.to_tool_error()),
-        partial_trace,
-    }
-}
-
-fn non_empty_trace_id(trace_summary: &TraceSummary) -> Option<String> {
-    if trace_summary.trace_id.is_empty() {
-        None
-    } else {
-        Some(trace_summary.trace_id.clone())
     }
 }

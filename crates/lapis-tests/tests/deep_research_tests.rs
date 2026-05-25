@@ -8,25 +8,73 @@ use lapis_core::error::{Error, Result};
 use lapis_core::model::provider::ModelProvider;
 use lapis_core::model::service::ModelService;
 use lapis_core::orchestrator::workflow::deep_research;
-use lapis_core::schema::budget::{AgentBudget, ResearchBudget};
-use lapis_core::schema::config::BudgetConfig;
+use lapis_core::schema::budget::{AgentBudget, BudgetConfig, ResearchBudget};
 use lapis_core::schema::limit::Limit;
 use lapis_core::schema::model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
 use lapis_core::schema::policy::{
-    EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
-    ToolName,
+    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
 };
 use lapis_core::schema::report::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
-    OpenQuestion, TerminationReason,
+    OpenQuestion,
 };
 use lapis_core::schema::research::{
-    AspectSpec, DeepResearchRequest, DeliverableSpec, PromptAssets, ResearchContext, ResearchPlan,
+    AspectResearchTask, AspectSpec, DeepResearchRequest, ResearchContext,
 };
-use lapis_core::schema::search::{ProviderSearchRequest, SearchResponse, SearchResult};
+use lapis_core::schema::search::{SearchRequest, SearchResponse, SearchResult};
 use lapis_core::search::provider::SearchProvider;
 use lapis_core::search::service::SearchService;
 use serde_json::json;
+
+fn unlimited_budget_config() -> BudgetConfig {
+    BudgetConfig {
+        research: ResearchBudget::unlimited(),
+        per_agent: AgentBudget::unlimited(),
+    }
+}
+
+fn model_policy() -> ModelPolicy {
+    ModelPolicy {
+        allowed_providers: vec!["model".to_owned()],
+        temperature: Some(0.2),
+        max_tokens: None,
+        require_tool_call_support: true,
+    }
+}
+
+fn search_policy() -> SearchPolicy {
+    SearchPolicy {
+        allowed_providers: vec!["searcher".to_owned()],
+        max_results_per_query: 2,
+        freshness: None,
+        language: None,
+        region: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+    }
+}
+
+fn evidence_policy() -> EvidencePolicy {
+    EvidencePolicy {
+        require_evidence_for_findings: true,
+        min_evidence_per_finding: 1,
+    }
+}
+
+fn output_policy() -> OutputPolicy {
+    OutputPolicy {
+        language: "zh-CN".to_owned(),
+        max_findings_per_aspect: None,
+    }
+}
+
+fn execution_policy(timeout_ms: Option<u64>) -> ExecutionPolicy {
+    ExecutionPolicy {
+        allow_partial_results: true,
+        fail_fast: false,
+        timeout_ms,
+    }
+}
 
 struct AdaptiveModelProvider {
     failing_aspects: BTreeSet<String>,
@@ -80,7 +128,7 @@ impl SearchProvider for StaticSearchProvider {
         "searcher"
     }
 
-    async fn search(&self, _request: ProviderSearchRequest) -> Result<SearchResponse> {
+    async fn search(&self, _request: SearchRequest) -> Result<SearchResponse> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(SearchResponse {
             provider: "searcher".to_owned(),
@@ -133,72 +181,49 @@ fn services(failing_aspects: &[&str]) -> Services {
     }
 }
 
-fn prompt_assets() -> PromptAssets {
-    PromptAssets {
-        aspect_agent_prompt_path: "prompts/layer2/aspect-agent.md".to_owned(),
-    }
+fn prompt_path() -> String {
+    "prompts/layer2/aspect-agent.md".to_owned()
 }
 
 fn deep_request(count: usize) -> DeepResearchRequest {
     DeepResearchRequest {
         schema_version: "m5".to_owned(),
         request_id: "request-1".to_owned(),
-        plan: ResearchPlan {
-            plan_id: "plan-1".to_owned(),
-            user_question: "What is true?".to_owned(),
-            deliverable: DeliverableSpec {
-                kind: "brief".to_owned(),
-                language: "en".to_owned(),
-                expected_sections: vec!["summary".to_owned()],
-                notes: vec![],
-            },
-            constraints: vec![],
-            aspects: (1..=count).map(aspect).collect(),
-            budget: ResearchBudget {
-                max_agents: Limit::limited(count),
-                max_concurrent_agents: Limit::limited(2),
-                max_total_model_calls: Limit::limited(20),
-                max_total_search_calls: Limit::limited(20),
-                total_timeout_ms: Limit::limited(180_000),
-                max_tokens: Limit::unlimited(),
-            },
-            model_policy: ModelPolicy {
-                default_provider: "model".to_owned(),
-                allowed_providers: vec!["model".to_owned()],
-                ..ModelPolicy::default()
-            },
-            search_policy: SearchPolicy {
-                allowed_providers: vec!["searcher".to_owned()],
-                preferred_providers: vec!["searcher".to_owned()],
-                max_results_per_query: 2,
-                ..SearchPolicy::default()
-            },
-            evidence_policy: EvidencePolicy::default(),
-            output_policy: OutputPolicy::default(),
+        user_question: "What is true?".to_owned(),
+        aspect_tasks: (1..=count).map(aspect_task).collect(),
+        budget: ResearchBudget {
+            max_agents: Limit::limited(count),
+            max_concurrent_agents: Limit::limited(2),
+            max_total_model_calls: Limit::limited(20),
+            max_total_search_calls: Limit::limited(20),
+            total_timeout_ms: Limit::limited(180_000),
+            max_tokens: Limit::unlimited(),
         },
-        shared_context: ResearchContext::default(),
-        execution_policy: ExecutionPolicy {
-            timeout_ms: Some(180_000),
-            ..ExecutionPolicy::default()
-        },
+        model_policy: model_policy(),
+        search_policy: search_policy(),
+        evidence_policy: evidence_policy(),
+        output_policy: output_policy(),
+        shared_context: ResearchContext::empty(),
+        execution_policy: execution_policy(Some(180_000)),
     }
 }
 
-fn aspect(index: usize) -> AspectSpec {
-    AspectSpec {
-        aspect_id: format!("aspect-{index}"),
-        name: format!("Aspect {index}"),
-        role: "researcher".to_owned(),
-        research_question: format!("Question {index}?"),
-        scope: vec!["scope".to_owned()],
-        boundaries: vec![],
-        success_criteria: vec!["answer".to_owned()],
-        prompt_assets: prompt_assets(),
-        required_evidence: EvidenceRequirement::default(),
-        allowed_tools: vec![ToolName("search".to_owned())],
-        model_override: None,
-        search_override: None,
-        budget_override: Some(AgentBudget::default()),
+fn aspect_task(index: usize) -> AspectResearchTask {
+    AspectResearchTask {
+        aspect: AspectSpec {
+            aspect_id: format!("aspect-{index}"),
+            name: format!("Aspect {index}"),
+            role: "researcher".to_owned(),
+            research_question: format!("Question {index}?"),
+            scope: vec!["scope".to_owned()],
+            boundaries: vec![],
+            success_criteria: vec!["answer".to_owned()],
+            aspect_agent_prompt_path: prompt_path(),
+            allowed_tools: vec![ToolName("search".to_owned())],
+            model_provider: Some("model".to_owned()),
+            search_provider: Some("searcher".to_owned()),
+        },
+        budget: AgentBudget::unlimited(),
     }
 }
 
@@ -300,8 +325,8 @@ fn has_tool_output(input: &[ModelInputItem]) -> bool {
 
 fn aspect_field(input: &[ModelInputItem], label: &str) -> String {
     let pointer = match label {
-        "Aspect ID" => "/aspect/aspect_id",
-        "Aspect name" => "/aspect/name",
+        "Aspect ID" => "/task/aspect/aspect_id",
+        "Aspect name" => "/task/aspect/name",
         _ => return String::new(),
     };
 
@@ -340,7 +365,7 @@ async fn completes_three_aspects_with_bounded_concurrency() {
         request,
         &services.model,
         &services.search,
-        &BudgetConfig::default(),
+        &unlimited_budget_config(),
     )
     .await
     .expect("deep result");
@@ -371,13 +396,6 @@ async fn completes_three_aspects_with_bounded_concurrency() {
     assert_eq!(result.confidence_summary.medium, 3);
     assert_eq!(result.budget_usage.model_calls_used, 6);
     assert_eq!(result.budget_usage.search_calls_used, 3);
-    assert_eq!(
-        result
-            .trace_summary
-            .as_ref()
-            .and_then(|trace| trace.termination_reason),
-        Some(TerminationReason::Completed)
-    );
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 6);
     assert_eq!(services.search_calls.load(Ordering::SeqCst), 3);
     assert_eq!(services.max_in_flight.load(Ordering::SeqCst), 2);
@@ -392,7 +410,7 @@ async fn returns_partial_result_after_single_aspect_failure() {
         request,
         &services.model,
         &services.search,
-        &BudgetConfig::default(),
+        &unlimited_budget_config(),
     )
     .await
     .expect("partial result");
@@ -400,13 +418,6 @@ async fn returns_partial_result_after_single_aspect_failure() {
     assert_eq!(result.completed_aspects.len(), 2);
     assert_eq!(result.failed_aspects.len(), 1);
     assert_eq!(result.failed_aspects[0].aspect_id, "aspect-2");
-    assert_eq!(
-        result
-            .trace_summary
-            .as_ref()
-            .and_then(|trace| trace.termination_reason),
-        Some(TerminationReason::PartialCompleted)
-    );
 }
 
 #[tokio::test]
@@ -418,7 +429,7 @@ async fn all_aspects_failed_returns_error() {
         request,
         &services.model,
         &services.search,
-        &BudgetConfig::default(),
+        &unlimited_budget_config(),
     )
     .await
     .expect_err("all failed");
@@ -436,7 +447,7 @@ async fn partial_results_disabled_returns_error() {
         request,
         &services.model,
         &services.search,
-        &BudgetConfig::default(),
+        &unlimited_budget_config(),
     )
     .await
     .expect_err("partial disabled");
@@ -447,7 +458,7 @@ async fn partial_results_disabled_returns_error() {
 #[tokio::test]
 async fn fail_fast_stops_before_scheduling_remaining_aspects() {
     let mut request = deep_request(2);
-    request.plan.budget.max_concurrent_agents = Limit::limited(1);
+    request.budget.max_concurrent_agents = Limit::limited(1);
     request.execution_policy.fail_fast = true;
     let services = services(&["aspect-1"]);
 
@@ -455,7 +466,7 @@ async fn fail_fast_stops_before_scheduling_remaining_aspects() {
         request,
         &services.model,
         &services.search,
-        &BudgetConfig::default(),
+        &unlimited_budget_config(),
     )
     .await
     .expect_err("fail fast error");
@@ -468,14 +479,14 @@ async fn fail_fast_stops_before_scheduling_remaining_aspects() {
 #[tokio::test]
 async fn rejects_plan_exceeding_max_agents() {
     let mut request = deep_request(3);
-    request.plan.budget.max_agents = Limit::limited(2);
+    request.budget.max_agents = Limit::limited(2);
     let services = services(&[]);
 
     let error = deep_research(
         request,
         &services.model,
         &services.search,
-        &BudgetConfig::default(),
+        &unlimited_budget_config(),
     )
     .await
     .expect_err("too many aspects");
@@ -489,8 +500,11 @@ async fn rejects_research_budget_above_configured_limits() {
     let request = deep_request(3);
     let services = services(&[]);
     let limits = BudgetConfig {
-        max_agents: Limit::limited(2),
-        ..BudgetConfig::default()
+        research: ResearchBudget {
+            max_agents: Limit::limited(2),
+            ..ResearchBudget::unlimited()
+        },
+        per_agent: AgentBudget::unlimited(),
     };
 
     let error = deep_research(request, &services.model, &services.search, &limits)
@@ -506,8 +520,11 @@ async fn rejects_research_concurrency_above_configured_limits() {
     let request = deep_request(3);
     let services = services(&[]);
     let limits = BudgetConfig {
-        max_concurrent_agents: Limit::limited(1),
-        ..BudgetConfig::default()
+        research: ResearchBudget {
+            max_concurrent_agents: Limit::limited(1),
+            ..ResearchBudget::unlimited()
+        },
+        per_agent: AgentBudget::unlimited(),
     };
 
     let error = deep_research(request, &services.model, &services.search, &limits)
@@ -523,8 +540,11 @@ async fn rejects_agent_budget_above_configured_limits() {
     let request = deep_request(2);
     let services = services(&[]);
     let limits = BudgetConfig {
-        max_turns_per_agent: Limit::limited(5),
-        ..BudgetConfig::default()
+        research: ResearchBudget::unlimited(),
+        per_agent: AgentBudget {
+            max_turns: Limit::limited(5),
+            ..AgentBudget::unlimited()
+        },
     };
 
     let error = deep_research(request, &services.model, &services.search, &limits)
@@ -538,14 +558,14 @@ async fn rejects_agent_budget_above_configured_limits() {
 #[tokio::test]
 async fn global_search_budget_is_checked_after_aggregation() {
     let mut request = deep_request(2);
-    request.plan.budget.max_total_search_calls = Limit::limited(1);
+    request.budget.max_total_search_calls = Limit::limited(1);
     let services = services(&[]);
 
     let error = deep_research(
         request,
         &services.model,
         &services.search,
-        &BudgetConfig::default(),
+        &unlimited_budget_config(),
     )
     .await
     .expect_err("global search budget");
