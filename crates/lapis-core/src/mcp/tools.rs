@@ -5,7 +5,7 @@ use crate::mcp::server::LapisMcpServer;
 use crate::orchestrator::workflow::{
     aspect_research as run_aspect_research, deep_research as run_deep_research,
 };
-use crate::schema::mcp::{ToolEnvelope, ToolStatus, Warning};
+use crate::schema::mcp::{ToolEnvelope, ToolStatus};
 use crate::schema::report::{AspectResearchResult, DeepResearchResult, PartialTrace, TraceSummary};
 use crate::schema::research::{AspectResearchRequest, DeepResearchRequest};
 
@@ -72,16 +72,14 @@ fn aspect_success_envelope(
     request_id: String,
     result: AspectResearchResult,
 ) -> ToolEnvelope<AspectResearchResult> {
-    let trace_summary = result.trace_summary.clone();
+    let run_id = result.trace_summary.as_ref().and_then(non_empty_trace_id);
     ToolEnvelope {
         schema_version,
         request_id,
-        run_id: non_empty_trace_id(&trace_summary),
+        run_id,
         status: ToolStatus::Ok,
         data: Some(result),
-        warnings: Vec::new(),
         error: None,
-        trace_summary: Some(trace_summary),
         partial_trace: None,
     }
 }
@@ -92,7 +90,6 @@ fn deep_success_envelope(
     result: DeepResearchResult,
 ) -> ToolEnvelope<DeepResearchResult> {
     let run_id = result.run_id.clone();
-    let trace_summary = result.trace_summary.clone();
     let status = if result.failed_aspects.is_empty() {
         ToolStatus::Ok
     } else {
@@ -105,9 +102,7 @@ fn deep_success_envelope(
         run_id: Some(run_id),
         status,
         data: Some(result),
-        warnings: Vec::new(),
         error: None,
-        trace_summary: Some(trace_summary),
         partial_trace: None,
     }
 }
@@ -128,9 +123,7 @@ fn failed_envelope<T>(
         run_id,
         status: ToolStatus::Failed,
         data: None,
-        warnings: Vec::<Warning>::new(),
         error: Some(error.to_tool_error()),
-        trace_summary,
         partial_trace,
     }
 }

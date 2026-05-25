@@ -402,19 +402,17 @@ ToolEnvelope<T>
   - run_id
   - status: ok | partial | failed
   - data: T | null
-  - warnings[]
   - error: ToolError | null
-  - trace_summary: TraceSummary | null
   - partial_trace: PartialTrace | null
 ```
 
 约定：
 
-- `status=ok` 时，`data` 承载完整结果，`trace_summary` 承载完整 trace，`partial_trace` 为 `null`。
+- `status=ok` 时，`data` 承载结果，`partial_trace` 为 `null`；成功 trace 仅在输出策略开启时出现在 `data.trace_summary`。
 - `status=partial` 用于多 aspect 工作流中部分 aspect 失败但整体仍返回可用结果的场景。
-- `status=failed` 时，`data` 为 `null`，`error` 说明失败原因；如果失败发生在 Agent runtime 启动之后，`trace_summary` 和 `partial_trace` 应保留已完成的 model/search/tool call 诊断信息。
+- `status=failed` 时，`data` 为 `null`，`error` 说明失败原因；如果失败发生在 Agent runtime 启动之后，`partial_trace` 应保留已完成的 model/search/tool call 诊断信息。
 - `partial_trace` 不代表可用研究结果，只用于调试中途失败；它包含已完成的 `search_queries`、`tool_calls`、`provider_usage`、`budget_usage` 和 `evidence_count`。
-- runtime 启动前的校验错误（例如无效输入、schema version 不支持）没有可用 runtime state，因此 `trace_summary` 和 `partial_trace` 为 `null`。
+- runtime 启动前的校验错误（例如无效输入、schema version 不支持）没有可用 runtime state，因此 `partial_trace` 为 `null`。
 - `search_queries[].query` 和 `tool_calls[].search.query` 必须遵守 `evidence_policy.include_query_trace`；`sources[].url` 必须遵守 `evidence_policy.include_source_urls`。不得在 envelope 中返回 secrets、Authorization header、API key、完整 prompt、raw provider request/response body 或 raw snippets。
 
 ### 10.2 Model Agent Orchestrator

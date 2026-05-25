@@ -275,7 +275,6 @@ fn valid_report_json() -> String {
             evidence_refs: vec!["ev-1-1".to_owned()],
             contradicted_by: vec![],
         }],
-        evidence: vec![],
         assumptions: vec![],
         risks: vec![],
         counterarguments: vec![],
@@ -539,8 +538,29 @@ async fn fake_model_and_search_complete_successfully() {
         "raw search snippet omitted by output policy"
     );
     assert!(output.evidence[0].url.is_none());
-    assert_ne!(output.search_queries[0].query, "private query");
-    assert!(!output.tool_calls[0].input_summary.contains('{'));
+    assert!(output.trace_summary.is_some());
+    assert!(output.search_queries.is_empty());
+    assert!(output.tool_calls.is_empty());
+}
+
+#[tokio::test]
+async fn success_output_omits_trace_when_policy_disables_it() {
+    let mut request = aspect_request();
+    request.output_policy.include_trace_summary = false;
+    let (model_service, search_service, _model_calls, _search_calls) = services(vec![
+        tool_response("search"),
+        final_response(valid_report_json()),
+    ]);
+
+    let output = AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect("runtime output");
+
+    assert!(output.trace_summary.is_none());
+    assert!(output.search_queries.is_empty());
+    assert!(output.tool_calls.is_empty());
+    assert_eq!(output.evidence.len(), 1);
 }
 
 #[tokio::test]
@@ -797,7 +817,7 @@ async fn search_trace_includes_structured_sources_when_allowed() {
 }
 
 #[tokio::test]
-async fn structured_search_trace_respects_redaction_policies() {
+async fn success_output_omits_detail_trace_when_query_trace_is_disabled() {
     let request = aspect_request();
     let (model_service, search_service, _model_calls, _search_calls) = services(vec![
         tool_response("search"),
@@ -809,14 +829,11 @@ async fn structured_search_trace_respects_redaction_policies() {
         .await
         .expect("runtime output");
 
-    assert_eq!(output.search_queries[0].query, "[redacted]");
-    assert_eq!(output.search_queries[0].sources[0].title, "Source");
-    assert!(output.search_queries[0].sources[0].url.is_none());
-    let search = output.tool_calls[0].search.as_ref().expect("search trace");
-    assert_eq!(search.query, "[redacted]");
-    assert_eq!(search.sources[0].title, "Source");
-    assert!(search.sources[0].url.is_none());
-    assert!(!output.tool_calls[0].input_summary.contains("private query"));
+    assert!(output.trace_summary.is_some());
+    assert!(output.search_queries.is_empty());
+    assert!(output.tool_calls.is_empty());
+    assert_eq!(output.evidence[0].query, "[redacted]");
+    assert!(output.evidence[0].url.is_none());
 }
 
 #[tokio::test]

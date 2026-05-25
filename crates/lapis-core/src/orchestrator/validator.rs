@@ -4,7 +4,7 @@ use crate::{
     error::{Error, Result},
     schema::{
         policy::{EvidencePolicy, OutputPolicy},
-        report::{AspectReport, ValidationIssue, ValidationStatus},
+        report::{AspectReport, Evidence, ValidationIssue, ValidationStatus},
         research::AspectSpec,
     },
 };
@@ -28,14 +28,18 @@ impl<'a> OutputValidator<'a> {
         }
     }
 
-    pub fn validate_content(&self, content: &str) -> Result<(AspectReport, ValidationStatus)> {
+    pub fn validate_content(
+        &self,
+        content: &str,
+        evidence: &[Evidence],
+    ) -> Result<(AspectReport, ValidationStatus)> {
         let report = serde_json::from_str::<AspectReport>(content).map_err(|_| {
             Error::SchemaValidationFailed {
                 message: "final output must be valid AspectReport JSON".to_owned(),
             }
         })?;
 
-        let issues = self.validate_report(&report);
+        let issues = self.validate_report(&report, evidence);
         if issues.is_empty() {
             return Ok((report, ValidationStatus { ok: true, issues }));
         }
@@ -45,7 +49,11 @@ impl<'a> OutputValidator<'a> {
         })
     }
 
-    fn validate_report(&self, report: &AspectReport) -> Vec<ValidationIssue> {
+    fn validate_report(
+        &self,
+        report: &AspectReport,
+        evidence: &[Evidence],
+    ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
         if report.aspect_id != self.aspect.aspect_id {
@@ -82,8 +90,7 @@ impl<'a> OutputValidator<'a> {
             ));
         }
 
-        let evidence_ids = report
-            .evidence
+        let evidence_ids = evidence
             .iter()
             .map(|evidence| evidence.id.as_str())
             .collect::<HashSet<_>>();
@@ -110,7 +117,7 @@ impl<'a> OutputValidator<'a> {
             }
         }
 
-        for (index, evidence) in report.evidence.iter().enumerate() {
+        for (index, evidence) in evidence.iter().enumerate() {
             if evidence.id.trim().is_empty() {
                 issues.push(issue(
                     "empty_evidence_id",
@@ -151,10 +158,11 @@ impl<'a> OutputValidator<'a> {
 pub fn validate_output(
     content: &str,
     aspect: &AspectSpec,
+    evidence: &[Evidence],
     evidence_policy: &EvidencePolicy,
     output_policy: &OutputPolicy,
 ) -> Result<(AspectReport, ValidationStatus)> {
-    OutputValidator::new(aspect, evidence_policy, output_policy).validate_content(content)
+    OutputValidator::new(aspect, evidence_policy, output_policy).validate_content(content, evidence)
 }
 
 fn issue(code: &str, message: &str, path: impl Into<String>) -> ValidationIssue {

@@ -154,7 +154,8 @@ fn record_aspect_result(
     }
 }
 
-fn record_aspect_success(run: &mut DeepResearchRun, result: AspectResearchResult) {
+fn record_aspect_success(run: &mut DeepResearchRun, mut result: AspectResearchResult) {
+    namespace_aspect_evidence(&mut result);
     run.budget_usage.model_calls_used += result.provider_usage.model_calls;
     run.budget_usage.search_calls_used += result.budget_usage.search_calls_used;
     run.budget_usage.elapsed_ms = run
@@ -165,10 +166,10 @@ fn record_aspect_success(run: &mut DeepResearchRun, result: AspectResearchResult
         run.budget_usage.token_usage.take(),
         result.provider_usage.token_usage.clone(),
     );
-    run.model_calls
-        .extend(result.trace_summary.model_calls.clone());
-    run.search_calls
-        .extend(result.trace_summary.search_calls.clone());
+    if let Some(trace_summary) = &result.trace_summary {
+        run.model_calls.extend(trace_summary.model_calls.clone());
+        run.search_calls.extend(trace_summary.search_calls.clone());
+    }
     run.completed.push(result.aspect_report.aspect_id.clone());
     run.open_questions
         .extend(result.aspect_report.open_questions.clone());
@@ -178,6 +179,26 @@ fn record_aspect_success(run: &mut DeepResearchRun, result: AspectResearchResult
             .or_insert_with(|| evidence.clone());
     }
     run.aspect_reports.push(result.aspect_report);
+}
+
+fn namespace_aspect_evidence(result: &mut AspectResearchResult) {
+    let aspect_id = result.aspect_report.aspect_id.clone();
+    let mut remapped_ids = BTreeMap::new();
+
+    for evidence in &mut result.evidence {
+        let original_id = evidence.id.clone();
+        let namespaced_id = format!("{aspect_id}:{original_id}");
+        evidence.id = namespaced_id.clone();
+        remapped_ids.insert(original_id, namespaced_id);
+    }
+
+    for finding in &mut result.aspect_report.findings {
+        for evidence_ref in &mut finding.evidence_refs {
+            if let Some(namespaced_id) = remapped_ids.get(evidence_ref) {
+                *evidence_ref = namespaced_id.clone();
+            }
+        }
+    }
 }
 
 fn finalize_deep_result(
@@ -229,15 +250,19 @@ fn deep_result(
         open_questions: run.open_questions,
         coverage_summary,
         budget_usage: run.budget_usage,
-        trace_summary: TraceSummary {
-            trace_id: run_id,
-            root_span: "deep_research".to_owned(),
-            started_at: now_rfc3339(),
-            finished_at: Some(now_rfc3339()),
-            model_calls: run.model_calls,
-            search_calls: run.search_calls,
-            termination_reason: Some(termination_reason),
-        },
+        trace_summary: request
+            .plan
+            .output_policy
+            .include_trace_summary
+            .then_some(TraceSummary {
+                trace_id: run_id,
+                root_span: "deep_research".to_owned(),
+                started_at: now_rfc3339(),
+                finished_at: Some(now_rfc3339()),
+                model_calls: run.model_calls,
+                search_calls: run.search_calls,
+                termination_reason: Some(termination_reason),
+            }),
     }
 }
 

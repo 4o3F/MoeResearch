@@ -312,7 +312,6 @@ fn report_json(aspect_id: &str, aspect_name: &str) -> String {
             evidence_refs: vec!["ev-1-1".to_owned()],
             contradicted_by: vec![],
         }],
-        evidence: vec![],
         assumptions: vec![],
         risks: vec![],
         counterarguments: vec![],
@@ -406,7 +405,7 @@ fn aspect_research_tool_schema_uses_limit_wire_format() {
 }
 
 #[test]
-fn tool_envelope_schema_exposes_partial_trace() {
+fn tool_envelope_schema_omits_success_trace_and_exposes_partial_trace() {
     let schema = schema_for!(ToolEnvelope<AspectResearchResult>);
     let schema = serde_json::to_value(&schema).expect("schema json");
     let properties = schema
@@ -414,7 +413,8 @@ fn tool_envelope_schema_exposes_partial_trace() {
         .and_then(serde_json::Value::as_object)
         .expect("schema properties");
 
-    assert!(properties.contains_key("trace_summary"));
+    assert!(!properties.contains_key("trace_summary"));
+    assert!(!properties.contains_key("warnings"));
     assert!(properties.contains_key("partial_trace"));
     assert!(!schema.to_string().contains("partialTrace"));
 }
@@ -450,7 +450,6 @@ async fn aspect_research_invalid_input_returns_failed_envelope() {
 
     assert_eq!(envelope.status, ToolStatus::Failed);
     assert!(envelope.data.is_none());
-    assert!(envelope.trace_summary.is_none());
     assert!(envelope.partial_trace.is_none());
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::InvalidInput);
@@ -477,7 +476,6 @@ async fn aspect_research_budget_failure_envelope_includes_partial_trace() {
         envelope.error.expect("tool error").code,
         ToolErrorCode::BudgetExceeded
     );
-    assert!(envelope.trace_summary.is_some());
     assert!(envelope.run_id.is_some());
     assert_eq!(search_calls.load(Ordering::SeqCst), 2);
     let partial = envelope.partial_trace.expect("partial trace");

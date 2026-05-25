@@ -4,6 +4,7 @@ use lapis_core::schema::policy::{
     EvidencePolicy, EvidenceRequirement, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy,
     ToolName,
 };
+use lapis_core::schema::report::{AspectReport, Confidence, Finding, FindingType, Importance};
 use lapis_core::schema::research::{
     AspectResearchRequest, AspectSpec, DeliverableSpec, PromptAssets, ResearchConstraint,
     ResearchContext, ResearchPlan,
@@ -111,6 +112,34 @@ fn aspect_research_request_roundtrips_json() {
     let decoded: AspectResearchRequest = serde_json::from_str(&value).expect("deserialize request");
 
     assert_eq!(decoded, request);
+}
+
+#[test]
+fn aspect_report_schema_omits_embedded_evidence() {
+    let report = AspectReport {
+        aspect_id: "aspect-1".to_owned(),
+        aspect_name: "Aspect".to_owned(),
+        question: "What is true?".to_owned(),
+        scope: vec!["scope".to_owned()],
+        findings: vec![Finding {
+            id: "finding-1".to_owned(),
+            claim: "A supported claim".to_owned(),
+            finding_type: FindingType::Fact,
+            importance: Importance::High,
+            confidence: Confidence::Medium,
+            evidence_refs: vec!["ev-1-1".to_owned()],
+            contradicted_by: vec![],
+        }],
+        assumptions: vec![],
+        risks: vec![],
+        counterarguments: vec![],
+        open_questions: vec![],
+        confidence: Confidence::Medium,
+        limitations: vec![],
+    };
+
+    let value = serde_json::to_value(&report).expect("serialize report");
+    assert!(value.get("evidence").is_none());
 }
 
 #[test]

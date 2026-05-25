@@ -247,7 +247,6 @@ fn report_json(aspect_id: &str, aspect_name: &str, confidence: Confidence) -> St
             evidence_refs: vec!["ev-1-1".to_owned()],
             contradicted_by: vec![],
         }],
-        evidence: vec![],
         assumptions: vec![],
         risks: vec![],
         counterarguments: vec![],
@@ -319,7 +318,22 @@ async fn completes_three_aspects_with_bounded_concurrency() {
     assert_eq!(result.completed_aspects.len(), 3);
     assert!(result.failed_aspects.is_empty());
     assert_eq!(result.aspect_reports.len(), 3);
-    assert_eq!(result.evidence_index.len(), 1);
+    assert_eq!(result.evidence_index.len(), 3);
+    let evidence_ids = result
+        .evidence_index
+        .iter()
+        .map(|evidence| evidence.id.as_str())
+        .collect::<BTreeSet<_>>();
+    for report in &result.aspect_reports {
+        for finding in &report.findings {
+            assert!(
+                finding
+                    .evidence_refs
+                    .iter()
+                    .all(|id| evidence_ids.contains(id.as_str()))
+            );
+        }
+    }
     assert_eq!(result.open_questions.len(), 3);
     assert_eq!(result.coverage_summary.requested_aspects, 3);
     assert_eq!(result.coverage_summary.completed_aspects, 3);
@@ -328,7 +342,10 @@ async fn completes_three_aspects_with_bounded_concurrency() {
     assert_eq!(result.budget_usage.model_calls_used, 6);
     assert_eq!(result.budget_usage.search_calls_used, 3);
     assert_eq!(
-        result.trace_summary.termination_reason,
+        result
+            .trace_summary
+            .as_ref()
+            .and_then(|trace| trace.termination_reason),
         Some(TerminationReason::Completed)
     );
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 6);
@@ -354,7 +371,10 @@ async fn returns_partial_result_after_single_aspect_failure() {
     assert_eq!(result.failed_aspects.len(), 1);
     assert_eq!(result.failed_aspects[0].aspect_id, "aspect-2");
     assert_eq!(
-        result.trace_summary.termination_reason,
+        result
+            .trace_summary
+            .as_ref()
+            .and_then(|trace| trace.termination_reason),
         Some(TerminationReason::PartialCompleted)
     );
 }

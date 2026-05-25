@@ -78,20 +78,6 @@ fn report() -> AspectReport {
             evidence_refs: vec!["evidence-1".to_owned()],
             contradicted_by: Vec::new(),
         }],
-        evidence: vec![Evidence {
-            id: "evidence-1".to_owned(),
-            source_title: "Source".to_owned(),
-            url: None,
-            provider: "fake".to_owned(),
-            query: "query".to_owned(),
-            snippet: "snippet".to_owned(),
-            summary: String::new(),
-            published_at: None,
-            retrieved_at: "2026-05-22T00:00:00Z".to_owned(),
-            supports_findings: vec!["finding-1".to_owned()],
-            source_type: SourceType::Documentation,
-            confidence: Confidence::High,
-        }],
         assumptions: Vec::new(),
         risks: Vec::new(),
         counterarguments: Vec::new(),
@@ -101,12 +87,30 @@ fn report() -> AspectReport {
     }
 }
 
+fn evidence() -> Vec<Evidence> {
+    vec![Evidence {
+        id: "evidence-1".to_owned(),
+        source_title: "Source".to_owned(),
+        url: None,
+        provider: "fake".to_owned(),
+        query: "query".to_owned(),
+        snippet: "snippet".to_owned(),
+        summary: String::new(),
+        published_at: None,
+        retrieved_at: "2026-05-22T00:00:00Z".to_owned(),
+        supports_findings: vec!["finding-1".to_owned()],
+        source_type: SourceType::Documentation,
+        confidence: Confidence::High,
+    }]
+}
+
 fn validate(
     report: &AspectReport,
 ) -> lapis_core::error::Result<(AspectReport, lapis_core::schema::report::ValidationStatus)> {
     validate_output(
         &serde_json::to_string(report).expect("serialize report"),
         &validator_aspect(),
+        &evidence(),
         &EvidencePolicy::default(),
         &OutputPolicy::default(),
     )
@@ -194,6 +198,7 @@ fn rejects_malformed_json() {
     let err = validate_output(
         "{not json",
         &validator_aspect(),
+        &evidence(),
         &EvidencePolicy::default(),
         &OutputPolicy::default(),
     )
@@ -244,6 +249,7 @@ fn rejects_too_many_findings() {
     let err = validate_output(
         &serde_json::to_string(&report).expect("serialize report"),
         &validator_aspect(),
+        &evidence(),
         &EvidencePolicy::default(),
         &output_policy,
     )

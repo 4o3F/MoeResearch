@@ -8,7 +8,6 @@ pub struct AspectReport {
     pub question: String,
     pub scope: Vec<String>,
     pub findings: Vec<Finding>,
-    pub evidence: Vec<Evidence>,
     pub assumptions: Vec<String>,
     pub risks: Vec<String>,
     pub counterarguments: Vec<String>,
@@ -256,12 +255,14 @@ pub struct ConfidenceSummary {
 pub struct AspectResearchResult {
     pub aspect_report: AspectReport,
     pub evidence: Vec<Evidence>,
-    pub search_queries: Vec<SearchQueryTrace>,
-    pub tool_calls: Vec<ToolCallTrace>,
     pub provider_usage: ProviderUsage,
     pub budget_usage: AgentBudgetUsage,
-    pub validation_status: ValidationStatus,
-    pub trace_summary: TraceSummary,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace_summary: Option<TraceSummary>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub search_queries: Vec<SearchQueryTrace>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ToolCallTrace>,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -276,5 +277,6 @@ pub struct DeepResearchResult {
     pub coverage_summary: CoverageSummary,
     pub confidence_summary: ConfidenceSummary,
     pub budget_usage: ResearchBudgetUsage,
-    pub trace_summary: TraceSummary,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace_summary: Option<TraceSummary>,
 }

@@ -1,18 +1,19 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::report::{PartialTrace, TraceSummary};
+use super::report::PartialTrace;
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct ToolEnvelope<T> {
     pub schema_version: String,
     pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
     pub status: ToolStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<T>,
-    pub warnings: Vec<Warning>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ToolError>,
-    pub trace_summary: Option<TraceSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub partial_trace: Option<PartialTrace>,
 }
@@ -23,25 +24,6 @@ pub enum ToolStatus {
     Ok,
     Partial,
     Failed,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct Warning {
-    pub code: WarningCode,
-    pub message: String,
-    pub aspect_id: Option<String>,
-    pub provider: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WarningCode {
-    UnknownConstraintIgnored,
-    ProviderFallbackUsed,
-    EvidenceBelowTarget,
-    PartialAspectFailure,
-    BudgetNearlyExceeded,
-    OutputTruncated,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]

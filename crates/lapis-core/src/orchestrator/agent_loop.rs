@@ -19,7 +19,6 @@ use crate::schema::report::{
     AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, PartialTrace,
     ProviderCallSummary, ProviderType, ProviderUsage, SearchQueryTrace, SearchSourceTrace,
     SearchToolCallTrace, SourceType, TerminationReason, TokenUsage, ToolCallTrace, TraceSummary,
-    ValidationStatus,
 };
 use crate::schema::research::AspectResearchRequest;
 use crate::schema::search::{SearchRequest, SearchResponse, SearchResult};
@@ -41,8 +40,7 @@ pub struct AgentRuntimeOutput {
     pub tool_calls: Vec<ToolCallTrace>,
     pub provider_usage: ProviderUsage,
     pub budget_usage: AgentBudgetUsage,
-    pub validation_status: ValidationStatus,
-    pub trace_summary: TraceSummary,
+    pub trace_summary: Option<TraceSummary>,
 }
 
 #[derive(Debug)]
@@ -61,7 +59,6 @@ impl AgentRuntimeOutput {
             tool_calls: self.tool_calls,
             provider_usage: self.provider_usage,
             budget_usage: self.budget_usage,
-            validation_status: self.validation_status,
             trace_summary: self.trace_summary,
         }
     }
@@ -175,7 +172,8 @@ impl<'a> AgentRuntime<'a> {
                     Ok(content) => content,
                     Err(error) => return Err(Self::failure(error, state, &budget)),
                 };
-                return Self::finish(content, state, &budget, &validator)
+                return self
+                    .finish(content, state, &budget, &validator)
                     .map_err(|failure| *failure);
             }
 
@@ -310,31 +308,37 @@ impl<'a> AgentRuntime<'a> {
     }
 
     fn finish(
+        &self,
         content: &str,
         mut state: RuntimeState,
         budget: &AgentBudgetGuard,
         validator: &OutputValidator<'_>,
     ) -> std::result::Result<AgentRuntimeOutput, Box<AgentRuntimeFailure>> {
-        let content = match Self::final_content_with_evidence(content, &state.evidence) {
-            Ok(content) => content,
-            Err(error) => return Err(Box::new(Self::failure(error, state, budget))),
-        };
-        let (aspect_report, validation_status) = match validator.validate_content(&content) {
+        let (aspect_report, _) = match validator.validate_content(content, &state.evidence) {
             Ok(result) => result,
             Err(error) => return Err(Box::new(Self::failure(error, state, budget))),
         };
         state.trace_summary.finished_at = Some(now_rfc3339());
         state.trace_summary.termination_reason = Some(TerminationReason::Completed);
+        let include_trace = self.request.output_policy.include_trace_summary;
+        let include_query_trace = include_trace && self.request.evidence_policy.include_query_trace;
 
         Ok(AgentRuntimeOutput {
             aspect_report,
             evidence: state.evidence,
-            search_queries: state.search_queries,
-            tool_calls: state.tool_calls,
+            search_queries: if include_query_trace {
+                state.search_queries
+            } else {
+                Vec::new()
+            },
+            tool_calls: if include_query_trace {
+                state.tool_calls
+            } else {
+                Vec::new()
+            },
             provider_usage: state.provider_usage,
             budget_usage: budget.usage(),
-            validation_status,
-            trace_summary: state.trace_summary,
+            trace_summary: include_trace.then_some(state.trace_summary),
         })
     }
 
@@ -471,16 +475,6 @@ impl<'a> AgentRuntime<'a> {
             "evidence_ids": result_ids,
         })
         .to_string()
-    }
-
-    fn final_content_with_evidence(content: &str, evidence: &[Evidence]) -> Result<String> {
-        let mut report = serde_json::from_str::<AspectReport>(content).map_err(|_| {
-            Error::SchemaValidationFailed {
-                message: "final output must be valid AspectReport JSON".to_owned(),
-            }
-        })?;
-        report.evidence = evidence.to_vec();
-        serde_json::to_string(&report).map_err(|source| Error::Json { source })
     }
 
     fn public_query(&self, query: &str) -> String {
