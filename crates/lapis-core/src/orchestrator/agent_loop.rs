@@ -663,6 +663,10 @@ impl<'a> AgentRuntime<'a> {
             elapsed_ms = budget_usage.elapsed_ms,
             evidence_count = state.candidate_evidence.len(),
             error_code = error.code().as_str(),
+            // Full internal Display includes the validator's path + field
+            // names for SchemaValidationFailed; emit it on the operator
+            // log so failures can be diagnosed without re-running.
+            error_detail = %error,
             retryable = error.retryable(),
             status = "failed",
             "agent runtime failed"

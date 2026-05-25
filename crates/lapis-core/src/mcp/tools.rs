@@ -54,6 +54,11 @@ impl LapisMcpServer {
                         aspect_id = %aspect_id,
                         tool = "aspect_research",
                         error_code = failure.error.code().as_str(),
+                        // Full internal Display — only the redacted code +
+                        // public message flow into the MCP envelope; the
+                        // operator log keeps the detailed message so
+                        // schema/budget failures can be diagnosed locally.
+                        error_detail = %failure.error,
                         retryable = failure.error.retryable(),
                         status = "failed",
                         "MCP tool failed"
@@ -108,6 +113,7 @@ impl LapisMcpServer {
                         request_id = %request_id,
                         tool = "deep_research",
                         error_code = error.code().as_str(),
+                        error_detail = %error,
                         retryable = error.retryable(),
                         status = "failed",
                         "MCP tool failed"
