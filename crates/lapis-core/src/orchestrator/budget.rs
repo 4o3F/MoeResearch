@@ -207,6 +207,11 @@ impl ResearchBudgetGuard {
     }
 
     /// Records that one aspect has begun execution.
+    ///
+    /// Must be called exactly once per aspect dispatch; the workflow does
+    /// this immediately before scheduling an aspect's `AgentRuntime`. Extra
+    /// calls inflate the snapshot's `agents_started` counter and skew
+    /// public reporting.
     pub fn record_agent_started(&self) {
         self.agents_started.fetch_add(1, Ordering::SeqCst);
     }
@@ -215,15 +220,14 @@ impl ResearchBudgetGuard {
     ///
     /// # Errors
     /// Returns [`Error::BudgetExceeded`] if the global `max_total_model_calls`
-    /// cap would be exceeded. The counter is rolled back on rejection so the
-    /// usage snapshot does not record calls that never ran.
+    /// cap would be exceeded, if the research-level timeout has already
+    /// elapsed, or if the cumulative token cap has been reached. The
+    /// counter is rolled back on every rejection path so the usage snapshot
+    /// does not record calls that never ran.
     pub fn try_consume_model_call(&self) -> Result<u64> {
+        self.ensure_dispatch_allowed()?;
         let next = self.model_calls.fetch_add(1, Ordering::SeqCst) + 1;
-        if self
-            .budget
-            .max_total_model_calls
-            .is_exceeded_by(usize_from_u64(next))
-        {
+        if self.budget.max_total_model_calls.is_exceeded_by_u64(next) {
             self.model_calls.fetch_sub(1, Ordering::SeqCst);
             return Err(Error::BudgetExceeded {
                 message: "research model call budget exhausted".to_owned(),
@@ -236,15 +240,13 @@ impl ResearchBudgetGuard {
     ///
     /// # Errors
     /// Returns [`Error::BudgetExceeded`] if the global `max_total_search_calls`
-    /// cap would be exceeded. Rollback semantics mirror
+    /// cap would be exceeded, the research-level timeout has elapsed, or the
+    /// token cap has been reached. Rollback semantics mirror
     /// [`Self::try_consume_model_call`].
     pub fn try_consume_search_call(&self) -> Result<u64> {
+        self.ensure_dispatch_allowed()?;
         let next = self.search_calls.fetch_add(1, Ordering::SeqCst) + 1;
-        if self
-            .budget
-            .max_total_search_calls
-            .is_exceeded_by(usize_from_u64(next))
-        {
+        if self.budget.max_total_search_calls.is_exceeded_by_u64(next) {
             self.search_calls.fetch_sub(1, Ordering::SeqCst);
             return Err(Error::BudgetExceeded {
                 message: "research search call budget exhausted".to_owned(),
@@ -274,11 +276,11 @@ impl ResearchBudgetGuard {
             .token_usage
             .lock()
             .expect("research budget guard token usage mutex poisoned");
-        let merged = TokenUsage::merge(guard.take(), Some(delta));
-        guard.clone_from(&merged);
-        if let Some(total) = merged.and_then(|usage| usage.total_or_sum()) {
+        let merged = TokenUsage::merge(guard.clone(), Some(delta));
+        if let Some(total) = merged.as_ref().and_then(TokenUsage::total_or_sum) {
             self.budget.ensure_tokens_within(total)?;
         }
+        guard.clone_from(&merged);
         Ok(())
     }
 
@@ -298,17 +300,65 @@ impl ResearchBudgetGuard {
             agents_started: self.agents_started.load(Ordering::SeqCst),
             model_calls_used: usize_from_u64(self.model_calls.load(Ordering::SeqCst)),
             search_calls_used: usize_from_u64(self.search_calls.load(Ordering::SeqCst)),
-            elapsed_ms: self
-                .started
-                .elapsed()
-                .as_millis()
-                .try_into()
-                .unwrap_or(u64::MAX),
+            elapsed_ms: self.elapsed_ms(),
             token_usage,
         }
     }
+
+    /// Rejects provider dispatch when any research-level budget is already
+    /// exhausted.
+    ///
+    /// # Errors
+    /// Returns [`Error::BudgetExceeded`] when `total_timeout_ms` has elapsed
+    /// or cumulative token usage has reached `max_tokens`. Both conditions
+    /// are non-recoverable, so subsequent reservations should also fail.
+    fn ensure_dispatch_allowed(&self) -> Result<()> {
+        self.check_total_timeout()?;
+        self.check_token_budget_not_exhausted()
+    }
+
+    /// Rejects dispatch once the research-level timeout has elapsed.
+    fn check_total_timeout(&self) -> Result<()> {
+        if self.budget.total_timeout_ms.is_elapsed(self.elapsed_ms()) {
+            return Err(Error::BudgetExceeded {
+                message: "research timeout budget exhausted".to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Rejects dispatch when cumulative token usage has already reached the cap.
+    ///
+    /// # Panics
+    /// Panics if the token-usage mutex is poisoned; see
+    /// [`Self::record_token_usage`] for why this should never occur.
+    fn check_token_budget_not_exhausted(&self) -> Result<()> {
+        let used = self
+            .token_usage
+            .lock()
+            .expect("research budget guard token usage mutex poisoned")
+            .as_ref()
+            .and_then(TokenUsage::total_or_sum)
+            .unwrap_or(0);
+        if self.budget.max_tokens.is_exhausted_by_u64(used) {
+            return Err(Error::BudgetExceeded {
+                message: "research token budget exhausted".to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Returns elapsed research runtime in milliseconds, saturating on overflow.
+    fn elapsed_ms(&self) -> u64 {
+        self.started
+            .elapsed()
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX)
+    }
 }
 
+/// Converts an atomic `u64` counter to `usize` for public usage snapshots.
 fn usize_from_u64(value: u64) -> usize {
     usize::try_from(value).unwrap_or(usize::MAX)
 }

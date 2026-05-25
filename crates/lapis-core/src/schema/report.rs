@@ -134,23 +134,31 @@ impl TokenUsage {
     /// Combines two optional usage records dimension by dimension.
     ///
     /// Saturating addition prevents overflow on long-running runs; `None`
-    /// dimensions in either operand pass through unchanged so providers that
-    /// report only `total_tokens` are not forced to synthesize component
-    /// counters.
+    /// component dimensions in either operand pass through unchanged so
+    /// providers that report only `total_tokens` are not forced to synthesize
+    /// component counters. The merged `total_tokens` is derived from each
+    /// operand's `total_or_sum()` so that mixing a "total-only" report with a
+    /// later "components-only" report does not silently drop the components
+    /// (which would otherwise let `ResearchBudget::max_tokens` be bypassed).
     #[must_use]
     pub fn merge(left: Option<Self>, right: Option<Self>) -> Option<Self> {
         match (left, right) {
             (None, None) => None,
             (Some(usage), None) | (None, Some(usage)) => Some(usage),
-            (Some(left), Some(right)) => Some(Self {
-                input_tokens: sum_optional_tokens(left.input_tokens, right.input_tokens),
-                output_tokens: sum_optional_tokens(left.output_tokens, right.output_tokens),
-                total_tokens: sum_optional_tokens(left.total_tokens, right.total_tokens),
-            }),
+            (Some(left), Some(right)) => {
+                let total_tokens = sum_optional_tokens(left.total_or_sum(), right.total_or_sum());
+                Some(Self {
+                    input_tokens: sum_optional_tokens(left.input_tokens, right.input_tokens),
+                    output_tokens: sum_optional_tokens(left.output_tokens, right.output_tokens),
+                    total_tokens,
+                })
+            }
         }
     }
 }
 
+/// Saturating addition of optional token components, preserving observed
+/// values when only one side is reported.
 fn sum_optional_tokens(left: Option<u64>, right: Option<u64>) -> Option<u64> {
     match (left, right) {
         (None, None) => None,

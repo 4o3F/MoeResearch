@@ -668,6 +668,62 @@ async fn global_token_budget_falls_back_to_input_plus_output() {
     assert!(matches!(error, Error::BudgetExceeded { .. }));
 }
 
+/// When one model response reports only `total_tokens` and a later one
+/// reports only `input_tokens`/`output_tokens`, the merged total must
+/// account for both reports so `max_tokens` cannot be bypassed by mixing
+/// provider report formats.
+#[test]
+fn token_usage_merge_counts_mixed_provider_reporting_formats() {
+    use lapis_core::schema::report::TokenUsage;
+    let merged = TokenUsage::merge(
+        Some(TokenUsage {
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: Some(100),
+        }),
+        Some(TokenUsage {
+            input_tokens: Some(30),
+            output_tokens: Some(20),
+            total_tokens: None,
+        }),
+    )
+    .expect("merged usage");
+    assert_eq!(merged.total_or_sum(), Some(150));
+}
+
+/// Once cumulative token usage has reached the cap, subsequent provider
+/// dispatches must be rejected at the guard before any new model or search
+/// call goes out.
+#[tokio::test]
+async fn global_token_budget_blocks_dispatch_after_cap_is_reached() {
+    use lapis_core::schema::report::TokenUsage;
+    let mut request = deep_request(2);
+    request.budget.max_tokens = Limit::limited(100);
+    request.budget.max_concurrent_agents = Limit::limited(1);
+    let services = services_with_token_usage(
+        &[],
+        Some(TokenUsage {
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: Some(100),
+        }),
+    );
+
+    let _ = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &unlimited_budget_config(),
+    )
+    .await;
+
+    // The first aspect's first model turn reports usage = 100 (== cap), which
+    // closes the token budget. Every subsequent dispatch (search and the
+    // remaining aspect's model turn) must be rejected at the guard.
+    assert_eq!(services.model_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(services.search_calls.load(Ordering::SeqCst), 0);
+}
+
 /// `ResearchBudget::max_tokens` is checked against the corresponding
 /// configured cap during request validation, so an unbounded request is
 /// rejected when the operator restricts tokens.

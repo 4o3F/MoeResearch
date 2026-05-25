@@ -112,6 +112,20 @@ impl Limit<usize> {
             Self::Limited(max) => used > max,
         }
     }
+
+    /// Returns `true` if a `u64` atomic counter strictly exceeds this cap.
+    ///
+    /// Avoids narrowing the observed counter to `usize` before comparison,
+    /// which would otherwise saturate on platforms where `usize` is narrower
+    /// than `u64`. Used by the cross-aspect call counters whose backing
+    /// store is `AtomicU64`.
+    #[must_use]
+    pub fn is_exceeded_by_u64(self, used: u64) -> bool {
+        match self {
+            Self::Unlimited => false,
+            Self::Limited(max) => used > u64::try_from(max).unwrap_or(u64::MAX),
+        }
+    }
 }
 
 impl Limit<u64> {
@@ -132,6 +146,22 @@ impl Limit<u64> {
         match self {
             Self::Unlimited => false,
             Self::Limited(max) => used > max,
+        }
+    }
+
+    /// Returns `true` if the supplied `used` total has reached or surpassed
+    /// this cap.
+    ///
+    /// Used before dispatch for non-reservable resources such as tokens, where
+    /// once no capacity remains a provider call must not be issued. Unlike
+    /// [`Self::is_exceeded_by_u64`], the boundary value `used == max` is also
+    /// rejected because tokens cannot be "spent and undone" the way an atomic
+    /// counter can be rolled back.
+    #[must_use]
+    pub fn is_exhausted_by_u64(self, used: u64) -> bool {
+        match self {
+            Self::Unlimited => false,
+            Self::Limited(max) => used >= max,
         }
     }
 }
