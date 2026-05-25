@@ -45,16 +45,16 @@ Return only JSON:
       "published_at": "string | null",
       "retrieved_at": "string",
       "supports_findings": ["string"],
-      "source_type": "Official | News | Blog | Academic | Social | Documentation | Unknown",
-      "confidence": "Low | Medium | High"
+      "source_type": "official | documentation | news | blog | forum | repository | unknown",
+      "confidence": "low | medium | high"
     }
   ],
   "candidate_findings": [
     {
       "claim": "string",
-      "finding_type": "Fact | Trend | Comparison | Risk | Opportunity | Constraint | Unknown",
-      "importance": "Low | Medium | High",
-      "confidence": "Low | Medium | High",
+      "finding_type": "fact | interpretation | recommendation | risk | assumption",
+      "importance": "low | medium | high | critical",
+      "confidence": "low | medium | high",
       "evidence_refs": ["string"]
     }
   ],
@@ -80,8 +80,8 @@ Return only JSON:
 1. Extract only claims relevant to the aspect question and success criteria.
 2. Preserve source metadata exactly when available.
 3. Summaries must be concise and describe why the source matters to the aspect.
-4. Assign `source_type` from observable metadata; use `Unknown` when unsure.
-5. Assign confidence based on source quality, specificity, recency, and corroboration. Do not mark a result High just because it is well-written.
+4. Assign `source_type` from observable metadata; use `unknown` when unsure.
+5. Assign confidence based on source quality, specificity, recency, and corroboration. Do not mark a result `high` just because it is well-written.
 6. If a source conflicts with prior evidence, emit a counterargument instead of hiding it.
 7. If a result is irrelevant, duplicate, unsafe, or too vague, list it in `discarded_results`.
 8. Do not create final recommendations.

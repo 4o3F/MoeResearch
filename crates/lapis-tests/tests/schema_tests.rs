@@ -366,3 +366,24 @@ fn limit_deserializes_schema_advertised_values() {
     );
     assert!(serde_json::from_value::<CountLimit>(json!(-2)).is_err());
 }
+
+/// The Layer 1 task-decomposition example MUST deserialize cleanly into a
+/// `DeepResearchRequest`, including the inline aspect prompt, snake_case
+/// `allowed_tools`, structured per-aspect budget, and the `max_tokens`
+/// budget dimension.
+#[test]
+fn layer1_task_decomposition_fixture_deserializes_to_deep_research_request() {
+    let fixture = include_str!("../fixtures/prompts/task_decomposition_valid.json");
+    let request: DeepResearchRequest =
+        serde_json::from_str(fixture).expect("task-decomposition fixture must deserialize");
+
+    let aspect = &request.aspect_tasks[0].aspect;
+    assert_eq!(aspect.allowed_tools[0].as_str(), "search");
+    assert!(!aspect.aspect_agent_prompt.is_empty());
+    assert_eq!(aspect.search_provider.as_deref(), Some("exa"));
+    assert!(matches!(
+        request.aspect_tasks[0].budget.max_turns,
+        Limit::Limited(_)
+    ));
+    assert!(matches!(request.budget.max_tokens, Limit::Unlimited));
+}
