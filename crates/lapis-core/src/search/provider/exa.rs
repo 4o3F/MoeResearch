@@ -40,11 +40,17 @@ impl SearchProvider for ExaSearchProvider {
     }
 
     async fn search(&self, request: SearchRequest) -> Result<SearchResponse> {
+        let (start_published_date, end_published_date) = match request.freshness.as_ref() {
+            Some(freshness) => (freshness.since.clone(), freshness.until.clone()),
+            None => (None, None),
+        };
         let body = serde_json::to_value(ExaSearchRequest {
             query: request.query,
             num_results: request.max_results,
             include_domains: request.include_domains,
             exclude_domains: request.exclude_domains,
+            start_published_date,
+            end_published_date,
         })
         .context(JsonSnafu)?;
 
@@ -96,6 +102,10 @@ struct ExaSearchRequest {
     num_results: usize,
     include_domains: Vec<String>,
     exclude_domains: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    start_published_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    end_published_date: Option<String>,
 }
 
 #[derive(Deserialize)]

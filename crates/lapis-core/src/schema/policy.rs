@@ -46,6 +46,27 @@ pub struct Freshness {
     pub until: Option<String>,
 }
 
+impl Freshness {
+    /// Renders the freshness window as a single natural-language phrase that
+    /// Grok-style search providers can embed in their prompt.
+    ///
+    /// Returns `None` when both `since` and `until` are absent; otherwise
+    /// returns a description such as `"published between 2024-01-01 and
+    /// 2024-12-31"`. Strings are echoed verbatim from the policy field, so
+    /// callers should validate the format at policy ingest time.
+    #[must_use]
+    pub fn describe_for_prompt(&self) -> Option<String> {
+        match (self.since.as_ref(), self.until.as_ref()) {
+            (None, None) => None,
+            (Some(since), None) => Some(format!("published on or after {since}")),
+            (None, Some(until)) => Some(format!("published on or before {until}")),
+            (Some(since), Some(until)) => {
+                Some(format!("published between {since} and {until}"))
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct SearchPolicy {
     pub allowed_providers: Vec<String>,

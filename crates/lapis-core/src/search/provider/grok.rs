@@ -8,6 +8,7 @@ use snafu::ResultExt;
 use crate::error::{Error, JsonSnafu, Result};
 use crate::net::NetworkClient;
 use crate::schema::network::{Header, NetworkRequest};
+use crate::schema::policy::Freshness;
 use crate::schema::search::{SearchRequest, SearchResponse, SearchResult};
 use crate::search::provider::SearchProvider;
 
@@ -127,6 +128,15 @@ fn search_prompt(request: &SearchRequest) -> String {
     if !request.exclude_domains.is_empty() {
         prompt.push_str("\nExclude domains: ");
         prompt.push_str(&request.exclude_domains.join(", "));
+    }
+
+    if let Some(window) = request
+        .freshness
+        .as_ref()
+        .and_then(Freshness::describe_for_prompt)
+    {
+        prompt.push_str("\nFreshness: ");
+        prompt.push_str(&window);
     }
 
     prompt

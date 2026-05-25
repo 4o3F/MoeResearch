@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use lapis_core::error::{Error, Result};
 use lapis_core::net::client::MockNetworkClient;
 use lapis_core::schema::network::NetworkResponse;
-use lapis_core::schema::policy::SearchPolicy;
+use lapis_core::schema::policy::{Freshness, SearchPolicy};
 use lapis_core::schema::search::{SearchRequest, SearchResponse, SearchResult};
 use lapis_core::search::provider::SearchProvider;
 use lapis_core::search::provider::{ExaSearchProvider, GrokSearchProvider};
@@ -574,4 +574,146 @@ async fn grok_search_rejects_non_success_status() {
             ..
         }
     ));
+}
+
+/// When `freshness.since` and `freshness.until` are both supplied, the Exa
+/// request body MUST include `start_published_date` and `end_published_date`
+/// so Exa applies the date window server-side.
+#[tokio::test]
+async fn exa_request_includes_start_and_end_published_date_from_freshness_since_until() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }]));
+    let provider = ExaSearchProvider::new(
+        network.clone(),
+        "https://api.exa.ai".to_owned(),
+        "key".to_owned(),
+        None,
+    );
+    let mut request = SearchRequest::new("exa", "lapis", 1);
+    request.freshness = Some(Freshness {
+        since: Some("2024-01-01".to_owned()),
+        until: Some("2024-12-31".to_owned()),
+    });
+
+    provider.search(request).await.expect("exa response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert_eq!(body["start_published_date"], json!("2024-01-01"));
+    assert_eq!(body["end_published_date"], json!("2024-12-31"));
+}
+
+/// When no freshness is supplied, the Exa request body MUST omit
+/// `start_published_date` and `end_published_date` entirely (not send
+/// `null`), so Exa applies its default unbounded window.
+#[tokio::test]
+async fn exa_request_omits_dates_when_freshness_is_none() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }]));
+    let provider = ExaSearchProvider::new(
+        network.clone(),
+        "https://api.exa.ai".to_owned(),
+        "key".to_owned(),
+        None,
+    );
+
+    provider
+        .search(SearchRequest::new("exa", "lapis", 1))
+        .await
+        .expect("exa response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert!(body.get("start_published_date").is_none());
+    assert!(body.get("end_published_date").is_none());
+}
+
+/// Half-open freshness windows (since-only) must still be forwarded to Exa,
+/// pinning the contract that providers honor either bound independently.
+#[tokio::test]
+async fn exa_request_forwards_since_only_freshness_window() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }]));
+    let provider = ExaSearchProvider::new(
+        network.clone(),
+        "https://api.exa.ai".to_owned(),
+        "key".to_owned(),
+        None,
+    );
+    let mut request = SearchRequest::new("exa", "lapis", 1);
+    request.freshness = Some(Freshness {
+        since: Some("2025-06-01".to_owned()),
+        until: None,
+    });
+
+    provider.search(request).await.expect("exa response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert_eq!(body["start_published_date"], json!("2025-06-01"));
+    assert!(body.get("end_published_date").is_none());
+}
+
+/// Grok's prompt-based search MUST include a freshness window phrase when
+/// the request carries one, so the model's downstream search respects the
+/// date range.
+#[tokio::test]
+async fn grok_search_prompt_includes_freshness_window_when_present() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "output": [] }),
+    }]));
+    let provider = GrokSearchProvider::new(
+        network.clone(),
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+    let mut request = SearchRequest::new("grok", "lapis", 1);
+    request.freshness = Some(Freshness {
+        since: Some("2024-01-01".to_owned()),
+        until: Some("2024-12-31".to_owned()),
+    });
+
+    provider.search(request).await.expect("grok response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    let prompt = body["input"][0]["content"].as_str().expect("prompt");
+    assert!(prompt.contains("Freshness:"));
+    assert!(prompt.contains("between 2024-01-01 and 2024-12-31"));
+}
+
+/// When no freshness is supplied, the Grok prompt MUST omit the freshness
+/// line entirely so the model does not invent constraints.
+#[tokio::test]
+async fn grok_search_prompt_omits_freshness_when_none() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "output": [] }),
+    }]));
+    let provider = GrokSearchProvider::new(
+        network.clone(),
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    provider
+        .search(SearchRequest::new("grok", "lapis", 1))
+        .await
+        .expect("grok response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    let prompt = body["input"][0]["content"].as_str().expect("prompt");
+    assert!(!prompt.contains("Freshness:"));
 }
