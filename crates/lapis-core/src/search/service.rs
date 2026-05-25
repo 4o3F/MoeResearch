@@ -98,8 +98,10 @@ pub fn build_search_service(
                     model.to_owned(),
                 ));
             }
-            _ => {
-                tracing::warn!(provider = name, "unknown search provider ignored");
+            other => {
+                return Err(Error::ConfigInvalid {
+                    message: format!("unknown search provider `{other}`"),
+                });
             }
         }
     }

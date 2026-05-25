@@ -202,7 +202,7 @@ fn rejects_budget_config_values_below_minus_one() {
 
 #[test]
 fn network_client_rejects_zero_timeout() {
-    let err = match ReqwestNetworkClient::new(0, 2, 200) {
+    let err = match ReqwestNetworkClient::new(0, 2, 200, "lapis-test/0.0.0") {
         Ok(_) => panic!("network client should reject zero timeout"),
         Err(error) => error,
     };
@@ -276,5 +276,67 @@ fn accepts_provider_model_config() {
     assert_eq!(
         config.model.providers["openai"].model.as_deref(),
         Some("gpt-5.5")
+    );
+}
+
+/// Exa search provider does NOT take a `model` field; an enabled Exa stanza
+/// without a model must validate cleanly. Regression guard for the
+/// per-provider validation split (Commit 2 / M7).
+#[test]
+fn accepts_enabled_exa_search_provider_without_model() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
+        "[search.providers.exa]\nenabled = true\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"PATH\"\ntimeout_ms = 30000",
+    );
+
+    let config = load_config_from_test_str(&input).expect("Exa without model must validate");
+    assert!(config.search.providers["exa"].enabled);
+    assert!(config.search.providers["exa"].model.is_none());
+}
+
+/// Unknown model provider names must be rejected at config validation time
+/// so a typo cannot reach the runtime service registry. Regression guard
+/// for Commit 2 / M14.
+#[test]
+fn rejects_unknown_model_provider() {
+    let input = VALID_CONFIG.replace("[model.providers.openai]", "[model.providers.totally-fake]");
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("unknown model.providers.totally-fake provider"),
+        "unexpected error: {err}"
+    );
+}
+
+/// Same fail-fast guarantee for unknown search provider names.
+#[test]
+fn rejects_unknown_search_provider() {
+    let input = VALID_CONFIG.replace("[search.providers.exa]", "[search.providers.totally-fake]");
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("unknown search.providers.totally-fake provider"),
+        "unexpected error: {err}"
+    );
+}
+
+/// `ReqwestNetworkClient::new` now takes a `user_agent` string and must
+/// reject any value that cannot be parsed as an HTTP header value (Commit
+/// 2 / M9).
+#[test]
+fn network_client_rejects_invalid_user_agent() {
+    let err = match ReqwestNetworkClient::new(30_000, 2, 200, "lapis\u{0000}") {
+        Ok(_) => panic!("network client should reject invalid user_agent"),
+        Err(error) => error,
+    };
+
+    assert!(
+        err.to_string()
+            .contains("invalid network.user_agent header"),
+        "unexpected error: {err}"
     );
 }

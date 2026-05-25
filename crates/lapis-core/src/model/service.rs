@@ -123,8 +123,10 @@ pub fn build_model_service(
                     model.to_owned(),
                 ));
             }
-            _ => {
-                tracing::error!(provider = name, "unknown model provider ignored");
+            other => {
+                return Err(Error::ConfigInvalid {
+                    message: format!("unknown model provider `{other}`"),
+                });
             }
         }
     }

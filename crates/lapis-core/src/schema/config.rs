@@ -97,6 +97,18 @@ pub struct ProviderEndpoint {
 }
 
 impl ProviderEndpoint {
+    /// Validates this endpoint within the context of its registry.
+    ///
+    /// `kind` is the registry name (`"model"` or `"search"`); `name` is the
+    /// TOML provider key (e.g. `"openai"`, `"exa"`, `"grok"`). The dispatch
+    /// is name-aware: only providers that actually consume a model identifier
+    /// require `model` to be set, and only known provider names are accepted.
+    ///
+    /// # Errors
+    /// - `Error::ConfigInvalid` when a structural rule is violated
+    ///   (zero timeout, missing required `model`, unknown provider name).
+    /// - `Error::ProviderUnavailable` when an enabled provider is missing the
+    ///   `api_key_env` field or the referenced environment variable is unset.
     fn validate(&self, kind: &str, name: &str) -> Result<()> {
         if self.timeout_ms == Some(0) {
             return Err(Error::ConfigInvalid {
@@ -104,12 +116,27 @@ impl ProviderEndpoint {
             });
         }
 
+        match (kind, name) {
+            ("model", "openai") | ("search", "grok") => {
+                self.validate_enabled_common(kind, name)?;
+                self.validate_model(kind, name)
+            }
+            ("search", "exa") => self.validate_enabled_common(kind, name),
+            _ => Err(Error::ConfigInvalid {
+                message: format!("unknown {kind}.providers.{name} provider"),
+            }),
+        }
+    }
+
+    /// Validates the constraints common to every enabled provider regardless
+    /// of name (currently: `api_key_env` resolves to a set environment
+    /// variable). Disabled providers skip these checks so a disabled stanza
+    /// does not require credentials to be present in the environment.
+    fn validate_enabled_common(&self, kind: &str, name: &str) -> Result<()> {
         if !self.enabled {
             return Ok(());
         }
-
-        self.validate_env_key(kind, name)?;
-        self.validate_model(kind, name)
+        self.validate_env_key(kind, name)
     }
 
     fn validate_env_key(&self, kind: &str, name: &str) -> Result<()> {
@@ -132,6 +159,12 @@ impl ProviderEndpoint {
     }
 
     fn validate_model(&self, kind: &str, name: &str) -> Result<()> {
+        if !self.enabled {
+            // Skip model validation for disabled providers so example configs
+            // can leave `model = ""` for stanzas the operator does not use.
+            return Ok(());
+        }
+
         let model = self
             .model
             .as_ref()

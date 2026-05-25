@@ -16,17 +16,49 @@ pub struct ReqwestNetworkClient {
 }
 
 impl ReqwestNetworkClient {
+    /// Builds a reqwest-backed network client from a validated `NetworkConfig`.
+    ///
+    /// The `user_agent` field is injected into the underlying reqwest client
+    /// builder so every outbound request advertises a stable identity. The
+    /// caller (typically `lapis-cli`) is responsible for choosing a value that
+    /// includes the running version (e.g. `"lapis/0.1.0"`).
+    ///
+    /// # Errors
+    /// Returns `Error::ConfigInvalid` if `network.user_agent` cannot be parsed
+    /// as a valid HTTP header value, or `Error::HttpTransport` if the reqwest
+    /// builder itself fails (rare; usually TLS / runtime issues).
     pub fn from_config(config: &NetworkConfig) -> Result<Self> {
         Self::new(
             config.timeout_ms,
             config.max_retries,
             config.retry_backoff_ms,
+            &config.user_agent,
         )
     }
 
-    pub fn new(default_timeout_ms: u64, max_retries: usize, retry_backoff_ms: u64) -> Result<Self> {
+    /// Builds a reqwest-backed network client with explicit knobs.
+    ///
+    /// Prefer `from_config` over this constructor in production code; this
+    /// version exists for tests that need to bypass the full TOML config.
+    ///
+    /// # Errors
+    /// - `Error::InvalidInput` if `default_timeout_ms` is zero.
+    /// - `Error::ConfigInvalid` if `user_agent` is not a valid HTTP header
+    ///   value.
+    /// - `Error::HttpTransport` if the reqwest builder fails.
+    pub fn new(
+        default_timeout_ms: u64,
+        max_retries: usize,
+        retry_backoff_ms: u64,
+        user_agent: &str,
+    ) -> Result<Self> {
         validate_timeout("network.timeout_ms", default_timeout_ms)?;
+        let header_value =
+            HeaderValue::from_str(user_agent).map_err(|source| Error::ConfigInvalid {
+                message: format!("invalid network.user_agent header: {source}"),
+            })?;
         let client = reqwest::Client::builder()
+            .user_agent(header_value)
             .build()
             .map_err(|source| Self::transport_error(&source))?;
 
