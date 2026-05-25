@@ -23,7 +23,7 @@ fn aspect() -> AspectSpec {
         scope: vec!["market sizing".to_owned()],
         boundaries: vec!["no private data".to_owned()],
         success_criteria: vec!["evidence-backed findings".to_owned()],
-        aspect_agent_prompt_path: prompt_path(),
+        aspect_agent_prompt: aspect_prompt(),
         allowed_tools: vec![ToolName("search".to_owned())],
         model_provider: Some("openai".to_owned()),
         search_provider: Some("exa".to_owned()),
@@ -42,8 +42,8 @@ fn minimal_request() -> ModelRequest {
     }
 }
 
-fn prompt_path() -> String {
-    "prompts/layer2/aspect-agent.md".to_owned()
+fn aspect_prompt() -> String {
+    "# Aspect Agent\n\nDummy aspect agent prompt for tests.\n".to_owned()
 }
 
 fn model_policy(allowed_providers: &[&str]) -> ModelPolicy {
@@ -110,7 +110,7 @@ fn deep_research_request_roundtrips_plan_fields_json() {
                 scope: vec!["schema".to_owned()],
                 boundaries: vec![],
                 success_criteria: vec!["roundtrip".to_owned()],
-                aspect_agent_prompt_path: prompt_path(),
+                aspect_agent_prompt: aspect_prompt(),
                 allowed_tools: vec![ToolName("search".to_owned())],
                 model_provider: Some("openai".to_owned()),
                 search_provider: Some("exa".to_owned()),

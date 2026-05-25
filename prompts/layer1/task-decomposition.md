@@ -39,12 +39,17 @@ Return only JSON matching this shape:
         "scope": ["string"],
         "boundaries": ["string"],
         "success_criteria": ["string"],
-        "aspect_agent_prompt_path": "prompts/layer2/aspect-agent.md",
-        "allowed_tools": [{ "0": "search" }],
+        "aspect_agent_prompt": "<inline Markdown content of the chosen Layer 2 aspect-agent prompt>",
+        "allowed_tools": ["search"],
         "model_provider": "string",
         "search_provider": "string"
       },
-      "budget": "AgentBudget"
+      "budget": {
+        "max_turns": 8,
+        "max_tool_calls": 12,
+        "max_search_calls": 6,
+        "timeout_ms": 120000
+      }
     }
   ],
   "budget": {
@@ -108,16 +113,20 @@ Return only JSON matching this shape:
 
 ## MCP request wrapper
 
-When converting this plan into `AspectResearchRequest` or `DeepResearchRequest`, set the prompt path directly on each `AspectResearchTask.aspect`:
+When converting this plan into `AspectResearchRequest` or `DeepResearchRequest`, set the aspect-agent prompt **content** inline on each `AspectResearchTask.aspect`:
 
 ```json
 {
   "aspect_id": "market-context",
-  "aspect_agent_prompt_path": "prompts/layer2/aspect-agent.md"
+  "aspect_agent_prompt": "<inline Markdown content of the chosen Layer 2 aspect-agent prompt>"
 }
 ```
 
-Layer 1 may choose a different aspect-agent Markdown asset per aspect. Paths may be safe relative `.md` paths or absolute `.md` paths; relative paths must not use parent traversal. Rust loads the selected asset at runtime from `AspectSpec.aspect_agent_prompt_path` and does not hard-code prompt text.
+Layer 1 reads the chosen aspect-agent Markdown asset from disk (relative to the Claude
+Code workspace, e.g. `prompts/layer2/aspect-agent.md`) and passes its contents verbatim
+as `AspectSpec.aspect_agent_prompt`. Rust core never performs prompt file IO; Layer 1
+owns prompt asset selection, version pinning, and substitution. The string must be a
+non-empty Markdown document under 64 KiB.
 
 ## Safety rules
 

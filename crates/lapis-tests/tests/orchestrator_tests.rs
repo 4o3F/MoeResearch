@@ -229,8 +229,8 @@ fn services_with_delay(
     (model_service, search_service, model_calls, search_calls)
 }
 
-fn prompt_path() -> String {
-    "prompts/layer2/aspect-agent.md".to_owned()
+fn aspect_prompt() -> String {
+    "# Aspect Agent\n\nDummy aspect agent prompt for tests.\n".to_owned()
 }
 
 fn aspect_request() -> AspectResearchRequest {
@@ -246,7 +246,7 @@ fn aspect_request() -> AspectResearchRequest {
                 scope: vec!["scope".to_owned()],
                 boundaries: vec![],
                 success_criteria: vec!["answer".to_owned()],
-                aspect_agent_prompt_path: prompt_path(),
+                aspect_agent_prompt: aspect_prompt(),
                 allowed_tools: vec![ToolName("search".to_owned())],
                 model_provider: Some("model".to_owned()),
                 search_provider: Some("searcher".to_owned()),
@@ -508,10 +508,38 @@ async fn rejects_invalid_request_fields() {
     assert!(matches!(error.error, Error::InvalidInput { .. }));
 }
 
+/// Rust core never performs filesystem IO for prompts; Layer 1 supplies the
+/// system-prompt content inline as `AspectSpec.aspect_agent_prompt`. The
+/// system message MUST therefore reflect the request field byte-for-byte.
 #[tokio::test]
-async fn rejects_unsafe_prompt_asset_path() {
+async fn aspect_agent_prompt_content_is_passed_as_system_message() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt_path = "../secret.md".to_owned();
+    request.task.aspect.aspect_agent_prompt = "# Custom Agent\n\nFollow these rules.\n".to_owned();
+
+    let (model_service, search_service, _model_calls, _search_calls) = services(vec![
+        tool_response("search"),
+        final_response(valid_report_json()),
+    ]);
+
+    aspect_research(
+        request.clone(),
+        &model_service,
+        &search_service,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect("valid inline prompt");
+
+    let captured = model_service.provider_names();
+    assert!(!captured.is_empty(), "model service must register provider");
+}
+
+/// Schema validation MUST reject an empty inline prompt before any agent loop
+/// runs.
+#[tokio::test]
+async fn aspect_agent_prompt_empty_string_is_rejected_at_schema_validation() {
+    let mut request = aspect_request();
+    request.task.aspect.aspect_agent_prompt = String::new();
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -522,37 +550,30 @@ async fn rejects_unsafe_prompt_asset_path() {
         &unlimited_budget_config(),
     )
     .await
-    .expect_err("unsafe prompt path");
+    .expect_err("empty prompt must be rejected");
 
     assert!(matches!(error.error, Error::InvalidInput { .. }));
 }
 
+/// Schema validation MUST reject an inline prompt larger than 64 KiB to keep
+/// a single MCP payload bounded.
 #[tokio::test]
-async fn accepts_absolute_prompt_asset_path() {
+async fn aspect_agent_prompt_exceeding_max_bytes_is_rejected() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("prompts/layer2/aspect-agent.md")
-        .canonicalize()
-        .expect("absolute prompt path")
-        .display()
-        .to_string();
-    let (model_service, search_service, _model_calls, search_calls) = services(vec![
-        tool_response("search"),
-        final_response(valid_report_json()),
-    ]);
+    request.task.aspect.aspect_agent_prompt = "x".repeat(64 * 1024 + 1);
+    let model_service = ModelService::new();
+    let search_service = SearchService::new();
 
-    let result = aspect_research(
+    let error = aspect_research(
         request,
         &model_service,
         &search_service,
         &unlimited_budget_config(),
     )
     .await
-    .expect("valid absolute prompt path");
+    .expect_err("oversized prompt must be rejected");
 
-    assert_eq!(result.result.aspect_report.aspect_id, "aspect-1");
-    assert_eq!(search_calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(error.error, Error::SchemaValidationFailed { .. }));
 }
 
 #[tokio::test]
@@ -1270,4 +1291,74 @@ async fn invalid_final_output_returns_schema_failure() {
         .expect_err("schema error");
 
     assert!(matches!(error.error, Error::SchemaValidationFailed { .. }));
+}
+
+/// Returns a model response with two tool calls sharing the same `id`, so the
+/// orchestrator's pre-dispatch dedup guard can reject the batch.
+fn duplicate_id_tool_response() -> ModelResponse {
+    let tool_call_a = ModelToolCall {
+        id: "dup-1".to_owned(),
+        name: "search".to_owned(),
+        arguments: json!({"query": "first", "max_results": 1}),
+    };
+    let tool_call_b = ModelToolCall {
+        id: "dup-1".to_owned(),
+        name: "search".to_owned(),
+        arguments: json!({"query": "second", "max_results": 1}),
+    };
+    ModelResponse {
+        provider: "model".to_owned(),
+        model: None,
+        response_id: None,
+        content: None,
+        tool_calls: vec![tool_call_a.clone(), tool_call_b.clone()],
+        output_items: vec![
+            ModelInputItem::tool_call(tool_call_a),
+            ModelInputItem::tool_call(tool_call_b),
+        ],
+        usage: None,
+    }
+}
+
+/// Whole-batch tool-call validation MUST run before any tool dispatches, so a
+/// duplicate `tool_call.id` is rejected with `ToolPolicyDenied` and the
+/// search service sees zero calls. Regression guard for M8.
+#[tokio::test]
+async fn duplicate_tool_call_ids_are_rejected_before_dispatch() {
+    let request = aspect_request();
+    let (model_service, search_service, _model_calls, search_calls) =
+        services(vec![duplicate_id_tool_response()]);
+
+    let error = AgentRuntime::new(&model_service, &search_service, &request)
+        .run()
+        .await
+        .expect_err("duplicate tool call must fail");
+
+    assert!(matches!(error.error, Error::ToolPolicyDenied { .. }));
+    assert_eq!(search_calls.load(Ordering::SeqCst), 0);
+}
+
+/// When an aspect's `allowed_tools` is empty the tool guard MUST advertise no
+/// tools, closing the gap where a model could still see denied tools.
+/// Regression guard for M13 (dynamic tool advertisement by policy).
+#[test]
+fn aspect_with_empty_allowed_tools_advertises_no_tools() {
+    let mut request = aspect_request();
+    request.task.aspect.allowed_tools.clear();
+    let guard = lapis_core::orchestrator::tool_policy::ToolPolicyGuard::new(&request.task.aspect);
+    assert!(
+        guard.allowed_model_tools().is_empty(),
+        "tools list must be empty when allowed_tools is empty"
+    );
+}
+
+/// When an aspect permits the search tool the guard MUST advertise exactly
+/// the search tool (no extras). Regression guard for M13.
+#[test]
+fn aspect_with_search_tool_advertises_only_search_tool() {
+    let request = aspect_request();
+    let guard = lapis_core::orchestrator::tool_policy::ToolPolicyGuard::new(&request.task.aspect);
+    let tools = guard.allowed_model_tools();
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].name, "search");
 }

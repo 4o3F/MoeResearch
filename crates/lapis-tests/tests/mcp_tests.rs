@@ -185,8 +185,8 @@ fn sequence_services(responses: Vec<ModelResponse>) -> Services {
     }
 }
 
-fn prompt_path() -> String {
-    "prompts/layer2/aspect-agent.md".to_owned()
+fn aspect_prompt() -> String {
+    "# Aspect Agent\n\nDummy aspect agent prompt for tests.\n".to_owned()
 }
 
 fn aspect_request() -> AspectResearchRequest {
@@ -238,7 +238,7 @@ fn aspect(index: usize) -> AspectSpec {
         scope: vec!["scope".to_owned()],
         boundaries: vec![],
         success_criteria: vec!["answer".to_owned()],
-        aspect_agent_prompt_path: prompt_path(),
+        aspect_agent_prompt: aspect_prompt(),
         allowed_tools: vec![ToolName("search".to_owned())],
         model_provider: Some("model".to_owned()),
         search_provider: Some("searcher".to_owned()),

@@ -32,20 +32,54 @@ impl ResearchContext {
     }
 }
 
+/// Specification of a single research aspect.
+///
+/// Aspects are the unit of parallelism for deep research: each aspect runs
+/// inside its own agent loop with its own budget, tool allowlist, and
+/// provider selection. Layer 1 (the Claude Code skill) constructs one
+/// `AspectSpec` per dimension of the user's question.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct AspectSpec {
+    /// Stable identifier used by the orchestrator to track per-aspect state
+    /// (budgets, evidence namespacing, failure records).
     pub aspect_id: String,
+    /// Human-readable aspect name surfaced to the model and final report.
     pub name: String,
+    /// Short role description (e.g. "competitive landscape analyst") used in
+    /// the aspect agent's system prompt.
     pub role: String,
+    /// Concrete research question this aspect must answer.
     pub research_question: String,
+    /// Topical scope guides for the aspect agent (in-scope topics).
     pub scope: Vec<String>,
+    /// Explicit out-of-scope boundaries.
     pub boundaries: Vec<String>,
+    /// Acceptance criteria the aspect's findings must meet before completion.
     pub success_criteria: Vec<String>,
-    pub aspect_agent_prompt_path: String,
+    /// Layer 2 aspect-agent system prompt content, provided inline by Layer 1.
+    ///
+    /// Rust core never performs prompt file IO; Layer 1 (the Claude Code skill)
+    /// owns prompt selection, version pinning, and substitution, then passes
+    /// the resolved Markdown verbatim as this field. Validation requires a
+    /// non-empty string under `ASPECT_PROMPT_MAX_BYTES` (64 KiB) to guard
+    /// against accidental payload bloat.
+    pub aspect_agent_prompt: String,
+    /// Tools the aspect agent is allowed to call (currently only `search`).
     pub allowed_tools: Vec<ToolName>,
+    /// Explicit model provider selection; must satisfy `ModelPolicy`.
     pub model_provider: Option<String>,
+    /// Explicit search provider selection (exactly one); must satisfy
+    /// `SearchPolicy`.
     pub search_provider: Option<String>,
 }
+
+/// Upper bound on the inline aspect-agent prompt size, in bytes.
+///
+/// 64 KiB is comfortably above realistic prompt assets (current Lapis prompts
+/// are 1-10 KiB) but bounds the per-request payload so a buggy Layer 1
+/// implementation cannot accidentally explode token usage by inlining a huge
+/// Markdown file.
+const ASPECT_PROMPT_MAX_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct AspectResearchTask {
@@ -167,10 +201,12 @@ fn validate_aspect_task(
     ensure_non_empty("aspect.aspect_id", &aspect.aspect_id)?;
     ensure_non_empty("aspect.name", &aspect.name)?;
     ensure_non_empty("aspect.research_question", &aspect.research_question)?;
-    ensure_non_empty(
-        "aspect.aspect_agent_prompt_path",
-        &aspect.aspect_agent_prompt_path,
-    )?;
+    ensure_non_empty("aspect.aspect_agent_prompt", &aspect.aspect_agent_prompt)?;
+    if aspect.aspect_agent_prompt.len() > ASPECT_PROMPT_MAX_BYTES {
+        return Err(Error::SchemaValidationFailed {
+            message: format!("aspect.aspect_agent_prompt exceeds {ASPECT_PROMPT_MAX_BYTES} bytes"),
+        });
+    }
     ensure_runtime_tools_allowed(&aspect.allowed_tools, ctx.supported_tool_name)?;
     validate_explicit_model_provider(aspect, model_policy)?;
     validate_explicit_search_provider(aspect, search_policy, ctx.supported_tool_name)?;

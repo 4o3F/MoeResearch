@@ -33,6 +33,24 @@ impl ToolPolicyGuard {
         }
     }
 
+    /// Returns the subset of model-facing tools the current aspect's policy
+    /// allows.
+    ///
+    /// The orchestrator uses this to drive `ModelRequest.tools`: aspects with
+    /// `allowed_tools = []` get an empty tools list (no tool calls possible),
+    /// while aspects that permit search get exactly the search tool. This is
+    /// strictly tighter than always advertising the full tool catalogue and
+    /// closes the gap where a model could call a denied tool just because it
+    /// was visible in the request.
+    #[must_use]
+    pub fn allowed_model_tools(&self) -> Vec<ModelTool> {
+        let mut tools = Vec::new();
+        if self.search_allowed {
+            tools.push(search_model_tool());
+        }
+        tools
+    }
+
     pub fn validate_search_call(&self, call: &ModelToolCall) -> Result<SearchToolArgs> {
         if call.name != SEARCH_TOOL_NAME {
             return Err(Error::ToolPolicyDenied {

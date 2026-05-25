@@ -1,4 +1,3 @@
-use std::path::{Component, Path};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -7,7 +6,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use crate::error::{Error, Result};
 use crate::model::service::ModelService;
 use crate::orchestrator::budget::AgentBudgetGuard;
-use crate::orchestrator::tool_policy::{ToolPolicyGuard, search_model_tool};
+use crate::orchestrator::tool_policy::ToolPolicyGuard;
 use crate::orchestrator::validator::OutputValidator;
 use crate::schema::limit::{DurationLimitMs, Limit};
 use crate::schema::model::{
@@ -127,10 +126,13 @@ impl<'a> AgentRuntime<'a> {
         );
         let search_policy = self.request.search_policy.clone();
         let search_provider = self.selected_search_provider();
-        let mut state = RuntimeState::new(self.initial_input().map_err(Self::untraced_failure)?);
+        let mut state = RuntimeState::new(self.initial_input());
 
         loop {
-            let model_response = match self.complete_model_turn(&mut state, &mut budget).await {
+            let model_response = match self
+                .complete_model_turn(&mut state, &mut budget, &tool_policy)
+                .await
+            {
                 Ok(response) => response,
                 Err(error) => return Err(self.failure(error, &state, &budget)),
             };
@@ -149,6 +151,10 @@ impl<'a> AgentRuntime<'a> {
                 return self
                     .finish(content, state, &budget, &validator)
                     .map_err(|failure| *failure);
+            }
+
+            if let Err(error) = Self::ensure_unique_tool_call_ids(&model_response.tool_calls) {
+                return Err(self.failure(error, &state, &budget));
             }
 
             let mut tool_outputs = Vec::new();
@@ -176,6 +182,35 @@ impl<'a> AgentRuntime<'a> {
         }
     }
 
+    /// Rejects a model response whose tool-call list contains duplicate
+    /// identifiers before any tool is dispatched.
+    ///
+    /// Duplicate `tool_call.id` values would let a misbehaving model issue
+    /// the same call twice with different arguments and observe both budget
+    /// consumption and output ordering, so we treat the situation as a
+    /// policy violation and stop the agent loop. Validation is whole-batch:
+    /// no tool is dispatched if any id repeats, so the orchestrator never
+    /// observes partial side effects.
+    ///
+    /// # Errors
+    /// Returns `Error::ToolPolicyDenied` with a generic message; the offending
+    /// id is logged through `tracing` rather than echoed into the envelope.
+    fn ensure_unique_tool_call_ids(tool_calls: &[ModelToolCall]) -> Result<()> {
+        let mut seen = std::collections::HashSet::with_capacity(tool_calls.len());
+        for tool_call in tool_calls {
+            if !seen.insert(tool_call.id.as_str()) {
+                tracing::warn!(
+                    tool_call_id = %tool_call.id,
+                    "duplicate tool call id rejected before dispatch"
+                );
+                return Err(Error::ToolPolicyDenied {
+                    message: "model returned duplicate tool call id".to_owned(),
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn effective_budget(&self) -> crate::schema::budget::AgentBudget {
         let mut budget = self.request.task.budget.clone();
         if let Some(timeout_ms) = self.request.execution_policy.timeout_ms {
@@ -188,11 +223,16 @@ impl<'a> AgentRuntime<'a> {
         &self,
         state: &mut RuntimeState,
         budget: &mut AgentBudgetGuard,
+        tool_policy: &ToolPolicyGuard,
     ) -> Result<ModelResponse> {
         budget.consume_model_turn()?;
         let model_started = Instant::now();
         let model_response = match self
-            .complete_model(state.previous_response_id.clone(), state.input.clone())
+            .complete_model(
+                state.previous_response_id.clone(),
+                state.input.clone(),
+                tool_policy.allowed_model_tools(),
+            )
             .await
         {
             Ok(response) => response,
@@ -388,15 +428,24 @@ impl<'a> AgentRuntime<'a> {
         })
     }
 
-    fn initial_input(&self) -> Result<Vec<ModelInputItem>> {
-        Ok(vec![
-            ModelInputItem::message(ModelMessageRole::System, self.system_prompt()?),
+    /// Builds the initial agent input: the inline aspect-agent system prompt
+    /// followed by the user prompt derived from the request payload.
+    fn initial_input(&self) -> Vec<ModelInputItem> {
+        vec![
+            ModelInputItem::message(ModelMessageRole::System, self.system_prompt().to_owned()),
             ModelInputItem::message(ModelMessageRole::User, self.user_prompt()),
-        ])
+        ]
     }
 
-    fn system_prompt(&self) -> Result<String> {
-        read_prompt_asset(&self.request.task.aspect.aspect_agent_prompt_path)
+    /// Returns the Layer 2 aspect-agent system prompt supplied inline by Layer 1.
+    ///
+    /// No filesystem IO is performed here; the string is taken verbatim from
+    /// the MCP request after schema validation has already enforced non-empty
+    /// and size-bound invariants. Eliminating runtime prompt file IO closes
+    /// the arbitrary-file-read attack surface that earlier path-based variants
+    /// of this code carried.
+    fn system_prompt(&self) -> &str {
+        &self.request.task.aspect.aspect_agent_prompt
     }
 
     fn user_prompt(&self) -> String {
@@ -410,6 +459,7 @@ impl<'a> AgentRuntime<'a> {
         &self,
         previous_response_id: Option<String>,
         input: Vec<ModelInputItem>,
+        tools: Vec<crate::schema::model::ModelTool>,
     ) -> Result<ModelResponse> {
         let request = ModelRequest {
             provider: self
@@ -422,7 +472,7 @@ impl<'a> AgentRuntime<'a> {
             model: None,
             previous_response_id,
             input,
-            tools: vec![search_model_tool()],
+            tools,
             temperature: self.request.model_policy.temperature,
             max_tokens: self.request.model_policy.max_tokens,
         };
@@ -550,60 +600,6 @@ impl<'a> AgentRuntime<'a> {
 
 fn elapsed_ms(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
-}
-
-fn read_prompt_asset(path: &str) -> Result<String> {
-    let path = path.trim();
-    if path.is_empty() {
-        return Err(Error::InvalidInput {
-            message: "prompt asset path must not be empty".to_owned(),
-        });
-    }
-
-    let path_ref = Path::new(path);
-    if !path_ref.is_absolute()
-        && path_ref
-            .components()
-            .any(|component| matches!(component, Component::ParentDir))
-    {
-        return Err(Error::InvalidInput {
-            message: "relative prompt asset path must not contain parent traversal".to_owned(),
-        });
-    }
-
-    if path_ref
-        .extension()
-        .and_then(|extension| extension.to_str())
-        != Some("md")
-    {
-        return Err(Error::InvalidInput {
-            message: "prompt asset path must point to a markdown file".to_owned(),
-        });
-    }
-
-    let resolved_path = if path_ref.is_absolute() || path_ref.exists() {
-        path_ref.to_path_buf()
-    } else {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join(path_ref)
-    };
-
-    if !resolved_path.is_file() {
-        return Err(Error::InvalidInput {
-            message: format!(
-                "prompt asset path must point to a file: {}",
-                resolved_path.display()
-            ),
-        });
-    }
-
-    std::fs::read_to_string(&resolved_path).map_err(|source| Error::InvalidInput {
-        message: format!(
-            "unable to read prompt asset {}: {source}",
-            resolved_path.display()
-        ),
-    })
 }
 
 struct RuntimeDeadline {

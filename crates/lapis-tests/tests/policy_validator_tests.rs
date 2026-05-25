@@ -11,8 +11,8 @@ use lapis_core::schema::report::{
 use lapis_core::schema::research::AspectSpec;
 use serde_json::json;
 
-fn prompt_path() -> String {
-    "prompts/layer2/aspect-agent.md".to_owned()
+fn aspect_prompt() -> String {
+    "# Aspect Agent\n\nDummy aspect agent prompt for tests.\n".to_owned()
 }
 
 fn evidence_policy() -> EvidencePolicy {
@@ -38,7 +38,7 @@ fn aspect_with_tools(allowed_tools: Vec<ToolName>) -> AspectSpec {
         scope: vec![],
         boundaries: vec![],
         success_criteria: vec![],
-        aspect_agent_prompt_path: prompt_path(),
+        aspect_agent_prompt: aspect_prompt(),
         allowed_tools,
         model_provider: None,
         search_provider: Some("exa".to_owned()),
@@ -62,7 +62,7 @@ fn validator_aspect() -> AspectSpec {
         scope: vec!["market".to_owned()],
         boundaries: Vec::new(),
         success_criteria: Vec::new(),
-        aspect_agent_prompt_path: prompt_path(),
+        aspect_agent_prompt: aspect_prompt(),
         allowed_tools: vec![ToolName("search".to_owned())],
         model_provider: None::<String>,
         search_provider: Some("exa".to_owned()),
