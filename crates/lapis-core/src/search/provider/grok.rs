@@ -18,9 +18,15 @@ pub struct GrokSearchProvider {
     api_key: String,
     timeout_ms: Option<u64>,
     model: String,
+    search_context_size: String,
+    max_output_tokens: Option<u32>,
 }
 
 impl GrokSearchProvider {
+    /// Default search-context-size used when the operator does not override
+    /// it via TOML configuration.
+    pub const DEFAULT_SEARCH_CONTEXT_SIZE: &'static str = "low";
+
     pub fn new(
         network: Arc<dyn NetworkClient>,
         base_url: String,
@@ -28,12 +34,43 @@ impl GrokSearchProvider {
         timeout_ms: Option<u64>,
         model: String,
     ) -> Self {
+        Self::with_search_knobs(
+            network,
+            base_url,
+            api_key,
+            timeout_ms,
+            model,
+            None,
+            None,
+        )
+    }
+
+    /// Constructs the provider with the search-tuning knobs explicitly
+    /// supplied from configuration.
+    ///
+    /// `search_context_size` falls back to [`Self::DEFAULT_SEARCH_CONTEXT_SIZE`]
+    /// when `None`. `max_output_tokens` of `None` leaves the cap to the
+    /// upstream provider default. Validation of these inputs is owned by
+    /// `ProviderEndpoint::validate`; this constructor trusts its caller.
+    #[must_use]
+    pub fn with_search_knobs(
+        network: Arc<dyn NetworkClient>,
+        base_url: String,
+        api_key: String,
+        timeout_ms: Option<u64>,
+        model: String,
+        search_context_size: Option<String>,
+        max_output_tokens: Option<u32>,
+    ) -> Self {
         Self {
             network,
             base_url,
             api_key,
             timeout_ms,
             model,
+            search_context_size: search_context_size
+                .unwrap_or_else(|| Self::DEFAULT_SEARCH_CONTEXT_SIZE.to_owned()),
+            max_output_tokens,
         }
     }
 }
@@ -54,9 +91,9 @@ impl SearchProvider for GrokSearchProvider {
             }],
             tools: vec![GrokSearchTool::WebSearch(GrokWebSearchTool {
                 filters: grok_filters(&request),
-                search_context_size: Some("low"),
+                search_context_size: Some(self.search_context_size.as_str()),
             })],
-            max_output_tokens: None,
+            max_output_tokens: self.max_output_tokens,
             stream: false,
         })
         .context(JsonSnafu)?;
@@ -249,10 +286,10 @@ impl GrokSearchCitation {
 }
 
 #[derive(Serialize)]
-struct GrokSearchRequest {
+struct GrokSearchRequest<'a> {
     model: String,
     input: Vec<GrokSearchInputMessage>,
-    tools: Vec<GrokSearchTool>,
+    tools: Vec<GrokSearchTool<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_output_tokens: Option<u32>,
     stream: bool,
@@ -266,17 +303,17 @@ struct GrokSearchInputMessage {
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-enum GrokSearchTool {
+enum GrokSearchTool<'a> {
     #[serde(rename = "web_search")]
-    WebSearch(GrokWebSearchTool),
+    WebSearch(GrokWebSearchTool<'a>),
 }
 
 #[derive(Serialize)]
-struct GrokWebSearchTool {
+struct GrokWebSearchTool<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     filters: Option<GrokWebSearchFilters>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    search_context_size: Option<&'static str>,
+    search_context_size: Option<&'a str>,
 }
 
 #[derive(Serialize)]

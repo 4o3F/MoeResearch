@@ -24,6 +24,9 @@ base_url = "https://api.x.ai"
 api_key_env = "XAI_API_KEY"
 timeout_ms = 30000
 model = "grok-4.20-fast"
+# Optional Grok-only knobs:
+#   search_context_size = "low"   # one of: low | medium | high (default: low)
+#   max_output_tokens = 1024      # cap response size; omit to let provider default apply
 
 [model.providers.openai]
 enabled = false

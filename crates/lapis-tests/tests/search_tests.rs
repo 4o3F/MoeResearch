@@ -717,3 +717,88 @@ async fn grok_search_prompt_omits_freshness_when_none() {
     let prompt = body["input"][0]["content"].as_str().expect("prompt");
     assert!(!prompt.contains("Freshness:"));
 }
+
+/// Grok's `search_context_size` MUST be threaded from config into the
+/// request body, not hard-coded. Default is "low" when the operator omits
+/// the field.
+#[tokio::test]
+async fn grok_search_request_uses_configured_search_context_size() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "output": [] }),
+    }]));
+    let provider = GrokSearchProvider::with_search_knobs(
+        network.clone(),
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+        Some("high".to_owned()),
+        None,
+    );
+
+    provider
+        .search(SearchRequest::new("grok", "lapis", 1))
+        .await
+        .expect("grok response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert_eq!(body["tools"][0]["search_context_size"], json!("high"));
+}
+
+/// Grok's `max_output_tokens` from config MUST appear in the request body
+/// so operators can cap response cost.
+#[tokio::test]
+async fn grok_search_request_uses_configured_max_output_tokens() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "output": [] }),
+    }]));
+    let provider = GrokSearchProvider::with_search_knobs(
+        network.clone(),
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+        None,
+        Some(2048),
+    );
+
+    provider
+        .search(SearchRequest::new("grok", "lapis", 1))
+        .await
+        .expect("grok response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert_eq!(body["max_output_tokens"], json!(2048));
+}
+
+/// When `max_output_tokens` is not configured, the field MUST be omitted
+/// from the wire request (not sent as `null`), so the upstream provider
+/// applies its own default.
+#[tokio::test]
+async fn grok_search_request_omits_max_output_tokens_when_unconfigured() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "output": [] }),
+    }]));
+    let provider = GrokSearchProvider::new(
+        network.clone(),
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    provider
+        .search(SearchRequest::new("grok", "lapis", 1))
+        .await
+        .expect("grok response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert!(body.get("max_output_tokens").is_none());
+    assert_eq!(body["tools"][0]["search_context_size"], json!("low"));
+}

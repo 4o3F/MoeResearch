@@ -340,3 +340,44 @@ fn network_client_rejects_invalid_user_agent() {
         "unexpected error: {err}"
     );
 }
+
+/// `search.providers.grok.search_context_size` must be one of low/medium/high.
+/// Any other value is a config error.
+#[test]
+fn rejects_grok_invalid_search_context_size() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.20-fast\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.20-fast\"\nsearch_context_size = \"ultra\"",
+    );
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(
+        err.to_string().contains("search_context_size must be one of"),
+        "unexpected error: {err}"
+    );
+}
+
+/// `search.providers.grok.max_output_tokens` must be strictly greater than
+/// zero when set; zero is not a meaningful response budget.
+#[test]
+fn rejects_grok_zero_max_output_tokens() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.20-fast\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.20-fast\"\nmax_output_tokens = 0",
+    );
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(
+        err.to_string().contains("max_output_tokens must be greater than zero"),
+        "unexpected error: {err}"
+    );
+}
+
+/// Omitting both Grok knobs must still validate cleanly — they are optional,
+/// and the runtime falls back to a default `low` search context.
+#[test]
+fn accepts_grok_with_no_search_knobs() {
+    let config = load_config_from_test_str(VALID_CONFIG).expect("default config must validate");
+    assert!(config.search.providers["grok"].search_context_size.is_none());
+    assert!(config.search.providers["grok"].max_output_tokens.is_none());
+}

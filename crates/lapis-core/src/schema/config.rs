@@ -94,6 +94,14 @@ pub struct ProviderEndpoint {
     pub api_key_env: Option<String>,
     pub timeout_ms: Option<u64>,
     pub model: Option<String>,
+    /// Grok-only `search_context_size` knob. Accepts `low`, `medium`, or
+    /// `high`. Ignored by providers that do not consume it.
+    #[serde(default)]
+    pub search_context_size: Option<String>,
+    /// Grok-only `max_output_tokens` knob, capping the model's response
+    /// budget for a single search call. Must be greater than zero when set.
+    #[serde(default)]
+    pub max_output_tokens: Option<u32>,
 }
 
 impl ProviderEndpoint {
@@ -117,15 +125,48 @@ impl ProviderEndpoint {
         }
 
         match (kind, name) {
-            ("model", "openai") | ("search", "grok") => {
+            ("model", "openai") => {
                 self.validate_enabled_common(kind, name)?;
                 self.validate_model(kind, name)
+            }
+            ("search", "grok") => {
+                self.validate_enabled_common(kind, name)?;
+                self.validate_model(kind, name)?;
+                self.validate_grok_knobs(name)
             }
             ("search", "exa") => self.validate_enabled_common(kind, name),
             _ => Err(Error::ConfigInvalid {
                 message: format!("unknown {kind}.providers.{name} provider"),
             }),
         }
+    }
+
+    /// Validates Grok-specific search knobs (`search_context_size`,
+    /// `max_output_tokens`). Runs regardless of `enabled` so a disabled
+    /// stanza still cannot ship an invalid value.
+    ///
+    /// # Errors
+    /// Returns `Error::ConfigInvalid` when `search_context_size` is set to a
+    /// value outside `{low, medium, high}` or `max_output_tokens` is `Some(0)`.
+    fn validate_grok_knobs(&self, name: &str) -> Result<()> {
+        if let Some(size) = self.search_context_size.as_deref()
+            && !matches!(size, "low" | "medium" | "high")
+        {
+            return Err(Error::ConfigInvalid {
+                message: format!(
+                    "search.providers.{name}.search_context_size must be one of \
+                     \"low\", \"medium\", or \"high\""
+                ),
+            });
+        }
+        if self.max_output_tokens == Some(0) {
+            return Err(Error::ConfigInvalid {
+                message: format!(
+                    "search.providers.{name}.max_output_tokens must be greater than zero"
+                ),
+            });
+        }
+        Ok(())
     }
 
     /// Validates the constraints common to every enabled provider regardless
