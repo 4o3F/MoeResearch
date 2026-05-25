@@ -16,7 +16,9 @@ You are the Lapis Layer 1 research planner. Convert the user's research request 
   "available_model_providers": ["string"],
   "available_search_providers": ["string"],
   "budget_preset": "quick | standard | deep",
-  "available_aspect_agent_prompt_paths": ["prompts/layer2/aspect-agent.md"]
+  "available_aspect_agent_prompts": {
+    "default": "<contents of prompts/layer2/aspect-agent.md>"
+  }
 }
 ```
 

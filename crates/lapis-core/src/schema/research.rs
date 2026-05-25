@@ -79,7 +79,7 @@ pub struct AspectSpec {
 /// are 1-10 KiB) but bounds the per-request payload so a buggy Layer 1
 /// implementation cannot accidentally explode token usage by inlining a huge
 /// Markdown file.
-const ASPECT_PROMPT_MAX_BYTES: usize = 64 * 1024;
+pub(crate) const ASPECT_PROMPT_MAX_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct AspectResearchTask {

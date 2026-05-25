@@ -17,7 +17,7 @@ use crate::schema::policy::SearchPolicy;
 use crate::schema::report::{
     AgentBudgetUsage, AspectResearchResult, Confidence, Evidence, SourceType, TokenUsage,
 };
-use crate::schema::research::AspectResearchRequest;
+use crate::schema::research::{ASPECT_PROMPT_MAX_BYTES, AspectResearchRequest};
 use crate::schema::search::{SearchRequest, SearchResponse, SearchResult};
 use crate::search::service::SearchService;
 
@@ -119,6 +119,8 @@ impl<'a> AgentRuntime<'a> {
     }
 
     pub async fn run(&self) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
+        self.validate_inline_prompt()
+            .map_err(Self::untraced_failure)?;
         let effective_budget = self.effective_budget();
         let deadline = RuntimeDeadline::new(effective_budget.timeout_ms);
         let mut budget = AgentBudgetGuard::new(effective_budget).map_err(Self::untraced_failure)?;
@@ -184,6 +186,35 @@ impl<'a> AgentRuntime<'a> {
             }
             state.append_model_output_and_tool_outputs(&model_response, tool_outputs);
         }
+    }
+
+    /// Re-checks the inline prompt invariants before the agent loop starts.
+    ///
+    /// `validate_for_execution` enforces the same invariants at the workflow
+    /// boundary, but `AgentRuntime` is a public type and is exercised
+    /// directly by tests, so this method guards the entrypoint that callers
+    /// reach without passing through the workflow validator. The check is
+    /// O(1) for the empty case and O(n) only on the length comparison.
+    ///
+    /// # Errors
+    /// Returns `Error::InvalidInput` when the prompt is empty or whitespace.
+    /// Returns `Error::SchemaValidationFailed` when the prompt exceeds
+    /// `ASPECT_PROMPT_MAX_BYTES`.
+    fn validate_inline_prompt(&self) -> Result<()> {
+        let prompt = &self.request.task.aspect.aspect_agent_prompt;
+        if prompt.trim().is_empty() {
+            return Err(Error::InvalidInput {
+                message: "aspect.aspect_agent_prompt must not be empty".to_owned(),
+            });
+        }
+        if prompt.len() > ASPECT_PROMPT_MAX_BYTES {
+            return Err(Error::SchemaValidationFailed {
+                message: format!(
+                    "aspect.aspect_agent_prompt exceeds {ASPECT_PROMPT_MAX_BYTES} bytes"
+                ),
+            });
+        }
+        Ok(())
     }
 
     /// Rejects a model response whose tool-call list contains duplicate

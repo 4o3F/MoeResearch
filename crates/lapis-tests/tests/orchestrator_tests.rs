@@ -510,16 +510,28 @@ async fn rejects_invalid_request_fields() {
 
 /// Rust core never performs filesystem IO for prompts; Layer 1 supplies the
 /// system-prompt content inline as `AspectSpec.aspect_agent_prompt`. The
-/// system message MUST therefore reflect the request field byte-for-byte.
+/// first input the model sees MUST be a System message whose body equals
+/// the request field byte-for-byte, with no further transformation.
 #[tokio::test]
 async fn aspect_agent_prompt_content_is_passed_as_system_message() {
     let mut request = aspect_request();
     request.task.aspect.aspect_agent_prompt = "# Custom Agent\n\nFollow these rules.\n".to_owned();
 
-    let (model_service, search_service, _model_calls, _search_calls) = services(vec![
-        tool_response("search"),
-        final_response(valid_report_json()),
-    ]);
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let captured_requests = Arc::new(Mutex::new(Vec::new()));
+    let mut model_service = ModelService::new();
+    model_service.register(CapturingSequenceModelProvider {
+        calls: model_calls,
+        responses: Mutex::new(
+            vec![tool_response("search"), final_response(valid_report_json())].into(),
+        ),
+        requests: captured_requests.clone(),
+    });
+    let search_calls = Arc::new(AtomicUsize::new(0));
+    let mut search_service = SearchService::new();
+    search_service.register(CountingSearchProvider {
+        calls: search_calls,
+    });
 
     aspect_research(
         request.clone(),
@@ -530,8 +542,61 @@ async fn aspect_agent_prompt_content_is_passed_as_system_message() {
     .await
     .expect("valid inline prompt");
 
-    let captured = model_service.provider_names();
-    assert!(!captured.is_empty(), "model service must register provider");
+    let requests = captured_requests.lock().expect("requests lock").clone();
+    assert!(
+        matches!(
+            &requests[0].input[0],
+            ModelInputItem::Message(message)
+                if message.role == lapis_core::schema::model::ModelMessageRole::System
+                    && message.content == request.task.aspect.aspect_agent_prompt
+        ),
+        "first input must be System message equal to inline prompt content"
+    );
+}
+
+/// `AgentRuntime::run()` is a public entry that callers can hit without
+/// going through workflow validation; it must therefore reject empty inline
+/// prompts before any model call dispatches.
+#[tokio::test]
+async fn agent_runtime_rejects_empty_inline_prompt_before_dispatch() {
+    let mut request = aspect_request();
+    request.task.aspect.aspect_agent_prompt = String::new();
+
+    let (model_service, search_service, model_calls, _search_calls) = services(vec![]);
+    let failure = AgentRuntime::new(
+        &model_service,
+        &search_service,
+        &request,
+        ResearchBudgetGuard::unlimited(),
+    )
+    .run()
+    .await
+    .expect_err("empty prompt must be rejected at runtime entry");
+
+    assert!(matches!(failure.error, Error::InvalidInput { .. }));
+    assert_eq!(model_calls.load(Ordering::SeqCst), 0);
+}
+
+/// Direct `AgentRuntime::run()` must also reject prompts larger than the
+/// 64 KiB cap before dispatch.
+#[tokio::test]
+async fn agent_runtime_rejects_oversized_inline_prompt_before_dispatch() {
+    let mut request = aspect_request();
+    request.task.aspect.aspect_agent_prompt = "x".repeat(64 * 1024 + 1);
+
+    let (model_service, search_service, model_calls, _search_calls) = services(vec![]);
+    let failure = AgentRuntime::new(
+        &model_service,
+        &search_service,
+        &request,
+        ResearchBudgetGuard::unlimited(),
+    )
+    .run()
+    .await
+    .expect_err("oversized prompt must be rejected at runtime entry");
+
+    assert!(matches!(failure.error, Error::SchemaValidationFailed { .. }));
+    assert_eq!(model_calls.load(Ordering::SeqCst), 0);
 }
 
 /// Schema validation MUST reject an empty inline prompt before any agent loop
@@ -1354,6 +1419,60 @@ fn aspect_with_empty_allowed_tools_advertises_no_tools() {
     assert!(
         guard.allowed_model_tools().is_empty(),
         "tools list must be empty when allowed_tools is empty"
+    );
+}
+
+/// Integration guard for M13: an aspect with empty `allowed_tools` MUST
+/// reach the model provider with an actually empty `ModelRequest.tools`
+/// list, not merely a guard-level abstraction. This pins the wire shape.
+#[tokio::test]
+async fn aspect_with_empty_allowed_tools_sends_empty_model_tools() {
+    let mut request = aspect_request();
+    request.task.aspect.allowed_tools.clear();
+    request.task.aspect.search_provider = None;
+    request.evidence_policy.require_evidence_for_findings = false;
+
+    let final_payload = serde_json::to_string(&AspectResearchResult {
+        aspect_report: AspectReport {
+            aspect_id: "aspect-1".to_owned(),
+            aspect_name: "Aspect".to_owned(),
+            question: "What is true?".to_owned(),
+            scope: vec!["scope".to_owned()],
+            findings: Vec::new(),
+            assumptions: Vec::new(),
+            risks: Vec::new(),
+            counterarguments: Vec::new(),
+            open_questions: Vec::new(),
+            confidence: Confidence::Medium,
+            limitations: Vec::new(),
+        },
+        evidence: Vec::new(),
+    })
+    .expect("report json");
+
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let captured_requests = Arc::new(Mutex::new(Vec::new()));
+    let mut model_service = ModelService::new();
+    model_service.register(CapturingSequenceModelProvider {
+        calls: model_calls,
+        responses: Mutex::new(vec![final_response(final_payload)].into()),
+        requests: captured_requests.clone(),
+    });
+    let search_service = SearchService::new();
+
+    aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect("non-search aspect result");
+
+    let requests = captured_requests.lock().expect("requests lock").clone();
+    assert!(
+        requests[0].tools.is_empty(),
+        "ModelRequest.tools must be empty when allowed_tools is empty"
     );
 }
 
