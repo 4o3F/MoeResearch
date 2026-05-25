@@ -437,10 +437,101 @@ async fn grok_search_uses_annotation_local_text_for_snippets() {
         .await
         .expect("grok response");
 
+    // Snippet is the Tight excerpt around the citation indices.
     assert_eq!(response.results[0].snippet, "Second");
+    // Summary is the per-source Wide excerpt of the LOCAL output_text
+    // that owns the citation, not the accumulated full_text — so two
+    // evidence rows in the same response no longer share one 1 KiB blob.
     assert_eq!(
         response.results[0].summary.as_deref(),
-        Some("First block without citation\nSecond block cited")
+        Some("Second block cited")
+    );
+}
+
+/// Two citations anchored at different positions inside the same
+/// `output_text` MUST yield different per-source summaries when the
+/// text exceeds the summary budget. This pins the regression where
+/// every evidence row used to share an identical `full_text` blob,
+/// wasting Layer 2's prompt budget on duplicated context.
+#[tokio::test]
+async fn grok_search_emits_distinct_per_source_summaries() {
+    // Build a text well over SUMMARY_MAX_BYTES (600) so the summary
+    // window cannot span both citations. The two anchors sit at
+    // opposite ends so their local windows have no overlap.
+    let prefix: String = "alpha ".repeat(80);
+    let middle = "GAMMA ";
+    let suffix: String = "omega ".repeat(80);
+    let text = format!("{prefix}{middle}{suffix}");
+    let suffix_start = prefix.len() + middle.len();
+    let tail_start = text.len() - 6;
+
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [{
+                "type": "message",
+                "content": [{
+                    "type": "output_text",
+                    "text": text,
+                    "annotations": [
+                        {
+                            "type": "url_citation",
+                            "url": "https://example.com/start",
+                            "title": "Start",
+                            "start_index": 0,
+                            "end_index": 5
+                        },
+                        {
+                            "type": "url_citation",
+                            "url": "https://example.com/end",
+                            "title": "End",
+                            "start_index": tail_start,
+                            "end_index": text.len()
+                        }
+                    ]
+                }]
+            }]
+        }),
+    }]));
+    let provider = GrokSearchProvider::new(
+        network,
+        "https://api.x.ai".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    let response = provider
+        .search(SearchRequest::new("grok", "lapis", 2))
+        .await
+        .expect("grok response");
+
+    assert_eq!(response.results.len(), 2);
+    let s0 = response.results[0]
+        .summary
+        .as_deref()
+        .expect("first summary");
+    let s1 = response.results[1]
+        .summary
+        .as_deref()
+        .expect("second summary");
+    assert_ne!(s0, s1, "per-source summaries must diverge");
+    assert!(
+        s0.contains("alpha"),
+        "first citation's window covers the prefix"
+    );
+    assert!(
+        !s0.contains("omega"),
+        "first citation's window must not reach the suffix at offset {suffix_start}"
+    );
+    assert!(
+        s1.contains("omega"),
+        "second citation's window covers the suffix"
+    );
+    assert!(
+        !s1.contains("alpha"),
+        "second citation's window must not reach back to the prefix"
     );
 }
 
