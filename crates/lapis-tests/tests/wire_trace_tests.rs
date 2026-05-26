@@ -442,8 +442,10 @@ async fn response_body_read_failure_is_retryable() {
 /// query parameters, authorization values, headers, or request/response bodies.
 #[tokio::test(flavor = "current_thread")]
 async fn transport_error_detail_log_redacts_request_secrets() {
-    let server =
-        MockServer::start(vec![CannedResponse::with_content_length(200, "partial", 1024)]).await;
+    let server = MockServer::start(vec![CannedResponse::with_content_length(
+        200, "partial", 1024,
+    )])
+    .await;
 
     let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=debug");
     let client = build_client();

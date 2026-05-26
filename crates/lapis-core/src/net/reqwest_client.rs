@@ -279,7 +279,10 @@ async fn read_response_body(
 }
 
 /// Converts a reqwest transport error after emitting operator diagnostics.
-fn logged_transport_error(source: &reqwest::Error, context: &TransportErrorLogContext<'_>) -> Error {
+fn logged_transport_error(
+    source: &reqwest::Error,
+    context: &TransportErrorLogContext<'_>,
+) -> Error {
     let error = ReqwestNetworkClient::transport_error(source);
     emit_transport_error_detail(source, &error, context);
     error
