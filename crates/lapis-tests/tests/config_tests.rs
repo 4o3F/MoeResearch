@@ -26,10 +26,10 @@ timeout_ms = 30000
 
 [search.providers.grok]
 enabled = false
-base_url = "https://api.x.ai"
+base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
 timeout_ms = 30000
-model = "grok-4.20-fast"
+model = "grok-4.3"
 
 [model.providers.openai]
 enabled = false
@@ -243,8 +243,8 @@ fn rejects_enabled_model_provider_without_model() {
 #[test]
 fn rejects_enabled_grok_search_provider_without_model() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.20-fast\"",
-        "[search.providers.grok]\nenabled = true\nbase_url = \"https://api.x.ai\"\napi_key_env = \"PATH\"\ntimeout_ms = 30000",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"",
+        "[search.providers.grok]\nenabled = true\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"PATH\"\ntimeout_ms = 30000",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -259,8 +259,8 @@ fn rejects_enabled_grok_search_provider_without_model() {
 fn accepts_provider_model_config() {
     let input = VALID_CONFIG
         .replace(
-            "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai\"\napi_key_env = \"XAI_API_KEY\"",
-            "[search.providers.grok]\nenabled = true\nbase_url = \"https://api.x.ai\"\napi_key_env = \"PATH\"",
+            "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"",
+            "[search.providers.grok]\nenabled = true\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"PATH\"",
         )
         .replace(
             "[model.providers.openai]\nenabled = false\nbase_url = \"https://api.openai.com/v1\"\napi_key_env = \"OPENAI_API_KEY\"",
@@ -271,7 +271,7 @@ fn accepts_provider_model_config() {
 
     assert_eq!(
         config.search.providers["grok"].model.as_deref(),
-        Some("grok-4.20-fast")
+        Some("grok-4.3")
     );
     assert_eq!(
         config.model.providers["openai"].model.as_deref(),
@@ -341,19 +341,20 @@ fn network_client_rejects_invalid_user_agent() {
     );
 }
 
-/// `search.providers.grok.search_context_size` must be one of low/medium/high.
-/// Any other value is a config error.
+/// The removed Grok `search_context_size` knob must fail loudly instead of
+/// being silently ignored, so operators notice stale xAI-incompatible config.
 #[test]
-fn rejects_grok_invalid_search_context_size() {
+fn rejects_grok_legacy_search_context_size() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.20-fast\"",
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.20-fast\"\nsearch_context_size = \"ultra\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"\nsearch_context_size = \"low\"",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
+    let message = err.to_string();
+    assert!(message.contains("unknown field"), "unexpected error: {err}");
     assert!(
-        err.to_string()
-            .contains("search_context_size must be one of"),
+        message.contains("search_context_size"),
         "unexpected error: {err}"
     );
 }
@@ -363,8 +364,8 @@ fn rejects_grok_invalid_search_context_size() {
 #[test]
 fn rejects_grok_zero_max_output_tokens() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.20-fast\"",
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.20-fast\"\nmax_output_tokens = 0",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"\nmax_output_tokens = 0",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -375,15 +376,9 @@ fn rejects_grok_zero_max_output_tokens() {
     );
 }
 
-/// Omitting both Grok knobs must still validate cleanly — they are optional,
-/// and the runtime falls back to a default `low` search context.
+/// Omitting Grok's optional response-size cap must still validate cleanly.
 #[test]
-fn accepts_grok_with_no_search_knobs() {
+fn accepts_grok_with_no_max_output_tokens() {
     let config = load_config_from_test_str(VALID_CONFIG).expect("default config must validate");
-    assert!(
-        config.search.providers["grok"]
-            .search_context_size
-            .is_none()
-    );
     assert!(config.search.providers["grok"].max_output_tokens.is_none());
 }

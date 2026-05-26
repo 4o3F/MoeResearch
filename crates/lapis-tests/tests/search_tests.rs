@@ -308,7 +308,7 @@ async fn maps_grok_response_to_standard_search_response() {
     }]));
     let provider = GrokSearchProvider::new(
         network,
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
@@ -342,7 +342,7 @@ async fn grok_search_uses_responses_web_search_request() {
     }]));
     let provider = GrokSearchProvider::new(
         network.clone(),
-        "https://api.x.ai/".to_owned(),
+        "https://api.x.ai/v1/".to_owned(),
         "key".to_owned(),
         Some(1000),
         "configured-grok-model".to_owned(),
@@ -362,7 +362,7 @@ async fn grok_search_uses_responses_web_search_request() {
     assert_eq!(requests.len(), 1);
     let request = &requests[0];
     assert_eq!(request.method, "POST");
-    assert_eq!(request.url, "https://api.x.ai/responses");
+    assert_eq!(request.url, "https://api.x.ai/v1/responses");
     assert_eq!(request.timeout_ms, Some(1000));
     assert!(
         request
@@ -382,7 +382,7 @@ async fn grok_search_uses_responses_web_search_request() {
     assert_eq!(body["stream"], false);
     assert_eq!(body["input"][0]["role"], "user");
     assert_eq!(body["tools"][0]["type"], "web_search");
-    assert_eq!(body["tools"][0]["search_context_size"], "low");
+    assert!(body["tools"][0].get("search_context_size").is_none());
     assert_eq!(
         body["tools"][0]["filters"]["allowed_domains"],
         json!(["example.com"])
@@ -426,7 +426,7 @@ async fn grok_search_uses_annotation_local_text_for_snippets() {
     }]));
     let provider = GrokSearchProvider::new(
         network,
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
@@ -496,7 +496,7 @@ async fn grok_search_emits_distinct_per_source_summaries() {
     }]));
     let provider = GrokSearchProvider::new(
         network,
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
@@ -564,7 +564,7 @@ async fn grok_search_ignores_unknown_content_and_annotations() {
     }]));
     let provider = GrokSearchProvider::new(
         network,
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
@@ -619,7 +619,7 @@ async fn grok_search_dedupes_citations_and_limits_results() {
     }]));
     let provider = GrokSearchProvider::new(
         network,
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
@@ -670,7 +670,7 @@ async fn grok_search_appends_search_sources_when_citations_underfill() {
     }]));
     let provider = GrokSearchProvider::new(
         network,
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
@@ -737,7 +737,7 @@ async fn grok_search_search_sources_respect_max_results_cap() {
     }]));
     let provider = GrokSearchProvider::new(
         network,
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
@@ -769,7 +769,7 @@ async fn grok_search_rejects_non_success_status() {
     }]));
     let provider = GrokSearchProvider::new(
         network,
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
@@ -886,7 +886,7 @@ async fn grok_search_prompt_includes_freshness_window_when_present() {
     }]));
     let provider = GrokSearchProvider::new(
         network.clone(),
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
@@ -916,7 +916,7 @@ async fn grok_search_prompt_omits_freshness_when_none() {
     }]));
     let provider = GrokSearchProvider::new(
         network.clone(),
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
@@ -932,35 +932,6 @@ async fn grok_search_prompt_omits_freshness_when_none() {
     assert!(!prompt.contains("Freshness:"));
 }
 
-/// Grok's `search_context_size` MUST be threaded from config into the
-/// request body, not hard-coded. Default is "low" when the operator omits
-/// the field.
-#[tokio::test]
-async fn grok_search_request_uses_configured_search_context_size() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({ "output": [] }),
-    }]));
-    let provider = GrokSearchProvider::with_search_knobs(
-        network.clone(),
-        "https://api.x.ai".to_owned(),
-        "key".to_owned(),
-        None,
-        "configured-grok-model".to_owned(),
-        Some("high".to_owned()),
-        None,
-    );
-
-    provider
-        .search(SearchRequest::new("grok", "lapis", 1))
-        .await
-        .expect("grok response");
-
-    let body = network.requests()[0].body.clone().expect("request body");
-    assert_eq!(body["tools"][0]["search_context_size"], json!("high"));
-}
-
 /// Grok's `max_output_tokens` from config MUST appear in the request body
 /// so operators can cap response cost.
 #[tokio::test]
@@ -970,13 +941,12 @@ async fn grok_search_request_uses_configured_max_output_tokens() {
         headers: vec![],
         body: json!({ "output": [] }),
     }]));
-    let provider = GrokSearchProvider::with_search_knobs(
+    let provider = GrokSearchProvider::with_max_output_tokens(
         network.clone(),
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
-        None,
         Some(2048),
     );
 
@@ -1001,7 +971,7 @@ async fn grok_search_request_omits_max_output_tokens_when_unconfigured() {
     }]));
     let provider = GrokSearchProvider::new(
         network.clone(),
-        "https://api.x.ai".to_owned(),
+        "https://api.x.ai/v1".to_owned(),
         "key".to_owned(),
         None,
         "configured-grok-model".to_owned(),
@@ -1014,5 +984,5 @@ async fn grok_search_request_omits_max_output_tokens_when_unconfigured() {
 
     let body = network.requests()[0].body.clone().expect("request body");
     assert!(body.get("max_output_tokens").is_none());
-    assert_eq!(body["tools"][0]["search_context_size"], json!("low"));
+    assert!(body["tools"][0].get("search_context_size").is_none());
 }

@@ -90,13 +90,12 @@ pub fn build_search_service(
                     });
                 };
 
-                service.register(GrokSearchProvider::with_search_knobs(
+                service.register(GrokSearchProvider::with_max_output_tokens(
                     network.clone(),
                     provider.base_url.clone(),
                     api_key,
                     provider.timeout_ms.or(Some(config.network.timeout_ms)),
                     model.to_owned(),
-                    provider.search_context_size.clone(),
                     provider.max_output_tokens,
                 ));
             }

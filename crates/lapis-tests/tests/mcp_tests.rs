@@ -851,10 +851,10 @@ timeout_ms = 30000
 
 [search.providers.grok]
 enabled = false
-base_url = "https://api.x.ai"
+base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
 timeout_ms = 30000
-model = "grok-4.20-fast"
+model = "grok-4.3"
 
 [model.providers.openai]
 enabled = false

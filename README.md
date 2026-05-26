@@ -100,7 +100,7 @@ api_key_env = "EXA_API_KEY"
 [search.providers.grok]
 enabled = false
 api_key_env = "XAI_API_KEY"
-model = "grok-4.20-fast"
+model = "grok-4.3"
 
 [model.providers.openai]
 enabled = false
@@ -126,11 +126,10 @@ model = "gpt-5.5"
 
 [search.providers.grok]
 enabled = true
-base_url = "https://api.x.ai"
+base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
 timeout_ms = 30000
-model = "grok-4.20-fast"
-search_context_size = "low"
+model = "grok-4.3"
 max_output_tokens = 1024
 ```
 
