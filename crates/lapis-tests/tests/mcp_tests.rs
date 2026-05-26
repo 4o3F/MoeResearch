@@ -745,12 +745,22 @@ fn tool_envelope_message_redacts_provider_path_and_api_key() {
     let cases = vec![
         (
             Error::HttpTransport {
-                message: "POST https://api.openai.com/v1/responses Authorization=sk-abcdef"
-                    .to_owned(),
+                message: concat!(
+                    "POST https://api.openai.com/v1/responses?api_key=sk-query-secret ",
+                    "Authorization=sk-abcdef response={\"api_key\":\"raw-provider-secret\"}"
+                )
+                .to_owned(),
                 retryable: true,
             },
             ToolErrorCode::NetworkFailed,
-            vec!["Authorization", "sk-abcdef", "api.openai.com"],
+            vec![
+                "Authorization",
+                "sk-abcdef",
+                "api.openai.com",
+                "api_key",
+                "sk-query-secret",
+                "raw-provider-secret",
+            ],
         ),
         (
             Error::ProviderUnavailable {

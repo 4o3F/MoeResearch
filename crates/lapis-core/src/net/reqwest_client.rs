@@ -6,7 +6,7 @@ use crate::net::policy::RedactionPolicy;
 use crate::schema::config::NetworkConfig;
 use crate::schema::network::{Header, NetworkRequest, NetworkResponse};
 use reqwest::header::{HeaderName, HeaderValue};
-use reqwest::{Method, Url};
+use reqwest::{Method, RequestBuilder, Response, Url};
 use uuid::Uuid;
 
 /// Maximum byte length captured in a wire body trace event.
@@ -129,42 +129,39 @@ impl ReqwestNetworkClient {
             .client
             .request(method, url)
             .timeout(Duration::from_millis(timeout_ms));
-
-        for header in &request.headers {
-            let name = HeaderName::from_bytes(header.name.as_bytes()).map_err(|source| {
-                Error::InvalidInput {
-                    message: format!("invalid HTTP header `{}`: {source}", header.name),
-                }
-            })?;
-            let value =
-                HeaderValue::from_str(&header.value).map_err(|source| Error::InvalidInput {
-                    message: format!("invalid value for HTTP header `{}`: {source}", header.name),
-                })?;
-            builder = builder.header(name, value);
-        }
+        builder = apply_headers(builder, &request.headers)?;
 
         if let Some(body) = request.body {
             builder = builder.json(&body);
         }
 
         let started_at = Instant::now();
-        let response = builder
-            .send()
-            .await
-            .map_err(|source| Self::transport_error(&source))?;
+        let response = send_request(
+            builder,
+            &TransportErrorLogContext {
+                phase: "send_request",
+                attempt,
+                correlation_id,
+                host: &host,
+                path: &path,
+                timeout_ms,
+            },
+        )
+        .await?;
         let status = response.status();
-        let headers: Vec<Header> = response
-            .headers()
-            .iter()
-            .map(|(name, value)| Header {
-                name: name.to_string(),
-                value: value.to_str().unwrap_or_default().to_owned(),
-            })
-            .collect();
-        let text = response
-            .text()
-            .await
-            .map_err(|source| Self::transport_error(&source))?;
+        let headers = response_headers(&response);
+        let text = read_response_body(
+            response,
+            &TransportErrorLogContext {
+                phase: "read_response_body",
+                attempt,
+                correlation_id,
+                host: &host,
+                path: &path,
+                timeout_ms,
+            },
+        )
+        .await?;
         let duration_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
 
         // Trace-level wire body capture for the inbound side. Fires for
@@ -209,7 +206,7 @@ impl ReqwestNetworkClient {
     }
 
     fn transport_error(source: &reqwest::Error) -> Error {
-        let retryable = source.is_timeout() || source.is_connect();
+        let retryable = is_retryable_transport_error(source);
         let message = if source.is_timeout() {
             "request timed out"
         } else if source.is_connect() {
@@ -225,6 +222,146 @@ impl ReqwestNetworkClient {
             retryable,
         }
     }
+}
+
+/// Metadata emitted with operator-only transport failure diagnostics.
+struct TransportErrorLogContext<'a> {
+    /// Request phase where reqwest reported the transport error.
+    phase: &'static str,
+    /// Retry attempt index for the failing outbound request.
+    attempt: u32,
+    /// Correlation id shared with wire trace events for this attempt.
+    correlation_id: Uuid,
+    /// Redacted request host, without scheme, query, or credentials.
+    host: &'a str,
+    /// Request path without query parameters.
+    path: &'a str,
+    /// Effective per-request timeout in milliseconds.
+    timeout_ms: u64,
+}
+
+/// Applies already-redacted logical headers to a reqwest request builder.
+fn apply_headers(mut builder: RequestBuilder, headers: &[Header]) -> Result<RequestBuilder> {
+    for header in headers {
+        let name = HeaderName::from_bytes(header.name.as_bytes()).map_err(|source| {
+            Error::InvalidInput {
+                message: format!("invalid HTTP header `{}`: {source}", header.name),
+            }
+        })?;
+        let value = HeaderValue::from_str(&header.value).map_err(|source| Error::InvalidInput {
+            message: format!("invalid value for HTTP header `{}`: {source}", header.name),
+        })?;
+        builder = builder.header(name, value);
+    }
+    Ok(builder)
+}
+
+/// Sends the HTTP request and logs sanitized reqwest details on transport failure.
+async fn send_request(
+    builder: RequestBuilder,
+    context: &TransportErrorLogContext<'_>,
+) -> Result<Response> {
+    match builder.send().await {
+        Ok(response) => Ok(response),
+        Err(source) => Err(logged_transport_error(&source, context)),
+    }
+}
+
+/// Reads a successful HTTP response body and logs sanitized read failures.
+async fn read_response_body(
+    response: Response,
+    context: &TransportErrorLogContext<'_>,
+) -> Result<String> {
+    match response.text().await {
+        Ok(text) => Ok(text),
+        Err(source) => Err(logged_transport_error(&source, context)),
+    }
+}
+
+/// Converts a reqwest transport error after emitting operator diagnostics.
+fn logged_transport_error(source: &reqwest::Error, context: &TransportErrorLogContext<'_>) -> Error {
+    let error = ReqwestNetworkClient::transport_error(source);
+    emit_transport_error_detail(source, &error, context);
+    error
+}
+
+/// Copies response headers into the provider-neutral network schema.
+fn response_headers(response: &Response) -> Vec<Header> {
+    response
+        .headers()
+        .iter()
+        .map(|(name, value)| Header {
+            name: name.to_string(),
+            value: value.to_str().unwrap_or_default().to_owned(),
+        })
+        .collect()
+}
+
+/// Returns whether a reqwest transport failure is worth retrying.
+fn is_retryable_transport_error(source: &reqwest::Error) -> bool {
+    source.is_timeout() || source.is_connect() || source.is_body() || source.is_decode()
+}
+
+/// Emits operator-only transport diagnostics without request or response bodies.
+fn emit_transport_error_detail(
+    source: &reqwest::Error,
+    error: &Error,
+    context: &TransportErrorLogContext<'_>,
+) {
+    tracing::warn!(
+        phase = context.phase,
+        attempt = context.attempt,
+        correlation_id = %context.correlation_id,
+        host = %context.host,
+        path = %context.path,
+        timeout_ms = context.timeout_ms,
+        retryable = error.retryable(),
+        error_detail = %safe_transport_error_detail(source),
+        "outbound request transport error"
+    );
+}
+
+/// Renders reqwest's error text after stripping URL credentials and queries.
+fn safe_transport_error_detail(source: &reqwest::Error) -> String {
+    let mut detail = source.to_string();
+    if let Some(url) = source.url() {
+        let mut redacted_url = url.clone();
+        let _ = redacted_url.set_username("");
+        let _ = redacted_url.set_password(None);
+        redacted_url.set_query(None);
+        redacted_url.set_fragment(None);
+        detail = detail.replace(url.as_str(), redacted_url.as_str());
+    }
+    redact_sensitive_fragments(&detail)
+}
+
+/// Redacts common key-value secret fragments from diagnostic strings.
+fn redact_sensitive_fragments(input: &str) -> String {
+    let mut output = input.to_owned();
+    for key in ["api_key=", "token=", "key=", "Authorization="] {
+        output = redact_value_after_key(&output, key);
+    }
+    output
+}
+
+/// Replaces one key's value with `[REDACTED]` until a safe delimiter.
+fn redact_value_after_key(input: &str, key: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut remaining = input;
+    while let Some(index) = remaining.find(key) {
+        let (before, after_before) = remaining.split_at(index);
+        output.push_str(before);
+        output.push_str(key);
+        output.push_str("[REDACTED]");
+
+        let after_key = &after_before[key.len()..];
+        let value_end = after_key
+            .find(|ch: char| ch.is_whitespace() || matches!(ch, '&' | '"' | '\'' | ')' | ','))
+            .unwrap_or(after_key.len());
+        remaining = &after_key[value_end..];
+    }
+    output.push_str(remaining);
+    output
 }
 
 /// Emits the trace-level wire event capturing an outbound request body.

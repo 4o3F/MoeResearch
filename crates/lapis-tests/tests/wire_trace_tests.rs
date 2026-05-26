@@ -128,13 +128,27 @@ fn field_bool(event: &serde_json::Value, name: &str) -> Option<bool> {
 struct CannedResponse {
     status: u16,
     body: String,
+    /// Advertised Content-Length, which may intentionally differ from `body`.
+    content_length: usize,
 }
 
 impl CannedResponse {
     fn new(status: u16, body: impl Into<String>) -> Self {
+        let body = body.into();
+        let content_length = body.len();
+        Self {
+            status,
+            body,
+            content_length,
+        }
+    }
+
+    /// Builds a response with a custom Content-Length for body-failure tests.
+    fn with_content_length(status: u16, body: impl Into<String>, content_length: usize) -> Self {
         Self {
             status,
             body: body.into(),
+            content_length,
         }
     }
 }
@@ -209,7 +223,7 @@ impl MockServer {
                     let response = format!(
                         "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
                         status = canned.status,
-                        len = canned.body.len(),
+                        len = canned.content_length,
                         body = canned.body
                     );
                     let _ = socket.write_all(response.as_bytes()).await;
@@ -380,6 +394,97 @@ async fn wire_trace_retry_emits_new_correlation_per_attempt() {
     assert_eq!(field_u64(outbound[1], "attempt"), Some(1));
     assert_eq!(field_u64(inbound[0], "status"), Some(503));
     assert_eq!(field_u64(inbound[1], "status"), Some(200));
+}
+
+/// A response-body read failure can be transient under provider pressure;
+/// it must log sanitized operator detail and consume the configured retry.
+#[tokio::test(flavor = "current_thread")]
+async fn response_body_read_failure_is_retryable() {
+    let server = MockServer::start(vec![
+        CannedResponse::with_content_length(200, r#"{"partial":true}"#, 1024),
+        CannedResponse::new(200, r#"{"ok":true}"#),
+    ])
+    .await;
+
+    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=debug");
+    let client = build_client_with_retries(1);
+    let response = client
+        .send(request_to(server.url("/responses")))
+        .await
+        .expect("body read failure should retry");
+
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body["ok"], serde_json::Value::Bool(true));
+
+    let events = parse_events(&buffer);
+    let transport_error = events
+        .iter()
+        .find(|event| message_of(event) == "outbound request transport error")
+        .expect("transport detail event present");
+    assert_eq!(
+        field_str(transport_error, "phase"),
+        Some("read_response_body")
+    );
+    assert_eq!(field_bool(transport_error, "retryable"), Some(true));
+    assert!(
+        field_str(transport_error, "error_detail").is_some(),
+        "operator detail should include sanitized reqwest error text"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| message_of(event) == "retrying outbound request"),
+        "retry loop must retry body read failures"
+    );
+}
+
+/// Transport-detail logs must carry reqwest diagnostics without leaking URL
+/// query parameters, authorization values, headers, or request/response bodies.
+#[tokio::test(flavor = "current_thread")]
+async fn transport_error_detail_log_redacts_request_secrets() {
+    let server =
+        MockServer::start(vec![CannedResponse::with_content_length(200, "partial", 1024)]).await;
+
+    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=debug");
+    let client = build_client();
+    let secret_url = server
+        .url("/responses?api_key=sk-query-secret&token=hidden")
+        .replacen("http://", "http://user:sk-userinfo-secret@", 1);
+    let mut request = request_to(secret_url);
+    request.headers.push(Header {
+        name: "authorization".to_owned(),
+        value: "Bearer sk-header-secret".to_owned(),
+    });
+    request.body = Some(serde_json::json!({
+        "api_key": "sk-body-secret",
+        "input": "hello",
+    }));
+
+    let _ = client.send(request).await.expect_err("body read fails");
+
+    let events = parse_events(&buffer);
+    let transport_error = events
+        .iter()
+        .find(|event| message_of(event) == "outbound request transport error")
+        .expect("transport detail event present");
+    let event_text = serde_json::to_string(transport_error).expect("event serializes");
+    for forbidden in [
+        "sk-query-secret",
+        "api_key=sk-query-secret",
+        "token=hidden",
+        "sk-userinfo-secret",
+        "sk-header-secret",
+        "sk-body-secret",
+        "Authorization=",
+    ] {
+        assert!(
+            !event_text.contains(forbidden),
+            "transport log leaked `{forbidden}`: {event_text}"
+        );
+    }
+    let fields = transport_error.get("fields").expect("fields present");
+    assert!(fields.get("headers").is_none());
+    assert!(fields.get("body").is_none());
 }
 
 /// Inbound bodies larger than `MAX_WIRE_BODY_BYTES` (64 KiB) must be
