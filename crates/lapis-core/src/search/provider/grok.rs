@@ -34,15 +34,7 @@ impl GrokSearchProvider {
         timeout_ms: Option<u64>,
         model: String,
     ) -> Self {
-        Self::with_search_knobs(
-            network,
-            base_url,
-            api_key,
-            timeout_ms,
-            model,
-            None,
-            None,
-        )
+        Self::with_search_knobs(network, base_url, api_key, timeout_ms, model, None, None)
     }
 
     /// Constructs the provider with the search-tuning knobs explicitly
@@ -223,8 +215,7 @@ fn map_grok_response(response: GrokSearchResponse, max_results: usize) -> Vec<Se
         // Citation-derived rows get a per-source snippet and summary
         // anchored at the citation indices, so two evidence rows in the
         // same search no longer carry identical 1 KiB Markdown blobs.
-        let snippet =
-            citation_snippet(&citation.text, citation.start_index, citation.end_index);
+        let snippet = citation_snippet(&citation.text, citation.start_index, citation.end_index);
         let summary =
             citation_local_summary(&citation.text, citation.start_index, citation.end_index);
 
@@ -258,14 +249,8 @@ fn map_grok_response(response: GrokSearchResponse, max_results: usize) -> Vec<Se
             continue;
         }
 
-        let title = source
-            .title
-            .clone()
-            .unwrap_or_else(|| source.url.clone());
-        let snippet = source
-            .title
-            .clone()
-            .unwrap_or_else(|| source.url.clone());
+        let title = source.title.clone().unwrap_or_else(|| source.url.clone());
+        let snippet = source.title.clone().unwrap_or_else(|| source.url.clone());
         let summary = if full_text.is_empty() {
             None
         } else {

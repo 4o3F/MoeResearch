@@ -352,7 +352,8 @@ fn rejects_grok_invalid_search_context_size() {
 
     let err = load_config_from_test_str(&input).unwrap_err();
     assert!(
-        err.to_string().contains("search_context_size must be one of"),
+        err.to_string()
+            .contains("search_context_size must be one of"),
         "unexpected error: {err}"
     );
 }
@@ -368,7 +369,8 @@ fn rejects_grok_zero_max_output_tokens() {
 
     let err = load_config_from_test_str(&input).unwrap_err();
     assert!(
-        err.to_string().contains("max_output_tokens must be greater than zero"),
+        err.to_string()
+            .contains("max_output_tokens must be greater than zero"),
         "unexpected error: {err}"
     );
 }
@@ -378,6 +380,10 @@ fn rejects_grok_zero_max_output_tokens() {
 #[test]
 fn accepts_grok_with_no_search_knobs() {
     let config = load_config_from_test_str(VALID_CONFIG).expect("default config must validate");
-    assert!(config.search.providers["grok"].search_context_size.is_none());
+    assert!(
+        config.search.providers["grok"]
+            .search_context_size
+            .is_none()
+    );
     assert!(config.search.providers["grok"].max_output_tokens.is_none());
 }

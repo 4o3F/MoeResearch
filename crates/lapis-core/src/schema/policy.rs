@@ -61,9 +61,7 @@ impl Freshness {
             (None, None) => None,
             (Some(since), None) => Some(format!("published on or after {since}")),
             (None, Some(until)) => Some(format!("published on or before {until}")),
-            (Some(since), Some(until)) => {
-                Some(format!("published between {since} and {until}"))
-            }
+            (Some(since), Some(until)) => Some(format!("published between {since} and {until}")),
         }
     }
 }

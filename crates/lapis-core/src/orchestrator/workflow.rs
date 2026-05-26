@@ -150,25 +150,23 @@ async fn execute_aspects(
     research_budget: Arc<ResearchBudgetGuard>,
 ) -> DeepResearchRun {
     let mut run = DeepResearchRun::new();
-    let mut results = stream::iter(aspect_requests(request).into_iter().map(
-        |aspect_request| {
-            let research_budget = research_budget.clone();
-            async move {
-                research_budget.record_agent_started();
-                let aspect_id = aspect_request.task.aspect.aspect_id.clone();
-                let result = aspect_research_with_guard(
-                    aspect_request,
-                    model_service,
-                    search_service,
-                    budget_config,
-                    research_budget,
-                )
-                .await
-                .map_err(|failure| failure.error);
-                (aspect_id, result)
-            }
-        },
-    ))
+    let mut results = stream::iter(aspect_requests(request).into_iter().map(|aspect_request| {
+        let research_budget = research_budget.clone();
+        async move {
+            research_budget.record_agent_started();
+            let aspect_id = aspect_request.task.aspect.aspect_id.clone();
+            let result = aspect_research_with_guard(
+                aspect_request,
+                model_service,
+                search_service,
+                budget_config,
+                research_budget,
+            )
+            .await
+            .map_err(|failure| failure.error);
+            (aspect_id, result)
+        }
+    }))
     .buffer_unordered(
         request
             .budget
@@ -367,4 +365,3 @@ fn confidence_summary(
     }
     summary
 }
-

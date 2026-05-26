@@ -173,7 +173,10 @@ impl std::fmt::Debug for ResearchBudgetGuard {
             .field("budget", &self.budget)
             .field("model_calls", &self.model_calls.load(Ordering::SeqCst))
             .field("search_calls", &self.search_calls.load(Ordering::SeqCst))
-            .field("agents_started", &self.agents_started.load(Ordering::SeqCst))
+            .field(
+                "agents_started",
+                &self.agents_started.load(Ordering::SeqCst),
+            )
             .finish_non_exhaustive()
     }
 }

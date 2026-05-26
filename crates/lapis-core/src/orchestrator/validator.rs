@@ -311,10 +311,7 @@ fn validate_selected_evidence(
 /// `mismatched fields: summary, snippet` rather than having to fix one
 /// field, re-run, and rediscover the next one. The order matches the
 /// schema declaration so a stable diff appears in logs.
-fn provenance_mismatch_fields(
-    selected: &Evidence,
-    candidate: &Evidence,
-) -> Vec<&'static str> {
+fn provenance_mismatch_fields(selected: &Evidence, candidate: &Evidence) -> Vec<&'static str> {
     let mut fields = Vec::new();
     if selected.source_title != candidate.source_title {
         fields.push("source_title");

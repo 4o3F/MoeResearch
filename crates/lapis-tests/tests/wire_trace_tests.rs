@@ -74,9 +74,7 @@ impl Write for BufferWriter {
 ///
 /// The returned `DefaultGuard` keeps the subscriber active until it is
 /// dropped; in single-threaded tests this covers the entire test body.
-fn capture_tracing(
-    filter: &str,
-) -> (SharedBuffer, tracing::subscriber::DefaultGuard) {
+fn capture_tracing(filter: &str) -> (SharedBuffer, tracing::subscriber::DefaultGuard) {
     let buffer = SharedBuffer::new();
     let layer = tracing_subscriber::fmt::layer()
         .json()
@@ -95,8 +93,10 @@ fn parse_events(buffer: &SharedBuffer) -> Vec<serde_json::Value> {
         .snapshot()
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str::<serde_json::Value>(line)
-            .unwrap_or_else(|err| panic!("non-JSON trace line `{line}`: {err}")))
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line)
+                .unwrap_or_else(|err| panic!("non-JSON trace line `{line}`: {err}"))
+        })
         .collect()
 }
 
@@ -231,8 +231,7 @@ impl MockServer {
 fn build_client() -> ReqwestNetworkClient {
     // `max_retries = 0` for tests that do not exercise retry; the retry
     // test overrides this via a dedicated constructor call.
-    ReqwestNetworkClient::new(5_000, 0, 50, "lapis-tests/0.0.0")
-        .expect("ReqwestNetworkClient::new")
+    ReqwestNetworkClient::new(5_000, 0, 50, "lapis-tests/0.0.0").expect("ReqwestNetworkClient::new")
 }
 
 fn build_client_with_retries(max_retries: usize) -> ReqwestNetworkClient {
@@ -262,11 +261,8 @@ fn request_to(url: String) -> NetworkRequest {
 /// body event — must appear in the captured stream.
 #[tokio::test(flavor = "current_thread")]
 async fn wire_trace_disabled_emits_no_body_events() {
-    let server = MockServer::start(vec![CannedResponse::new(
-        200,
-        r#"{"ok":true}"#.to_owned(),
-    )])
-    .await;
+    let server =
+        MockServer::start(vec![CannedResponse::new(200, r#"{"ok":true}"#.to_owned())]).await;
 
     let (buffer, _guard) = capture_tracing("lapis_core=debug");
     let client = build_client();
@@ -287,7 +283,9 @@ async fn wire_trace_disabled_emits_no_body_events() {
 
     // The metadata-only debug event still fires so the operator retains a
     // basic record of every outbound call.
-    let debug_metadata = events.iter().any(|e| message_of(e) == "sending outbound request");
+    let debug_metadata = events
+        .iter()
+        .any(|e| message_of(e) == "sending outbound request");
     assert!(debug_metadata, "debug-level metadata event must still fire");
 }
 
@@ -296,11 +294,8 @@ async fn wire_trace_disabled_emits_no_body_events() {
 /// `attempt` index of 0.
 #[tokio::test(flavor = "current_thread")]
 async fn wire_trace_enabled_emits_paired_outbound_and_inbound() {
-    let server = MockServer::start(vec![CannedResponse::new(
-        200,
-        r#"{"ok":true}"#.to_owned(),
-    )])
-    .await;
+    let server =
+        MockServer::start(vec![CannedResponse::new(200, r#"{"ok":true}"#.to_owned())]).await;
 
     let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
     let client = build_client();
@@ -370,15 +365,16 @@ async fn wire_trace_retry_emits_new_correlation_per_attempt() {
         .filter(|e| field_str(e, "direction") == Some("inbound"))
         .collect();
 
-    assert_eq!(outbound.len(), 2, "two attempts produce two outbound events");
+    assert_eq!(
+        outbound.len(),
+        2,
+        "two attempts produce two outbound events"
+    );
     assert_eq!(inbound.len(), 2, "two attempts produce two inbound events");
 
     let id0 = field_str(outbound[0], "correlation_id").unwrap();
     let id1 = field_str(outbound[1], "correlation_id").unwrap();
-    assert_ne!(
-        id0, id1,
-        "each attempt must mint a fresh correlation_id"
-    );
+    assert_ne!(id0, id1, "each attempt must mint a fresh correlation_id");
 
     assert_eq!(field_u64(outbound[0], "attempt"), Some(0));
     assert_eq!(field_u64(outbound[1], "attempt"), Some(1));
@@ -444,7 +440,10 @@ async fn wire_non_success_debug_event_uses_excerpt_not_full_body() {
         .expect("non-success debug event present");
 
     assert!(
-        non_success.get("fields").and_then(|f| f.get("body")).is_none(),
+        non_success
+            .get("fields")
+            .and_then(|f| f.get("body"))
+            .is_none(),
         "non-success debug event must NOT carry the full `body` field"
     );
     let excerpt = field_str(non_success, "body_excerpt").expect("body_excerpt field");

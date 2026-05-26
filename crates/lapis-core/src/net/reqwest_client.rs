@@ -87,11 +87,7 @@ impl ReqwestNetworkClient {
         })
     }
 
-    async fn send_once(
-        &self,
-        request: NetworkRequest,
-        attempt: u32,
-    ) -> Result<NetworkResponse> {
+    async fn send_once(&self, request: NetworkRequest, attempt: u32) -> Result<NetworkResponse> {
         let method = request
             .method
             .parse::<Method>()
@@ -249,8 +245,7 @@ fn emit_outbound_wire_trace(
         return;
     }
     let body_str = body.to_string();
-    let (rendered, truncated, body_bytes) =
-        render_body_for_trace(&body_str, MAX_WIRE_BODY_BYTES);
+    let (rendered, truncated, body_bytes) = render_body_for_trace(&body_str, MAX_WIRE_BODY_BYTES);
     tracing::trace!(
         direction = "outbound",
         correlation_id = %correlation_id,

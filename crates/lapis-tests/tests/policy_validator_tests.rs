@@ -290,8 +290,8 @@ fn rejects_mutated_evidence_provenance_with_field_names() {
     selected[0].summary = "model paraphrased the original markdown".to_owned();
     selected[0].snippet = "shortened snippet".to_owned();
 
-    let err = validate_result(&result(report(), selected))
-        .expect_err("mutated provenance must fail");
+    let err =
+        validate_result(&result(report(), selected)).expect_err("mutated provenance must fail");
 
     let Error::SchemaValidationFailed { message } = err else {
         panic!("expected SchemaValidationFailed, got {err:?}");
