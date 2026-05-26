@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use schemars::schema_for;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use snafu::ResultExt;
@@ -12,7 +13,7 @@ use crate::schema::model::{
     ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse, ModelTool, ModelToolCall,
 };
 use crate::schema::network::{Header, NetworkRequest};
-use crate::schema::report::TokenUsage;
+use crate::schema::report::{AspectResearchResult, TokenUsage};
 
 pub struct OpenAiProvider {
     network: Arc<dyn NetworkClient>,
@@ -71,11 +72,13 @@ impl OpenAiProvider {
             .into_iter()
             .map(map_input_item)
             .collect::<Result<Vec<_>>>()?;
-        let body = serde_json::to_value(OpenAiResponsesRequest {
+        let body = serde_json::to_value(OpenAiRequest {
             model: request.model.unwrap_or_else(|| self.model.clone()),
             previous_response_id: request.previous_response_id,
             input,
             tools: request.tools.into_iter().map(map_tool).collect::<Vec<_>>(),
+            text: Some(aspect_research_result_text_config()),
+            parallel_tool_calls: false,
             temperature: request.temperature,
             max_output_tokens: request.max_tokens,
             stream: false,
@@ -101,8 +104,7 @@ impl OpenAiProvider {
     }
 
     fn map_response(&self, body: Value) -> Result<ModelResponse> {
-        let provider_response: OpenAiResponsesResponse =
-            serde_json::from_value(body).context(JsonSnafu)?;
+        let provider_response: OpenAiResponse = serde_json::from_value(body).context(JsonSnafu)?;
         let mut content = Vec::new();
         let mut tool_calls = Vec::new();
         let mut output_items = Vec::new();
@@ -113,9 +115,14 @@ impl OpenAiProvider {
                     let message = items
                         .into_iter()
                         .map(|item| match item {
-                            OpenAiResponseContent::OutputText { text } => text,
+                            OpenAiResponseContent::OutputText { text } => Ok(text),
+                            OpenAiResponseContent::Refusal { .. } => {
+                                Err(Error::SchemaValidationFailed {
+                                    message: "openai structured output was refused".to_owned(),
+                                })
+                            }
                         })
-                        .collect::<Vec<_>>()
+                        .collect::<Result<Vec<_>>>()?
                         .join("\n");
                     if !message.is_empty() {
                         content.push(message.clone());
@@ -248,8 +255,59 @@ fn map_usage(usage: &OpenAiUsage) -> TokenUsage {
     }
 }
 
+fn aspect_research_result_text_config() -> OpenAiTextConfig {
+    let mut schema = serde_json::to_value(schema_for!(AspectResearchResult))
+        .expect("AspectResearchResult schema serializes");
+    normalize_openai_strict_schema(&mut schema);
+
+    OpenAiTextConfig {
+        format: OpenAiTextFormat {
+            format_type: "json_schema",
+            name: "aspect_research_result_v1".to_owned(),
+            strict: true,
+            schema,
+        },
+    }
+}
+
+fn normalize_openai_strict_schema(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if map.get("type").is_some_and(is_object_type) {
+                map.insert("additionalProperties".to_owned(), Value::Bool(false));
+                let required = map
+                    .get("properties")
+                    .and_then(Value::as_object)
+                    .map(|properties| properties.keys().cloned().map(Value::String).collect())
+                    .unwrap_or_default();
+                map.insert("required".to_owned(), Value::Array(required));
+            }
+
+            for child in map.values_mut() {
+                normalize_openai_strict_schema(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                normalize_openai_strict_schema(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_object_type(value: &Value) -> bool {
+    match value {
+        Value::String(schema_type) => schema_type == "object",
+        Value::Array(schema_types) => schema_types
+            .iter()
+            .any(|schema_type| schema_type.as_str() == Some("object")),
+        _ => false,
+    }
+}
+
 #[derive(Serialize)]
-struct OpenAiResponsesRequest {
+struct OpenAiRequest {
     model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     previous_response_id: Option<String>,
@@ -257,10 +315,27 @@ struct OpenAiResponsesRequest {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<OpenAiTool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<OpenAiTextConfig>,
+    parallel_tool_calls: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_output_tokens: Option<u32>,
     stream: bool,
+}
+
+#[derive(Serialize)]
+struct OpenAiTextConfig {
+    format: OpenAiTextFormat,
+}
+
+#[derive(Serialize)]
+struct OpenAiTextFormat {
+    #[serde(rename = "type")]
+    format_type: &'static str,
+    name: String,
+    strict: bool,
+    schema: Value,
 }
 
 #[derive(Serialize)]
@@ -304,7 +379,7 @@ struct OpenAiTool {
 }
 
 #[derive(Deserialize)]
-struct OpenAiResponsesResponse {
+struct OpenAiResponse {
     id: Option<String>,
     model: Option<String>,
     store: Option<bool>,
@@ -344,6 +419,7 @@ enum OpenAiResponseOutput {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum OpenAiResponseContent {
     OutputText { text: String },
+    Refusal { refusal: String },
 }
 
 #[derive(Deserialize)]

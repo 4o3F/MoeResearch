@@ -44,6 +44,8 @@ Use exactly these enum values:
 - `confidence`: `low`, `medium`, `high`
 - `source_type`: `official`, `documentation`, `news`, `blog`, `forum`, `repository`, `unknown`
 
+For every enum field, output exactly one value from the schema's allowed enum list. Do not invent synonyms, category names, or provider/source-specific labels. For `source_type`, choose one of `official`, `documentation`, `news`, `blog`, `forum`, `repository`, or `unknown`; when no allowed value clearly fits, use `unknown`.
+
 Only `aspect_report.findings` may contain objects with `claim`, `finding_type`, `importance`, `confidence`, `evidence_refs`, and `contradicted_by`.
 The fields `assumptions`, `risks`, `counterarguments`, and `limitations` must be arrays of strings, not arrays of objects.
 

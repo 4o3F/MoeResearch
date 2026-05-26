@@ -10,7 +10,7 @@ use lapis_core::schema::model::{
 };
 use lapis_core::schema::network::NetworkResponse;
 use lapis_core::schema::policy::ModelPolicy;
-use serde_json::json;
+use serde_json::{Value, json};
 
 struct StaticProvider(&'static str);
 
@@ -445,6 +445,35 @@ async fn ignores_reasoning_output_items() {
 }
 
 #[tokio::test]
+async fn structured_output_refusal_returns_schema_validation_error() {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [{
+                "type": "message",
+                "content": [{
+                    "type": "refusal",
+                    "refusal": "I cannot comply."
+                }]
+            }]
+        }),
+    }]));
+    let provider = provider(network);
+
+    let error = provider
+        .complete(request_with_input(vec![user_message("hi")]))
+        .await
+        .expect_err("refusal error");
+
+    assert!(matches!(
+        error,
+        Error::SchemaValidationFailed { ref message } if message == "openai structured output was refused"
+    ));
+    assert!(!error.retryable());
+}
+
+#[tokio::test]
 async fn malformed_tool_call_arguments_returns_error() {
     let network = Arc::new(MockNetworkClient::new([NetworkResponse {
         status: 200,
@@ -529,15 +558,143 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
     let body = request.body.as_ref().expect("request body");
     assert_eq!(body["model"], "configured-model");
     assert_eq!(body["stream"], false);
+    assert_eq!(body["parallel_tool_calls"], false);
     assert_eq!(body["input"][0]["role"], "user");
     assert_eq!(body["input"][0]["content"], "hi");
     assert_eq!(body["tools"][0]["type"], "function");
     assert_eq!(body["tools"][0]["name"], "search");
     assert_eq!(body["tools"][0]["description"], "Search the web");
     assert_eq!(body["tools"][0]["parameters"]["type"], "object");
+    assert_eq!(body["text"]["format"]["type"], "json_schema");
+    assert_eq!(body["text"]["format"]["name"], "aspect_research_result_v1");
+    assert_eq!(body["text"]["format"]["strict"], true);
+    assert!(
+        body["tools"]
+            .as_array()
+            .is_some_and(|tools| !tools.is_empty()),
+        "tools and text.format must coexist in OpenAI request body"
+    );
     let temperature = body["temperature"].as_f64().expect("temperature");
     assert!((temperature - 0.2).abs() < 0.000_001);
     assert_eq!(body["max_output_tokens"], 128);
+}
+
+#[tokio::test]
+async fn openai_structured_output_schema_restricts_source_type_enum() {
+    let body = captured_openai_request_body().await;
+    let schema = openai_text_schema(&body);
+    let source_type = schema_def(schema, "SourceType");
+    let enum_values = source_type["enum"]
+        .as_array()
+        .expect("SourceType enum")
+        .iter()
+        .map(|value| value.as_str().expect("enum string"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        enum_values,
+        vec![
+            "official",
+            "documentation",
+            "news",
+            "blog",
+            "forum",
+            "repository",
+            "unknown"
+        ]
+    );
+    assert!(!enum_values.contains(&"discussion"));
+}
+
+#[tokio::test]
+async fn openai_structured_output_schema_closes_objects_for_strict_mode() {
+    let body = captured_openai_request_body().await;
+    let schema = openai_text_schema(&body);
+
+    assert_eq!(schema["additionalProperties"], false);
+    assert_eq!(
+        schema_def(schema, "Evidence")["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        schema_def(schema, "AspectReport")["additionalProperties"],
+        false
+    );
+}
+
+#[tokio::test]
+async fn openai_structured_output_schema_requires_nullable_evidence_fields() {
+    let body = captured_openai_request_body().await;
+    let schema = openai_text_schema(&body);
+    let evidence = schema_def(schema, "Evidence");
+    let required = evidence["required"]
+        .as_array()
+        .expect("Evidence required fields")
+        .iter()
+        .map(|value| value.as_str().expect("required string"))
+        .collect::<Vec<_>>();
+
+    assert!(required.contains(&"url"));
+    assert!(required.contains(&"published_at"));
+    assert!(schema_allows_null(&evidence["properties"]["url"]));
+    assert!(schema_allows_null(&evidence["properties"]["published_at"]));
+}
+
+async fn captured_openai_request_body() -> Value {
+    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "output": [{
+                "type": "message",
+                "content": [{
+                    "type": "output_text",
+                    "text": "ok"
+                }]
+            }]
+        }),
+    }]));
+    let provider = provider(network.clone());
+
+    provider
+        .complete(request_with_input(vec![user_message("hi")]))
+        .await
+        .expect("model response");
+
+    network.requests()[0].body.clone().expect("request body")
+}
+
+fn openai_text_schema(body: &Value) -> &Value {
+    &body["text"]["format"]["schema"]
+}
+
+fn schema_def<'a>(schema: &'a Value, name: &str) -> &'a Value {
+    schema["$defs"]
+        .get(name)
+        .unwrap_or_else(|| panic!("missing schema definition {name}"))
+}
+
+fn schema_allows_null(schema: &Value) -> bool {
+    schema_type_allows_null(schema)
+        || schema_keyword_allows_null(schema, "anyOf")
+        || schema_keyword_allows_null(schema, "oneOf")
+}
+
+fn schema_keyword_allows_null(schema: &Value, keyword: &str) -> bool {
+    schema
+        .get(keyword)
+        .and_then(Value::as_array)
+        .is_some_and(|items| items.iter().any(schema_allows_null))
+}
+
+fn schema_type_allows_null(schema: &Value) -> bool {
+    match schema.get("type") {
+        Some(Value::String(schema_type)) => schema_type == "null",
+        Some(Value::Array(schema_types)) => schema_types
+            .iter()
+            .any(|schema_type| schema_type.as_str() == Some("null")),
+        _ => false,
+    }
 }
 
 #[tokio::test]
