@@ -1,12 +1,3 @@
-use crate::error::Result;
-use crate::schema::model::{ModelRequest, ModelResponse};
+//! Re-export of model providers owned by `lapis-model`.
 
-mod openai;
-
-pub use openai::OpenAiProvider;
-
-#[async_trait::async_trait]
-pub trait ModelProvider: Send + Sync {
-    fn name(&self) -> &'static str;
-    async fn complete(&self, request: ModelRequest) -> Result<ModelResponse>;
-}
+pub use lapis_model::{ModelProvider, OpenAiProvider};

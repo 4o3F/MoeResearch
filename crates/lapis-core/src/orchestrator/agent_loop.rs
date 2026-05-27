@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use schemars::schema_for;
 use serde_json::json;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -11,7 +12,8 @@ use crate::orchestrator::tool_policy::ToolPolicyGuard;
 use crate::orchestrator::validator::OutputValidator;
 use crate::schema::limit::{DurationLimitMs, Limit};
 use crate::schema::model::{
-    ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse, ModelToolCall, ModelToolOutput,
+    JsonSchemaFormat, ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse,
+    ModelResponseFormat, ModelToolCall, ModelToolOutput,
 };
 use crate::schema::policy::SearchPolicy;
 use crate::schema::report::{
@@ -546,6 +548,7 @@ impl<'a> AgentRuntime<'a> {
             previous_response_id,
             input,
             tools,
+            response_format: Some(aspect_response_format()),
             temperature: self.request.model_policy.temperature,
             max_tokens: self.request.model_policy.max_tokens,
         };
@@ -709,6 +712,15 @@ fn now_rfc3339() -> String {
     OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+}
+
+fn aspect_response_format() -> ModelResponseFormat {
+    ModelResponseFormat::JsonSchema(JsonSchemaFormat {
+        name: "aspect_research_result_v1".to_owned(),
+        strict: true,
+        schema: serde_json::to_value(schema_for!(AspectResearchResult))
+            .expect("AspectResearchResult schema serializes"),
+    })
 }
 
 fn add_token_usage(total: &mut Option<TokenUsage>, delta: Option<TokenUsage>) {

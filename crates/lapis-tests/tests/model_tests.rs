@@ -7,10 +7,13 @@ use lapis_core::error::{Error, Result};
 use lapis_core::model::provider::{ModelProvider, OpenAiProvider};
 use lapis_core::model::service::ModelService;
 use lapis_core::schema::model::{
-    ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse, ModelTool, ModelToolCall,
+    JsonSchemaFormat, ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse,
+    ModelResponseFormat, ModelTool, ModelToolCall,
 };
 use lapis_core::schema::network::NetworkResponse;
 use lapis_core::schema::policy::ModelPolicy;
+use lapis_core::schema::report::AspectResearchResult;
+use schemars::schema_for;
 use serde_json::{Value, json};
 use support::network::MockNetworkClient;
 
@@ -66,6 +69,7 @@ fn request(provider: &str) -> ModelRequest {
         previous_response_id: None,
         input: vec![user_message("hello")],
         tools: vec![],
+        response_format: None,
         temperature: None,
         max_tokens: None,
     }
@@ -88,9 +92,19 @@ fn request_with_input(input: Vec<ModelInputItem>) -> ModelRequest {
         previous_response_id: None,
         input,
         tools: vec![],
+        response_format: Some(aspect_response_format()),
         temperature: None,
         max_tokens: None,
     }
+}
+
+fn aspect_response_format() -> ModelResponseFormat {
+    ModelResponseFormat::JsonSchema(JsonSchemaFormat {
+        name: "aspect_research_result_v1".to_owned(),
+        strict: true,
+        schema: serde_json::to_value(schema_for!(AspectResearchResult))
+            .expect("AspectResearchResult schema serializes"),
+    })
 }
 
 fn user_message(content: &str) -> ModelInputItem {
@@ -225,6 +239,43 @@ async fn rejects_empty_model_messages_before_dispatch() {
         .complete(invalid, &policy)
         .await
         .expect_err("invalid model request");
+
+    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+    assert!(seen.lock().expect("request lock").is_none());
+}
+
+#[tokio::test]
+async fn rejects_invalid_json_schema_response_format_before_dispatch() {
+    let seen = Arc::new(std::sync::Mutex::new(None));
+    let mut service = ModelService::new();
+    service.register(CapturingProvider { seen: seen.clone() });
+    let policy = model_policy(&["alpha"]);
+    let mut invalid = request("alpha");
+    invalid.response_format = Some(ModelResponseFormat::JsonSchema(JsonSchemaFormat {
+        name: " ".to_owned(),
+        strict: true,
+        schema: serde_json::json!({"type": "object"}),
+    }));
+
+    let error = service
+        .complete(invalid, &policy)
+        .await
+        .expect_err("invalid response format");
+
+    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+    assert!(seen.lock().expect("request lock").is_none());
+
+    let mut invalid = request("alpha");
+    invalid.response_format = Some(ModelResponseFormat::JsonSchema(JsonSchemaFormat {
+        name: "result".to_owned(),
+        strict: true,
+        schema: serde_json::json!(true),
+    }));
+
+    let error = service
+        .complete(invalid, &policy)
+        .await
+        .expect_err("invalid response format");
 
     assert!(matches!(error, Error::SchemaValidationFailed { .. }));
     assert!(seen.lock().expect("request lock").is_none());

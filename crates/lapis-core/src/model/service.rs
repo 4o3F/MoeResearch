@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
-use crate::model::provider::{ModelProvider, OpenAiProvider};
+use crate::model::provider::OpenAiProvider;
 use crate::net::NetworkClient;
 use crate::schema::config::LapisConfig;
 use crate::schema::model::{ModelRequest, ModelResponse};
@@ -10,7 +9,7 @@ use crate::schema::policy::ModelPolicy;
 
 #[derive(Default)]
 pub struct ModelService {
-    providers: BTreeMap<String, Arc<dyn ModelProvider>>,
+    inner: lapis_model::ModelService,
 }
 
 impl ModelService {
@@ -20,14 +19,13 @@ impl ModelService {
 
     pub fn register<P>(&mut self, provider: P)
     where
-        P: ModelProvider + 'static,
+        P: lapis_model::ModelProvider + 'static,
     {
-        self.providers
-            .insert(provider.name().to_owned(), Arc::new(provider));
+        self.inner.register(provider);
     }
 
     pub fn provider_names(&self) -> Vec<String> {
-        self.providers.keys().cloned().collect()
+        self.inner.provider_names()
     }
 
     pub async fn complete(
@@ -36,14 +34,6 @@ impl ModelService {
         policy: &ModelPolicy,
     ) -> Result<ModelResponse> {
         let provider_name = selected_provider(&request, policy)?;
-        let provider =
-            self.providers
-                .get(&provider_name)
-                .ok_or_else(|| Error::ProviderUnavailable {
-                    provider: provider_name.clone(),
-                    message: "model provider is not configured".to_owned(),
-                })?;
-
         request.provider = provider_name;
         if request.temperature.is_none() {
             request.temperature = policy.temperature;
@@ -51,8 +41,7 @@ impl ModelService {
         if request.max_tokens.is_none() {
             request.max_tokens = policy.max_tokens;
         }
-        request.validate()?;
-        provider.complete(request).await
+        self.inner.complete(request).await
     }
 }
 

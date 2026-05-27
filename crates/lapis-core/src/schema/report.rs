@@ -98,75 +98,7 @@ pub struct AspectFailure {
     pub retryable: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
-pub struct TokenUsage {
-    pub input_tokens: Option<u64>,
-    pub output_tokens: Option<u64>,
-    pub total_tokens: Option<u64>,
-}
-
-impl TokenUsage {
-    /// Zero baseline for cumulative statistics: every dimension is unobserved.
-    #[must_use]
-    pub fn zero() -> Self {
-        Self {
-            input_tokens: None,
-            output_tokens: None,
-            total_tokens: None,
-        }
-    }
-
-    /// Returns the best available total-token count for this usage record.
-    ///
-    /// Prefers the provider-reported `total_tokens`; falls back to
-    /// `input_tokens + output_tokens` (saturating) when only the components
-    /// are present. Returns `None` when no usage field is reported, so the
-    /// caller can treat the call as untracked rather than zero.
-    #[must_use]
-    pub fn total_or_sum(&self) -> Option<u64> {
-        self.total_tokens.or_else(|| {
-            self.input_tokens
-                .zip(self.output_tokens)
-                .map(|(i, o)| i.saturating_add(o))
-        })
-    }
-
-    /// Combines two optional usage records dimension by dimension.
-    ///
-    /// Saturating addition prevents overflow on long-running runs; `None`
-    /// component dimensions in either operand pass through unchanged so
-    /// providers that report only `total_tokens` are not forced to synthesize
-    /// component counters. The merged `total_tokens` is derived from each
-    /// operand's `total_or_sum()` so that mixing a "total-only" report with a
-    /// later "components-only" report does not silently drop the components
-    /// (which would otherwise let `ResearchBudget::max_tokens` be bypassed).
-    #[must_use]
-    pub fn merge(left: Option<Self>, right: Option<Self>) -> Option<Self> {
-        match (left, right) {
-            (None, None) => None,
-            (Some(usage), None) | (None, Some(usage)) => Some(usage),
-            (Some(left), Some(right)) => {
-                let total_tokens = sum_optional_tokens(left.total_or_sum(), right.total_or_sum());
-                Some(Self {
-                    input_tokens: sum_optional_tokens(left.input_tokens, right.input_tokens),
-                    output_tokens: sum_optional_tokens(left.output_tokens, right.output_tokens),
-                    total_tokens,
-                })
-            }
-        }
-    }
-}
-
-/// Saturating addition of optional token components, preserving observed
-/// values when only one side is reported.
-fn sum_optional_tokens(left: Option<u64>, right: Option<u64>) -> Option<u64> {
-    match (left, right) {
-        (None, None) => None,
-        (Some(value), None) | (None, Some(value)) => Some(value),
-        (Some(left), Some(right)) => Some(left.saturating_add(right)),
-    }
-}
-
+pub use lapis_model::TokenUsage;
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct AgentBudgetUsage {
     pub turns_used: usize,

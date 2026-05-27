@@ -37,6 +37,7 @@ fn minimal_request() -> ModelRequest {
         previous_response_id: None,
         input: vec![ModelInputItem::message(ModelMessageRole::User, "hello")],
         tools: Vec::new(),
+        response_format: None,
         temperature: None,
         max_tokens: None,
     }
