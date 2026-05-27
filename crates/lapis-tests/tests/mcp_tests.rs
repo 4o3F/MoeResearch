@@ -22,8 +22,9 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::schemars::schema_for;
 use serde_json::json;
 use support::research::{
-    Services, aspect_field, aspect_request, deep_request, first_evidence_from_tool_output,
-    medium_result_json, services, static_search_service, tool_response, unlimited_budget_config,
+    Services, aspect_field, aspect_request, deep_request, final_response,
+    first_evidence_from_tool_output, medium_result_json, services, static_search_service,
+    tool_response, unlimited_budget_config,
 };
 
 struct SequenceModelProvider {
@@ -377,6 +378,71 @@ fn error_retryability_mapping_is_stable() {
     );
 }
 
+/// `SchemaValidationFailed.message` is public-safe validator output and MUST
+/// survive into the MCP `ToolError.message`, while raw JSON conversion errors
+/// remain generic because they may include parser/provider details.
+#[test]
+fn schema_validation_failed_preserves_message_but_json_stays_generic() {
+    let validation_message = concat!(
+        "final output failed validation: mutated_evidence_provenance ",
+        "at evidence[0].snippet (mismatched fields: snippet, summary)"
+    );
+    let validation_error = Error::SchemaValidationFailed {
+        message: validation_message.to_owned(),
+    }
+    .to_tool_error(None, Vec::new());
+
+    assert_eq!(validation_error.code, ToolErrorCode::SchemaValidationFailed);
+    assert_eq!(validation_error.message, validation_message);
+
+    let json_source = serde_json::from_str::<serde_json::Value>("{not json")
+        .expect_err("malformed JSON must fail");
+    let json_error = Error::Json {
+        source: json_source,
+    }
+    .to_tool_error(None, Vec::new());
+
+    assert_eq!(json_error.code, ToolErrorCode::SchemaValidationFailed);
+    assert_eq!(json_error.message, "schema validation failed");
+}
+
+#[tokio::test]
+async fn aspect_research_schema_failure_envelope_preserves_validator_message() {
+    let invalid_result = json!({
+        "aspect_report": {
+            "aspect_id": "wrong-aspect",
+            "aspect_name": "Aspect 1",
+            "question": "Question 1?",
+            "scope": ["scope"],
+            "findings": [],
+            "assumptions": [],
+            "risks": [],
+            "counterarguments": [],
+            "open_questions": [],
+            "confidence": "medium",
+            "limitations": []
+        },
+        "evidence": []
+    })
+    .to_string();
+
+    let envelope = mcp_server(sequence_services(vec![final_response(invalid_result)]))
+        .aspect_research(Parameters(aspect_request()))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::SchemaValidationFailed);
+    assert!(error.message.contains("aspect_id_mismatch"));
+    assert!(error.message.contains("aspect_report.aspect_id"));
+    assert!(
+        error
+            .message
+            .contains("report aspect_id does not match requested aspect")
+    );
+}
+
 /// `ToolErrorCode::as_str` MUST emit the same snake_case string that serde
 /// produces under `#[serde(rename_all = "snake_case")]`, so external clients
 /// can rely on either path to dispatch on the same identifier.
@@ -494,9 +560,9 @@ async fn tool_envelope_failed_deep_research_aspect_id_is_none() {
     assert!(error.failed_aspects.is_empty());
 }
 
-/// `ToolError.message` MUST be a stable, redacted summary; detailed context
-/// (provider names, request bodies, header values, caller-supplied schema
-/// versions, paths) belongs in `tracing`, never in the public envelope.
+/// `ToolError.message` MUST not leak provider names, request bodies, header
+/// values, caller-supplied schema versions, or host file paths. Curated schema
+/// validation diagnostics are tested separately.
 ///
 /// Covers the three known leak paths: `HttpTransport.message`,
 /// `ProviderUnavailable.provider`, and `UnsupportedSchemaVersion.version`.

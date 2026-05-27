@@ -66,16 +66,17 @@ pub enum ToolStatus {
 
 /// Public-facing error payload for the MCP envelope.
 ///
-/// `message` is intentionally a stable, redacted summary; detailed context
-/// (file paths, raw provider bodies, header values) MUST be emitted through
-/// `tracing` instead of into this field, to avoid leaking secrets or host
-/// implementation details to external clients.
+/// `message` is intentionally public-safe. Most variants use a stable,
+/// redacted summary; `SchemaValidationFailed` may include curated validator
+/// diagnostics such as issue code, JSON path, and human-readable message.
+/// Raw provider bodies, host file paths, header values, and secrets stay in
+/// `tracing`.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ToolError {
     /// Stable `snake_case` error code suitable for client-side dispatch.
     pub code: ToolErrorCode,
-    /// Generic user-facing summary. Never contains secrets, paths, or raw
-    /// provider responses.
+    /// User-facing message. Never contains secrets, host paths, or raw provider
+    /// responses; schema validation failures may include JSON paths.
     pub message: String,
     /// Aspect identifier when the failure can be attributed to a single
     /// aspect (e.g. `aspect_research` failures). `None` for top-level

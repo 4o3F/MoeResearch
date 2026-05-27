@@ -1,10 +1,10 @@
 //! Lapis-core error type and conversions to the public MCP error envelope.
 //!
 //! `Error` is the single error type returned by all internal APIs. The mapping
-//! into the public `ToolError` payload is intentionally narrow: detailed
-//! context (paths, raw bodies, header values) stays in `tracing` records, while
-//! the `ToolError.message` field carries a stable, redacted summary suitable
-//! for external clients.
+//! into the public `ToolError` payload is intentionally narrow: raw provider
+//! bodies, host paths, header values, and secrets stay in `tracing` records.
+//! `SchemaValidationFailed.message` is curated validator output and may carry
+//! the offending validation code, JSON path, and human-readable diagnostic.
 
 use std::path::PathBuf;
 
@@ -99,6 +99,7 @@ pub enum Error {
 
     /// Schema validation failed for a provider response or for an internal
     /// payload. Maps to `ToolErrorCode::SchemaValidationFailed`. Not retryable.
+    /// The message is exposed in the public MCP envelope, so keep it public-safe.
     #[snafu(display("schema validation failed: {message}"))]
     SchemaValidationFailed { message: String },
 
@@ -176,11 +177,12 @@ impl Error {
         }
     }
 
-    /// Returns a stable, redacted, user-facing summary suitable for the
+    /// Returns a public-safe, user-facing message suitable for the
     /// `ToolError.message` field of an MCP envelope.
     ///
-    /// Detailed context (file paths, raw provider bodies, header values, etc.)
-    /// MUST be emitted through `tracing` instead, never through this string.
+    /// `SchemaValidationFailed.message` is curated validator output. Raw
+    /// provider bodies, host paths, header values, and secrets MUST be emitted
+    /// through `tracing` instead, never through this string.
     /// Adding a new variant requires extending this match arm so the public
     /// summary stays curated.
     #[must_use]
@@ -200,9 +202,8 @@ impl Error {
             Self::BudgetExceeded { message } => message.clone(),
             Self::ToolPolicyDenied { .. } => "tool policy denied request".to_owned(),
             Self::UnsupportedSchemaVersion { .. } => "unsupported schema version".to_owned(),
-            Self::SchemaValidationFailed { .. } | Self::Json { .. } => {
-                "schema validation failed".to_owned()
-            }
+            Self::SchemaValidationFailed { message } => message.clone(),
+            Self::Json { .. } => "schema validation failed".to_owned(),
             Self::Timeout { .. } => "operation timed out".to_owned(),
             Self::PartialResult { .. } => "partial result".to_owned(),
             Self::LoggingInit { .. } | Self::Internal { .. } => "internal error".to_owned(),
