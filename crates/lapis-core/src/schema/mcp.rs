@@ -8,6 +8,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::schema::report::AspectFailure;
+
 /// Stable MCP response envelope returned by every Lapis tool.
 ///
 /// The shape is part of the public contract documented in
@@ -82,6 +84,9 @@ pub struct ToolError {
     /// Whether the caller can retry the same request with a reasonable
     /// expectation of a different outcome (e.g. transient network errors).
     pub retryable: bool,
+    /// Structured per-aspect diagnostics for terminal `deep_research` failures.
+    /// Empty for single-aspect tools and top-level failures.
+    pub failed_aspects: Vec<AspectFailure>,
 }
 
 /// Stable, client-visible error code namespace.

@@ -7,7 +7,7 @@ use crate::orchestrator::workflow::{
     aspect_research as run_aspect_research, deep_research as run_deep_research,
 };
 use crate::schema::mcp::{ToolEnvelope, ToolStatus};
-use crate::schema::report::{AspectResearchResult, DeepResearchResult};
+use crate::schema::report::{AspectFailure, AspectResearchResult, DeepResearchResult};
 use crate::schema::research::{AspectResearchRequest, DeepResearchRequest};
 
 #[tool_router(server_handler)]
@@ -68,6 +68,7 @@ impl LapisMcpServer {
                         request_id,
                         Some(aspect_id.clone()),
                         &failure.error,
+                        Vec::new(),
                     )
                 }
             },
@@ -108,17 +109,24 @@ impl LapisMcpServer {
                     );
                     deep_success_envelope(schema_version, request_id, result)
                 }
-                Err(error) => {
+                Err(failure) => {
                     tracing::warn!(
                         request_id = %request_id,
                         tool = "deep_research",
-                        error_code = error.code().as_str(),
-                        error_detail = %error,
-                        retryable = error.retryable(),
+                        error_code = failure.error.code().as_str(),
+                        error_detail = %failure.error,
+                        retryable = failure.error.retryable(),
+                        failed_aspects = failure.failed_aspects.len(),
                         status = "failed",
                         "MCP tool failed"
                     );
-                    failed_envelope(schema_version, request_id, None, &error)
+                    failed_envelope(
+                        schema_version,
+                        request_id,
+                        None,
+                        &failure.error,
+                        failure.failed_aspects,
+                    )
                 }
             },
         )
@@ -176,6 +184,7 @@ fn failed_envelope<T>(
     request_id: String,
     aspect_id: Option<String>,
     error: &Error,
+    failed_aspects: Vec<AspectFailure>,
 ) -> ToolEnvelope<T> {
     ToolEnvelope {
         schema_version,
@@ -183,6 +192,6 @@ fn failed_envelope<T>(
         run_id: None,
         status: ToolStatus::Failed,
         data: None,
-        error: Some(error.to_tool_error_with_aspect(aspect_id)),
+        error: Some(error.to_tool_error(aspect_id, failed_aspects)),
     }
 }

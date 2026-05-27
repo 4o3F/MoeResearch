@@ -11,7 +11,6 @@ use lapis_core::error::{Error, Result};
 use lapis_core::mcp::LapisMcpServer;
 use lapis_core::model::provider::ModelProvider;
 use lapis_core::model::service::ModelService;
-use lapis_core::orchestrator::workflow::deep_research;
 use lapis_core::schema::budget::{AgentBudget, BudgetConfig, ResearchBudget};
 use lapis_core::schema::limit::Limit;
 use lapis_core::schema::mcp::{ToolEnvelope, ToolErrorCode, ToolStatus};
@@ -20,8 +19,8 @@ use lapis_core::schema::policy::{
     EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
 };
 use lapis_core::schema::report::{
-    AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
-    OpenQuestion,
+    AspectFailure, AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType,
+    Importance, OpenQuestion,
 };
 use lapis_core::schema::research::{
     AspectResearchRequest, AspectResearchTask, AspectSpec, DeepResearchRequest, ResearchContext,
@@ -467,6 +466,7 @@ fn tool_envelope_schema_omits_trace_payloads() {
     let schema_json = schema.to_string();
     assert!(!schema_json.contains("PartialTrace"));
     assert!(!schema_json.contains("TraceSummary"));
+    assert!(schema_json.contains("failed_aspects"));
 }
 
 #[tokio::test]
@@ -502,6 +502,7 @@ async fn aspect_research_invalid_input_returns_failed_envelope() {
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::InvalidInput);
     assert!(!error.retryable);
+    assert!(error.failed_aspects.is_empty());
 }
 
 #[tokio::test]
@@ -518,10 +519,9 @@ async fn aspect_research_budget_failure_envelope_returns_tool_error() {
 
     assert_eq!(envelope.status, ToolStatus::Failed);
     assert!(envelope.data.is_none());
-    assert_eq!(
-        envelope.error.expect("tool error").code,
-        ToolErrorCode::BudgetExceeded
-    );
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::BudgetExceeded);
+    assert!(error.failed_aspects.is_empty());
     assert!(envelope.run_id.is_none());
     assert_eq!(search_calls.load(Ordering::SeqCst), 2);
 }
@@ -565,25 +565,80 @@ async fn deep_research_partial_success_returns_partial_envelope() {
 
 #[tokio::test]
 async fn deep_research_all_failed_returns_failed_envelope_with_tool_error() {
-    let request = deep_request(2);
     let envelope = mcp_server(services(&["aspect-1", "aspect-2"]))
-        .deep_research(Parameters(request.clone()))
+        .deep_research(Parameters(deep_request(2)))
         .await
         .0;
-    let expected_services = services(&["aspect-1", "aspect-2"]);
-    let expected_error = deep_research(
-        request,
-        &expected_services.model,
-        &expected_services.search,
-        &unlimited_budget_config(),
-    )
-    .await
-    .expect_err("deep error")
-    .to_tool_error();
 
     assert_eq!(envelope.status, ToolStatus::Failed);
     assert!(envelope.data.is_none());
-    assert_eq!(envelope.error.expect("tool error"), expected_error);
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::PartialResult);
+    assert!(error.aspect_id.is_none());
+    assert_eq!(error.failed_aspects.len(), 2);
+    assert_eq!(error.failed_aspects[0].aspect_id, "aspect-1");
+    assert_eq!(error.failed_aspects[1].aspect_id, "aspect-2");
+    assert_eq!(
+        error.failed_aspects[0].error_code,
+        "schema_validation_failed"
+    );
+    assert_eq!(
+        error.failed_aspects[1].error_code,
+        "schema_validation_failed"
+    );
+}
+
+#[tokio::test]
+async fn deep_research_duplicate_aspect_ids_is_top_level_invalid_input() {
+    let mut request = deep_request(2);
+    request.aspect_tasks[1].aspect.aspect_id = request.aspect_tasks[0].aspect.aspect_id.clone();
+
+    let envelope = mcp_server(services(&[]))
+        .deep_research(Parameters(request))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::InvalidInput);
+    assert!(error.failed_aspects.is_empty());
+}
+
+#[tokio::test]
+async fn deep_research_all_agent_budget_failures_include_failed_aspects() {
+    let mut request = deep_request(2);
+    request.budget.max_concurrent_agents = Limit::limited(1);
+    for task in &mut request.aspect_tasks {
+        task.budget.max_search_calls = Limit::limited(0);
+    }
+    let services = services(&[]);
+    let model_calls = services.model_calls.clone();
+    let search_calls = services.search_calls.clone();
+
+    let envelope = mcp_server(services)
+        .deep_research(Parameters(request))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    assert!(envelope.data.is_none());
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::PartialResult);
+    assert_eq!(error.failed_aspects.len(), 2);
+    assert!(
+        error
+            .failed_aspects
+            .iter()
+            .all(|failure| failure.error_code == "budget_exceeded")
+    );
+    assert!(
+        error
+            .failed_aspects
+            .iter()
+            .all(|failure| failure.message == "agent search call budget exhausted")
+    );
+    assert_eq!(model_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]
@@ -592,14 +647,14 @@ fn error_retryability_mapping_is_stable() {
         Error::NetworkFailed {
             message: "temporary network failure".to_owned(),
         }
-        .to_tool_error()
+        .to_tool_error(None, Vec::new())
         .retryable
     );
     assert!(
         Error::Timeout {
             message: "deadline exceeded".to_owned(),
         }
-        .to_tool_error()
+        .to_tool_error(None, Vec::new())
         .retryable
     );
     assert!(
@@ -608,14 +663,50 @@ fn error_retryability_mapping_is_stable() {
             message: "service unavailable".to_owned(),
             retryable: true,
         }
-        .to_tool_error()
+        .to_tool_error(None, Vec::new())
         .retryable
     );
     assert!(
         !Error::InvalidInput {
             message: "missing question".to_owned(),
         }
-        .to_tool_error()
+        .to_tool_error(None, Vec::new())
+        .retryable
+    );
+
+    let retryable_failures = vec![AspectFailure {
+        aspect_id: "aspect-1".to_owned(),
+        error_code: "network_failed".to_owned(),
+        message: "network request failed".to_owned(),
+        retryable: true,
+    }];
+    assert!(
+        Error::PartialResult {
+            message: "all aspects failed".to_owned(),
+        }
+        .to_tool_error(None, retryable_failures)
+        .retryable
+    );
+
+    let mixed_failures = vec![
+        AspectFailure {
+            aspect_id: "aspect-1".to_owned(),
+            error_code: "network_failed".to_owned(),
+            message: "network request failed".to_owned(),
+            retryable: true,
+        },
+        AspectFailure {
+            aspect_id: "aspect-2".to_owned(),
+            error_code: "budget_exceeded".to_owned(),
+            message: "agent search call budget exhausted".to_owned(),
+            retryable: false,
+        },
+    ];
+    assert!(
+        !Error::PartialResult {
+            message: "all aspects failed".to_owned(),
+        }
+        .to_tool_error(None, mixed_failures)
         .retryable
     );
 }
@@ -716,6 +807,7 @@ async fn tool_envelope_failed_aspect_research_carries_aspect_id() {
         error.aspect_id.as_deref(),
         Some(expected_aspect_id.as_str())
     );
+    assert!(error.failed_aspects.is_empty());
 }
 
 /// Top-level deep-research failures cannot be tied to a single aspect, so
@@ -732,6 +824,7 @@ async fn tool_envelope_failed_deep_research_aspect_id_is_none() {
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::UnsupportedSchemaVersion);
     assert!(error.aspect_id.is_none());
+    assert!(error.failed_aspects.is_empty());
 }
 
 /// `ToolError.message` MUST be a stable, redacted summary; detailed context
@@ -780,7 +873,7 @@ fn tool_envelope_message_redacts_provider_path_and_api_key() {
     ];
 
     for (error, expected_code, forbidden_fragments) in cases {
-        let tool_error = error.to_tool_error();
+        let tool_error = error.to_tool_error(None, Vec::new());
         assert_eq!(tool_error.code, expected_code);
         for forbidden in forbidden_fragments {
             assert!(
@@ -806,6 +899,7 @@ async fn unsupported_schema_version_returns_dedicated_code_aspect_research() {
     assert_eq!(envelope.status, ToolStatus::Failed);
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::UnsupportedSchemaVersion);
+    assert!(error.failed_aspects.is_empty());
 }
 
 /// Same dedicated-code guarantee for the deep_research entry point.
@@ -820,6 +914,7 @@ async fn unsupported_schema_version_returns_dedicated_code_deep_research() {
     assert_eq!(envelope.status, ToolStatus::Failed);
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::UnsupportedSchemaVersion);
+    assert!(error.failed_aspects.is_empty());
 }
 
 #[test]

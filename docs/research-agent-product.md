@@ -391,6 +391,13 @@ ToolEnvelope<T>
   - status: ok | partial | failed
   - data: T | null
   - error: ToolError | null
+
+ToolError
+  - code: ToolErrorCode
+  - message: string
+  - aspect_id: string | null
+  - retryable: bool
+  - failed_aspects: AspectFailure[]
 ```
 
 约定：
@@ -399,7 +406,8 @@ ToolEnvelope<T>
 - `status=partial` 用于多 aspect 工作流中部分 aspect 失败但整体仍返回可用结果的场景。
 - `status=failed` 时，`data` 为 `null`，`error` 说明失败原因；运行期 model/search/tool call 诊断通过结构化 `tracing` 日志输出。
 - `run_id` 对 `deep_research` 成功或部分成功结果必填，并与 `DeepResearchResult.run_id` 一致；单 aspect 工具可返回 `null`，调用方应使用 `request_id` 与 `aspect_id` 关联日志。
-- runtime 启动前的校验错误（例如无效输入、schema version 不支持）仅返回稳定 `ToolError`。
+- terminal `deep_research` 若由 aspect failures 聚合导致，顶层 `error.code` 使用 `partial_result`，每个 aspect 的真实 `error_code`、`message` 和 `retryable` 写入 `error.failed_aspects`，顺序与请求中的 `aspect_tasks` 一致。
+- `aspect_research` 失败、runtime 启动前的校验错误（例如无效输入、schema version 不支持）以及纯顶层 deep-research 失败返回稳定 `ToolError`，且 `error.failed_aspects=[]`。
 - Layer 3 对 Layer 2 透明提供标准化搜索结果，包括 query、source title、URL、snippet、summary、provider 和发布时间等字段。不得在 envelope 中返回 secrets、Authorization header、API key、完整 prompt 或 raw provider request/response body。
 
 ### 10.2 Model Agent Orchestrator

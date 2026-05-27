@@ -434,7 +434,7 @@ async fn all_aspects_failed_returns_error() {
     let request = deep_request(2);
     let services = services(&["aspect-1", "aspect-2"]);
 
-    let error = deep_research(
+    let failure = deep_research(
         request,
         &services.model,
         &services.search,
@@ -443,7 +443,14 @@ async fn all_aspects_failed_returns_error() {
     .await
     .expect_err("all failed");
 
-    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+    assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.failed_aspects.len(), 2);
+    assert_eq!(failure.failed_aspects[0].aspect_id, "aspect-1");
+    assert_eq!(failure.failed_aspects[1].aspect_id, "aspect-2");
+    assert_eq!(
+        failure.failed_aspects[0].error_code,
+        "schema_validation_failed"
+    );
 }
 
 #[tokio::test]
@@ -452,7 +459,7 @@ async fn partial_results_disabled_returns_error() {
     request.execution_policy.allow_partial_results = false;
     let services = services(&["aspect-2"]);
 
-    let error = deep_research(
+    let failure = deep_research(
         request,
         &services.model,
         &services.search,
@@ -461,7 +468,9 @@ async fn partial_results_disabled_returns_error() {
     .await
     .expect_err("partial disabled");
 
-    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+    assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.failed_aspects.len(), 1);
+    assert_eq!(failure.failed_aspects[0].aspect_id, "aspect-2");
 }
 
 #[tokio::test]
@@ -471,7 +480,7 @@ async fn fail_fast_stops_before_scheduling_remaining_aspects() {
     request.execution_policy.fail_fast = true;
     let services = services(&["aspect-1"]);
 
-    let error = deep_research(
+    let failure = deep_research(
         request,
         &services.model,
         &services.search,
@@ -480,9 +489,49 @@ async fn fail_fast_stops_before_scheduling_remaining_aspects() {
     .await
     .expect_err("fail fast error");
 
-    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+    assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.failed_aspects.len(), 1);
+    assert_eq!(failure.failed_aspects[0].aspect_id, "aspect-1");
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
     assert_eq!(services.search_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn all_agent_budget_failures_preserve_failed_aspects() {
+    let mut request = deep_request(2);
+    request.budget.max_concurrent_agents = Limit::limited(1);
+    for task in &mut request.aspect_tasks {
+        task.budget.max_search_calls = Limit::limited(0);
+    }
+    let services = services(&[]);
+
+    let failure = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect_err("agent budget failures");
+
+    assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.failed_aspects.len(), 2);
+    assert_eq!(failure.failed_aspects[0].aspect_id, "aspect-1");
+    assert_eq!(failure.failed_aspects[1].aspect_id, "aspect-2");
+    assert!(
+        failure
+            .failed_aspects
+            .iter()
+            .all(|failure| failure.error_code == "budget_exceeded")
+    );
+    assert!(
+        failure
+            .failed_aspects
+            .iter()
+            .all(|failure| failure.message == "agent search call budget exhausted")
+    );
+    assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(services.search_calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
@@ -491,7 +540,7 @@ async fn rejects_plan_exceeding_max_agents() {
     request.budget.max_agents = Limit::limited(2);
     let services = services(&[]);
 
-    let error = deep_research(
+    let failure = deep_research(
         request,
         &services.model,
         &services.search,
@@ -500,7 +549,8 @@ async fn rejects_plan_exceeding_max_agents() {
     .await
     .expect_err("too many aspects");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
+    assert!(failure.failed_aspects.is_empty());
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
 }
 
@@ -516,11 +566,12 @@ async fn rejects_research_budget_above_configured_limits() {
         per_agent: AgentBudget::unlimited(),
     };
 
-    let error = deep_research(request, &services.model, &services.search, &limits)
+    let failure = deep_research(request, &services.model, &services.search, &limits)
         .await
         .expect_err("budget exceeds configured limits");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
+    assert!(failure.failed_aspects.is_empty());
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
 }
 
@@ -536,11 +587,12 @@ async fn rejects_research_concurrency_above_configured_limits() {
         per_agent: AgentBudget::unlimited(),
     };
 
-    let error = deep_research(request, &services.model, &services.search, &limits)
+    let failure = deep_research(request, &services.model, &services.search, &limits)
         .await
         .expect_err("concurrency exceeds configured limits");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
+    assert!(failure.failed_aspects.is_empty());
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
 }
 
@@ -556,11 +608,12 @@ async fn rejects_agent_budget_above_configured_limits() {
         },
     };
 
-    let error = deep_research(request, &services.model, &services.search, &limits)
+    let failure = deep_research(request, &services.model, &services.search, &limits)
         .await
         .expect_err("agent budget exceeds configured limits");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
+    assert!(failure.failed_aspects.is_empty());
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
 }
 
@@ -575,7 +628,7 @@ async fn global_search_budget_blocks_further_calls() {
     request.execution_policy.allow_partial_results = false;
     let services = services(&[]);
 
-    let error = deep_research(
+    let failure = deep_research(
         request,
         &services.model,
         &services.search,
@@ -584,7 +637,9 @@ async fn global_search_budget_blocks_further_calls() {
     .await
     .expect_err("global search budget");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.failed_aspects.len(), 1);
+    assert_eq!(failure.failed_aspects[0].error_code, "budget_exceeded");
     assert_eq!(services.search_calls.load(Ordering::SeqCst), 1);
 }
 
@@ -598,7 +653,7 @@ async fn global_model_budget_stops_before_extra_model_call() {
     request.execution_policy.allow_partial_results = false;
     let services = services(&[]);
 
-    let error = deep_research(
+    let failure = deep_research(
         request,
         &services.model,
         &services.search,
@@ -607,7 +662,9 @@ async fn global_model_budget_stops_before_extra_model_call() {
     .await
     .expect_err("global model budget");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.failed_aspects.len(), 1);
+    assert_eq!(failure.failed_aspects[0].error_code, "budget_exceeded");
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
 }
 
@@ -627,7 +684,7 @@ async fn global_token_budget_stops_when_total_exceeds_max() {
         }),
     );
 
-    let error = deep_research(
+    let failure = deep_research(
         request,
         &services.model,
         &services.search,
@@ -636,7 +693,8 @@ async fn global_token_budget_stops_when_total_exceeds_max() {
     .await
     .expect_err("global token budget");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
+    assert!(failure.failed_aspects.is_empty());
 }
 
 /// When the provider omits `total_tokens`, the guard must fall back to
@@ -656,7 +714,7 @@ async fn global_token_budget_falls_back_to_input_plus_output() {
         }),
     );
 
-    let error = deep_research(
+    let failure = deep_research(
         request,
         &services.model,
         &services.search,
@@ -665,7 +723,8 @@ async fn global_token_budget_falls_back_to_input_plus_output() {
     .await
     .expect_err("global token budget fallback");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
+    assert!(failure.failed_aspects.is_empty());
 }
 
 /// When one model response reports only `total_tokens` and a later one
@@ -740,11 +799,12 @@ async fn request_budget_max_tokens_validated_against_config_cap() {
         per_agent: AgentBudget::unlimited(),
     };
 
-    let error = deep_research(request, &services.model, &services.search, &limits)
+    let failure = deep_research(request, &services.model, &services.search, &limits)
         .await
         .expect_err("token budget exceeds configured cap");
 
-    assert!(matches!(error, Error::BudgetExceeded { .. }));
+    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
+    assert!(failure.failed_aspects.is_empty());
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
 }
 

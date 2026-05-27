@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use snafu::Snafu;
 
 use crate::schema::mcp::{ToolError, ToolErrorCode};
+use crate::schema::report::AspectFailure;
 
 /// Alias for `Result<T, Error>` used throughout lapis-core.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -196,7 +197,7 @@ impl Error {
             Self::HttpStatus { status, .. } => {
                 format!("provider returned HTTP status {status}")
             }
-            Self::BudgetExceeded { .. } => "research budget exceeded".to_owned(),
+            Self::BudgetExceeded { message } => message.clone(),
             Self::ToolPolicyDenied { .. } => "tool policy denied request".to_owned(),
             Self::UnsupportedSchemaVersion { .. } => "unsupported schema version".to_owned(),
             Self::SchemaValidationFailed { .. } | Self::Json { .. } => {
@@ -208,28 +209,27 @@ impl Error {
         }
     }
 
-    /// Builds the public `ToolError` payload, attaching a caller-supplied
-    /// `aspect_id` for single-aspect failure envelopes.
-    ///
-    /// Use `None` for top-level deep-research failures that cannot be tied to
-    /// a single aspect. Detailed error context is intentionally omitted from
-    /// the public payload; it belongs in `tracing` records.
+    /// Builds the public `ToolError` payload with optional aspect attribution
+    /// and terminal deep-research aspect diagnostics.
     #[must_use]
-    pub fn to_tool_error_with_aspect(&self, aspect_id: Option<String>) -> ToolError {
+    pub fn to_tool_error(
+        &self,
+        aspect_id: Option<String>,
+        failed_aspects: Vec<AspectFailure>,
+    ) -> ToolError {
+        let retryable = if self.code() == ToolErrorCode::PartialResult && !failed_aspects.is_empty()
+        {
+            failed_aspects.iter().all(|failure| failure.retryable)
+        } else {
+            self.retryable()
+        };
+
         ToolError {
             code: self.code(),
             message: self.public_message(),
             aspect_id,
-            retryable: self.retryable(),
+            retryable,
+            failed_aspects,
         }
-    }
-
-    /// Convenience wrapper that omits the aspect id.
-    ///
-    /// Prefer `to_tool_error_with_aspect` from `mcp::tools` so per-aspect
-    /// envelopes can preserve the failing aspect id.
-    #[must_use]
-    pub fn to_tool_error(&self) -> ToolError {
-        self.to_tool_error_with_aspect(None)
     }
 }

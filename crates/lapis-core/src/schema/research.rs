@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -152,6 +154,16 @@ impl DeepResearchRequest {
             return Err(Error::InvalidInput {
                 message: "aspect_tasks must not be empty".to_owned(),
             });
+        }
+
+        let mut aspect_ids = BTreeSet::new();
+        for task in &self.aspect_tasks {
+            let aspect_id = task.aspect.aspect_id.as_str();
+            if !aspect_id.is_empty() && !aspect_ids.insert(aspect_id) {
+                return Err(Error::InvalidInput {
+                    message: format!("aspect.aspect_id must be unique: {aspect_id}"),
+                });
+            }
         }
 
         self.budget.validate_against_config(ctx.budget_config)?;

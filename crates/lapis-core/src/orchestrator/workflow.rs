@@ -46,12 +46,14 @@ pub async fn deep_research(
     model_service: &ModelService,
     search_service: &SearchService,
     budget_config: &BudgetConfig,
-) -> Result<DeepResearchResult> {
-    request.validate_for_execution(&WorkflowValidationContext {
-        budget_config,
-        supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
-        supported_tool_name: SEARCH_TOOL_NAME,
-    })?;
+) -> std::result::Result<DeepResearchResult, Box<DeepResearchFailure>> {
+    request
+        .validate_for_execution(&WorkflowValidationContext {
+            budget_config,
+            supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
+            supported_tool_name: SEARCH_TOOL_NAME,
+        })
+        .map_err(DeepResearchFailure::top_level)?;
 
     let run_id = Uuid::new_v4().to_string();
     let request_id = request.request_id.clone();
@@ -89,7 +91,10 @@ pub async fn deep_research(
             status = "failed",
             "deep research budget check failed"
         );
-        return Err(error);
+        return Err(DeepResearchFailure::with_aspects(
+            error,
+            order_failures_by_request(&request, run.failures),
+        ));
     }
 
     let result = finalize_deep_result(&request, run, run_id.clone());
@@ -105,17 +110,40 @@ pub async fn deep_research(
             status = if result.failed_aspects.is_empty() { "ok" } else { "partial" },
             "deep research completed"
         ),
-        Err(error) => tracing::warn!(
+        Err(failure) => tracing::warn!(
             request_id = %request_id,
             run_id = %run_id,
             requested_aspects,
-            error_code = error.code().as_str(),
-            retryable = error.retryable(),
+            error_code = failure.error.code().as_str(),
+            retryable = failure.error.retryable(),
+            failed_aspects = failure.failed_aspects.len(),
             status = "failed",
             "deep research failed"
         ),
     }
     result
+}
+
+#[derive(Debug)]
+pub struct DeepResearchFailure {
+    pub error: Error,
+    pub failed_aspects: Vec<AspectFailure>,
+}
+
+impl DeepResearchFailure {
+    fn top_level(error: Error) -> Box<Self> {
+        Box::new(Self {
+            error,
+            failed_aspects: Vec::new(),
+        })
+    }
+
+    fn with_aspects(error: Error, failed_aspects: Vec<AspectFailure>) -> Box<Self> {
+        Box::new(Self {
+            error,
+            failed_aspects,
+        })
+    }
 }
 
 struct DeepResearchRun {
@@ -125,7 +153,6 @@ struct DeepResearchRun {
     evidence_by_id: BTreeMap<String, Evidence>,
     open_questions: Vec<OpenQuestion>,
     budget_usage: ResearchBudgetUsage,
-    first_error: Option<Error>,
 }
 
 impl DeepResearchRun {
@@ -137,7 +164,6 @@ impl DeepResearchRun {
             evidence_by_id: BTreeMap::new(),
             open_questions: Vec::new(),
             budget_usage: ResearchBudgetUsage::zero(),
-            first_error: None,
         }
     }
 }
@@ -238,9 +264,6 @@ fn record_aspect_result(
         Ok(result) => record_aspect_success(run, result),
         Err(error) => {
             let failure = aspect_failure(aspect_id, &error);
-            if run.first_error.is_none() {
-                run.first_error = Some(error);
-            }
             run.failures.push(failure);
         }
     }
@@ -289,17 +312,23 @@ fn finalize_deep_result(
     request: &DeepResearchRequest,
     run: DeepResearchRun,
     run_id: String,
-) -> Result<DeepResearchResult> {
+) -> std::result::Result<DeepResearchResult, Box<DeepResearchFailure>> {
     if run.completed.is_empty() {
-        return Err(run.first_error.unwrap_or_else(|| Error::PartialResult {
-            message: "all aspects failed".to_owned(),
-        }));
+        return Err(DeepResearchFailure::with_aspects(
+            Error::PartialResult {
+                message: "all aspects failed".to_owned(),
+            },
+            order_failures_by_request(request, run.failures),
+        ));
     }
 
     if !run.failures.is_empty() && !request.execution_policy.allow_partial_results {
-        return Err(run.first_error.unwrap_or_else(|| Error::PartialResult {
-            message: "deep research produced partial results".to_owned(),
-        }));
+        return Err(DeepResearchFailure::with_aspects(
+            Error::PartialResult {
+                message: "deep research produced partial results".to_owned(),
+            },
+            order_failures_by_request(request, run.failures),
+        ));
     }
 
     Ok(deep_result(request, run, run_id))
@@ -316,17 +345,18 @@ fn deep_result(
     run: DeepResearchRun,
     run_id: String,
 ) -> DeepResearchResult {
+    let failed_aspects = order_failures_by_request(request, run.failures);
     let evidence_index = run.evidence_by_id.into_values().collect::<Vec<_>>();
     let coverage_summary = CoverageSummary {
         requested_aspects: request.aspect_tasks.len(),
         completed_aspects: run.completed.len(),
-        failed_aspects: run.failures.len(),
+        failed_aspects: failed_aspects.len(),
         evidence_count: evidence_index.len(),
     };
     DeepResearchResult {
         run_id,
         completed_aspects: run.completed,
-        failed_aspects: run.failures,
+        failed_aspects,
         confidence_summary: confidence_summary(&run.aspect_reports),
         aspect_reports: run.aspect_reports,
         evidence_index,
@@ -334,6 +364,22 @@ fn deep_result(
         coverage_summary,
         budget_usage: run.budget_usage,
     }
+}
+
+fn order_failures_by_request(
+    request: &DeepResearchRequest,
+    failures: Vec<AspectFailure>,
+) -> Vec<AspectFailure> {
+    let mut by_aspect_id = failures
+        .into_iter()
+        .map(|failure| (failure.aspect_id.clone(), failure))
+        .collect::<BTreeMap<_, _>>();
+
+    request
+        .aspect_tasks
+        .iter()
+        .filter_map(|task| by_aspect_id.remove(&task.aspect.aspect_id))
+        .collect()
 }
 
 /// Builds the per-aspect failure record embedded inside a partial or failed
