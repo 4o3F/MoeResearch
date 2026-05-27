@@ -32,8 +32,8 @@ impl LapisMcpServer {
         Json(
             match run_aspect_research(
                 request,
-                &self.model_service,
-                &self.search_service,
+                self.model_service.inner(),
+                self.search_service.inner(),
                 &self.budget_config,
             )
             .await
@@ -93,8 +93,8 @@ impl LapisMcpServer {
         Json(
             match run_deep_research(
                 request,
-                &self.model_service,
-                &self.search_service,
+                self.model_service.inner(),
+                self.search_service.inner(),
                 &self.budget_config,
             )
             .await

@@ -15,6 +15,8 @@ futures.workspace = true
 lapis-error = { path = "../lapis-error" }
 lapis-model = { path = "../lapis-model" }
 lapis-net = { path = "../lapis-net" }
+lapis-search = { path = "../lapis-search" }
+lapis-workflow = { path = "../lapis-workflow" }
 reqwest.workspace = true
 rmcp = { workspace = true, features = ["server", "transport-io", "schemars"] }
 schemars.workspace = true

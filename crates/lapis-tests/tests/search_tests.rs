@@ -356,7 +356,11 @@ async fn grok_search_uses_responses_web_search_request() {
     policy.region = Some("US".to_owned());
 
     provider
-        .search(SearchRequest::new("grok", "lapis", 2).with_policy(&policy))
+        .search(
+            policy
+                .apply_to(SearchRequest::new("grok", "lapis", 2))
+                .expect("policy applies"),
+        )
         .await
         .expect("grok response");
 

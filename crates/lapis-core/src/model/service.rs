@@ -28,6 +28,10 @@ impl ModelService {
         self.inner.provider_names()
     }
 
+    pub fn inner(&self) -> &lapis_model::ModelService {
+        &self.inner
+    }
+
     pub async fn complete(
         &self,
         mut request: ModelRequest,
@@ -42,6 +46,14 @@ impl ModelService {
             request.max_tokens = policy.max_tokens;
         }
         self.inner.complete(request).await
+    }
+}
+
+impl std::ops::Deref for ModelService {
+    type Target = lapis_model::ModelService;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 

@@ -7,3 +7,12 @@ publish = false
 [lib]
 name = "lapis_search"
 path = "src/lib.rs"
+
+[dependencies]
+async-trait.workspace = true
+lapis-error = { path = "../lapis-error" }
+lapis-net = { path = "../lapis-net" }
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+snafu.workspace = true

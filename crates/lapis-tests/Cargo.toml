@@ -8,6 +8,8 @@ publish = false
 async-trait.workspace = true
 lapis-core = { path = "../lapis-core" }
 lapis-net = { path = "../lapis-net" }
+lapis-search = { path = "../lapis-search" }
+lapis-workflow = { path = "../lapis-workflow" }
 rmcp.workspace = true
 schemars.workspace = true
 serde_json.workspace = true

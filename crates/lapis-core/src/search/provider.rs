@@ -1,16 +1,3 @@
-use async_trait::async_trait;
+//! Re-export of search providers owned by `lapis-search`.
 
-use crate::error::Result;
-use crate::schema::search::{SearchRequest, SearchResponse};
-
-pub mod exa;
-pub mod grok;
-
-pub use exa::ExaSearchProvider;
-pub use grok::GrokSearchProvider;
-
-#[async_trait]
-pub trait SearchProvider: Send + Sync {
-    fn name(&self) -> &'static str;
-    async fn search(&self, request: SearchRequest) -> Result<SearchResponse>;
-}
+pub use lapis_search::{ExaSearchProvider, GrokSearchProvider, SearchProvider};

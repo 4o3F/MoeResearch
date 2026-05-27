@@ -872,6 +872,8 @@ dependencies = [
  "lapis-error",
  "lapis-model",
  "lapis-net",
+ "lapis-search",
+ "lapis-workflow",
  "reqwest",
  "rmcp",
  "schemars",
@@ -932,6 +934,15 @@ dependencies = [
 [[package]]
 name = "lapis-search"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "lapis-error",
+ "lapis-net",
+ "schemars",
+ "serde",
+ "serde_json",
+ "snafu",
+]
 
 [[package]]
 name = "lapis-tests"
@@ -940,6 +951,8 @@ dependencies = [
  "async-trait",
  "lapis-core",
  "lapis-net",
+ "lapis-search",
+ "lapis-workflow",
  "rmcp",
  "schemars",
  "serde_json",
@@ -951,6 +964,18 @@ dependencies = [
 [[package]]
 name = "lapis-workflow"
 version = "0.1.0"
+dependencies = [
+ "futures",
+ "lapis-error",
+ "lapis-model",
+ "lapis-search",
+ "schemars",
+ "serde",
+ "serde_json",
+ "time",
+ "tracing",
+ "uuid",
+]
 
 [[package]]
 name = "lazy_static"

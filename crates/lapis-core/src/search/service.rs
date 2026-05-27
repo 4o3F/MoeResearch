@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
@@ -10,7 +9,7 @@ use crate::search::provider::{ExaSearchProvider, GrokSearchProvider, SearchProvi
 
 #[derive(Default)]
 pub struct SearchService {
-    providers: BTreeMap<String, Arc<dyn SearchProvider>>,
+    inner: lapis_search::SearchService,
 }
 
 impl SearchService {
@@ -22,8 +21,11 @@ impl SearchService {
     where
         P: SearchProvider + 'static,
     {
-        self.providers
-            .insert(provider.name().to_owned(), Arc::new(provider));
+        self.inner.register(provider);
+    }
+
+    pub fn inner(&self) -> &lapis_search::SearchService {
+        &self.inner
     }
 
     pub async fn search(
@@ -31,17 +33,15 @@ impl SearchService {
         request: SearchRequest,
         policy: &SearchPolicy,
     ) -> Result<SearchResponse> {
-        request.validate_with_policy(policy)?;
-        let provider_name = request.provider.clone();
-        let provider =
-            self.providers
-                .get(&provider_name)
-                .ok_or_else(|| Error::ProviderUnavailable {
-                    provider: provider_name.clone(),
-                    message: "search provider is not configured".to_owned(),
-                })?;
+        self.inner.search(policy.apply_to(request)?).await
+    }
+}
 
-        provider.search(request.with_policy(policy)).await
+impl std::ops::Deref for SearchService {
+    type Target = lapis_search::SearchService;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 
