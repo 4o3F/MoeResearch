@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 async-trait.workspace = true
 lapis-core = { path = "../lapis-core" }
+lapis-net = { path = "../lapis-net" }
 rmcp.workspace = true
 schemars.workspace = true
 serde_json.workspace = true

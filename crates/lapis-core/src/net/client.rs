@@ -1,9 +1,3 @@
-use async_trait::async_trait;
+//! Re-export of the network client trait owned by `lapis-net`.
 
-use crate::error::Result;
-use crate::schema::network::{NetworkRequest, NetworkResponse};
-
-#[async_trait]
-pub trait NetworkClient: Send + Sync {
-    async fn send(&self, request: NetworkRequest) -> Result<NetworkResponse>;
-}
+pub use lapis_net::NetworkClient;
