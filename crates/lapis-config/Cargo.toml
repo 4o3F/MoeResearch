@@ -1,0 +1,9 @@
+[package]
+name = "lapis-config"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "lapis_config"
+path = "src/lib.rs"

@@ -1,6 +1,13 @@
 [workspace]
 members = [
     "crates/lapis-core",
+    "crates/lapis-error",
+    "crates/lapis-config",
+    "crates/lapis-net",
+    "crates/lapis-model",
+    "crates/lapis-search",
+    "crates/lapis-workflow",
+    "crates/lapis-mcp",
     "crates/lapis-cli",
     "crates/lapis-tests",
 ]

@@ -1,0 +1,9 @@
+[package]
+name = "lapis-search"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "lapis_search"
+path = "src/lib.rs"

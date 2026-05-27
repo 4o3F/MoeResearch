@@ -1,0 +1,9 @@
+[package]
+name = "lapis-mcp"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "lapis_mcp"
+path = "src/lib.rs"

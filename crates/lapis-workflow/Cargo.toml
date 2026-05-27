@@ -1,0 +1,9 @@
+[package]
+name = "lapis-workflow"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "lapis_workflow"
+path = "src/lib.rs"
