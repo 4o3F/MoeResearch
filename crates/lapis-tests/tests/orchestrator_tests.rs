@@ -4,28 +4,26 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use lapis_core::error::{Error, Result};
-use lapis_core::model::provider::ModelProvider;
-use lapis_core::model::service::ModelService;
-use lapis_core::orchestrator::agent_loop::AgentRuntime;
-use lapis_core::orchestrator::budget::{AgentBudgetGuard, ResearchBudgetGuard};
-use lapis_core::orchestrator::workflow::aspect_research;
-use lapis_core::schema::budget::{AgentBudget, BudgetConfig, ResearchBudget};
-use lapis_core::schema::limit::Limit;
-use lapis_core::schema::model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
-use lapis_core::schema::policy::{
-    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
-};
-use lapis_core::schema::report::{
+use lapis_error::{Error, Result};
+use lapis_model::ModelProvider;
+use lapis_model::ModelService;
+use lapis_model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
+use lapis_search::SearchProvider;
+use lapis_search::SearchService;
+use lapis_search::{SearchRequest, SearchResponse, SearchResult};
+use lapis_workflow::AgentRuntime;
+use lapis_workflow::Limit;
+use lapis_workflow::aspect_research;
+use lapis_workflow::{AgentBudget, BudgetConfig, ResearchBudget};
+use lapis_workflow::{AgentBudgetGuard, ResearchBudgetGuard};
+use lapis_workflow::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
     OpenQuestion, SourceType,
 };
-use lapis_core::schema::research::{
-    AspectResearchRequest, AspectResearchTask, AspectSpec, ResearchContext,
+use lapis_workflow::{AspectResearchRequest, AspectResearchTask, AspectSpec, ResearchContext};
+use lapis_workflow::{
+    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
 };
-use lapis_core::schema::search::{SearchRequest, SearchResponse, SearchResult};
-use lapis_core::search::provider::SearchProvider;
-use lapis_core::search::service::SearchService;
 use serde_json::json;
 
 fn unlimited_budget_config() -> BudgetConfig {
@@ -547,7 +545,7 @@ async fn aspect_agent_prompt_content_is_passed_as_system_message() {
         matches!(
             &requests[0].input[0],
             ModelInputItem::Message(message)
-                if message.role == lapis_core::schema::model::ModelMessageRole::System
+                if message.role == lapis_model::ModelMessageRole::System
                     && message.content == request.task.aspect.aspect_agent_prompt
         ),
         "first input must be System message equal to inline prompt content"
@@ -1523,7 +1521,7 @@ async fn duplicate_tool_call_ids_are_rejected_before_dispatch() {
 fn aspect_with_empty_allowed_tools_advertises_no_tools() {
     let mut request = aspect_request();
     request.task.aspect.allowed_tools.clear();
-    let guard = lapis_core::orchestrator::tool_policy::ToolPolicyGuard::new(&request.task.aspect);
+    let guard = lapis_workflow::ToolPolicyGuard::new(&request.task.aspect);
     assert!(
         guard.allowed_model_tools().is_empty(),
         "tools list must be empty when allowed_tools is empty"
@@ -1589,7 +1587,7 @@ async fn aspect_with_empty_allowed_tools_sends_empty_model_tools() {
 #[test]
 fn aspect_with_search_tool_advertises_only_search_tool() {
     let request = aspect_request();
-    let guard = lapis_core::orchestrator::tool_policy::ToolPolicyGuard::new(&request.task.aspect);
+    let guard = lapis_workflow::ToolPolicyGuard::new(&request.task.aspect);
     let tools = guard.allowed_model_tools();
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].name, "search");

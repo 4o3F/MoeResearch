@@ -853,31 +853,93 @@ name = "lapis-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "lapis-core",
+ "lapis-config",
+ "lapis-error",
+ "lapis-mcp",
+ "lapis-model",
+ "lapis-net",
+ "lapis-search",
+ "lapis-workflow",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "lapis-config"
+version = "0.1.0"
+dependencies = [
+ "lapis-error",
+ "reqwest",
+ "schemars",
+ "serde",
+ "snafu",
+ "toml",
+]
+
+[[package]]
+name = "lapis-error"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "snafu",
+ "toml",
+]
+
+[[package]]
+name = "lapis-mcp"
+version = "0.1.0"
+dependencies = [
+ "lapis-error",
+ "lapis-model",
+ "lapis-search",
+ "lapis-workflow",
+ "rmcp",
+ "schemars",
+ "serde",
  "tracing",
 ]
 
 [[package]]
-name = "lapis-core"
+name = "lapis-model"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "clap",
- "futures",
- "reqwest",
- "rmcp",
+ "lapis-error",
+ "lapis-net",
  "schemars",
  "serde",
  "serde_json",
  "snafu",
- "time",
- "tokio",
- "toml",
  "tracing",
- "tracing-subscriber",
- "url",
+]
+
+[[package]]
+name = "lapis-net"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "lapis-error",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
  "uuid",
+]
+
+[[package]]
+name = "lapis-search"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "lapis-error",
+ "lapis-net",
+ "schemars",
+ "serde",
+ "serde_json",
+ "snafu",
 ]
 
 [[package]]
@@ -885,13 +947,35 @@ name = "lapis-tests"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "lapis-core",
+ "lapis-config",
+ "lapis-error",
+ "lapis-mcp",
+ "lapis-model",
+ "lapis-net",
+ "lapis-search",
+ "lapis-workflow",
  "rmcp",
  "schemars",
  "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "lapis-workflow"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "lapis-error",
+ "lapis-model",
+ "lapis-search",
+ "schemars",
+ "serde",
+ "serde_json",
+ "time",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

@@ -1,0 +1,21 @@
+[package]
+name = "lapis-workflow"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "lapis_workflow"
+path = "src/lib.rs"
+
+[dependencies]
+futures.workspace = true
+lapis-error = { path = "../lapis-error" }
+lapis-model = { path = "../lapis-model" }
+lapis-search = { path = "../lapis-search" }
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+tracing.workspace = true
+uuid.workspace = true

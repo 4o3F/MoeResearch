@@ -1,0 +1,19 @@
+[package]
+name = "lapis-mcp"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "lapis_mcp"
+path = "src/lib.rs"
+
+[dependencies]
+lapis-error = { path = "../lapis-error" }
+lapis-model = { path = "../lapis-model" }
+lapis-search = { path = "../lapis-search" }
+lapis-workflow = { path = "../lapis-workflow" }
+rmcp = { workspace = true, features = ["server", "transport-io", "schemars"] }
+schemars.workspace = true
+serde.workspace = true
+tracing.workspace = true

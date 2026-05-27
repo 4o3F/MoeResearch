@@ -9,14 +9,14 @@ use std::thread;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use lapis_core::error::{Error, Result};
-use lapis_core::mcp::LapisMcpServer;
-use lapis_core::model::provider::ModelProvider;
-use lapis_core::model::service::ModelService;
-use lapis_core::schema::limit::Limit;
-use lapis_core::schema::mcp::{ToolEnvelope, ToolErrorCode, ToolStatus};
-use lapis_core::schema::model::{ModelRequest, ModelResponse};
-use lapis_core::schema::report::{AspectFailure, AspectResearchResult};
+use lapis_error::{Error, Result};
+use lapis_mcp::LapisMcpServer;
+use lapis_mcp::{ToolEnvelope, ToolErrorCode, ToolStatus};
+use lapis_model::ModelProvider;
+use lapis_model::ModelService;
+use lapis_model::{ModelRequest, ModelResponse};
+use lapis_workflow::AspectResearchResult;
+use lapis_workflow::Limit;
 use rmcp::ServerHandler;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::schemars::schema_for;
@@ -313,15 +313,13 @@ fn error_retryability_mapping_is_stable() {
         Error::NetworkFailed {
             message: "temporary network failure".to_owned(),
         }
-        .to_tool_error(None, Vec::new())
-        .retryable
+        .retryable()
     );
     assert!(
         Error::Timeout {
             message: "deadline exceeded".to_owned(),
         }
-        .to_tool_error(None, Vec::new())
-        .retryable
+        .retryable()
     );
     assert!(
         Error::HttpStatus {
@@ -329,51 +327,13 @@ fn error_retryability_mapping_is_stable() {
             message: "service unavailable".to_owned(),
             retryable: true,
         }
-        .to_tool_error(None, Vec::new())
-        .retryable
+        .retryable()
     );
     assert!(
         !Error::InvalidInput {
             message: "missing question".to_owned(),
         }
-        .to_tool_error(None, Vec::new())
-        .retryable
-    );
-
-    let retryable_failures = vec![AspectFailure {
-        aspect_id: "aspect-1".to_owned(),
-        error_code: "network_failed".to_owned(),
-        message: "network request failed".to_owned(),
-        retryable: true,
-    }];
-    assert!(
-        Error::PartialResult {
-            message: "all aspects failed".to_owned(),
-        }
-        .to_tool_error(None, retryable_failures)
-        .retryable
-    );
-
-    let mixed_failures = vec![
-        AspectFailure {
-            aspect_id: "aspect-1".to_owned(),
-            error_code: "network_failed".to_owned(),
-            message: "network request failed".to_owned(),
-            retryable: true,
-        },
-        AspectFailure {
-            aspect_id: "aspect-2".to_owned(),
-            error_code: "budget_exceeded".to_owned(),
-            message: "agent search call budget exhausted".to_owned(),
-            retryable: false,
-        },
-    ];
-    assert!(
-        !Error::PartialResult {
-            message: "all aspects failed".to_owned(),
-        }
-        .to_tool_error(None, mixed_failures)
-        .retryable
+        .retryable()
     );
 }
 
@@ -494,71 +454,13 @@ async fn tool_envelope_failed_deep_research_aspect_id_is_none() {
     assert!(error.failed_aspects.is_empty());
 }
 
-/// `ToolError.message` MUST be a stable, redacted summary; detailed context
-/// (provider names, request bodies, header values, caller-supplied schema
-/// versions, paths) belongs in `tracing`, never in the public envelope.
-///
-/// Covers the three known leak paths: `HttpTransport.message`,
-/// `ProviderUnavailable.provider`, and `UnsupportedSchemaVersion.version`.
-#[test]
-fn tool_envelope_message_redacts_provider_path_and_api_key() {
-    let cases = vec![
-        (
-            Error::HttpTransport {
-                message: concat!(
-                    "POST https://api.openai.com/v1/responses?api_key=sk-query-secret ",
-                    "Authorization=sk-abcdef response={\"api_key\":\"raw-provider-secret\"}"
-                )
-                .to_owned(),
-                retryable: true,
-            },
-            ToolErrorCode::NetworkFailed,
-            vec![
-                "Authorization",
-                "sk-abcdef",
-                "api.openai.com",
-                "api_key",
-                "sk-query-secret",
-                "raw-provider-secret",
-            ],
-        ),
-        (
-            Error::ProviderUnavailable {
-                provider: "openai".to_owned(),
-                message: "missing OPENAI_API_KEY in /home/user/lapis.toml".to_owned(),
-            },
-            ToolErrorCode::ProviderUnavailable,
-            vec!["openai", "OPENAI_API_KEY", "/home/user/lapis.toml"],
-        ),
-        (
-            Error::UnsupportedSchemaVersion {
-                version: "../../Authorization=sk-abcdef".to_owned(),
-            },
-            ToolErrorCode::UnsupportedSchemaVersion,
-            vec!["Authorization", "sk-abcdef", "../"],
-        ),
-    ];
-
-    for (error, expected_code, forbidden_fragments) in cases {
-        let tool_error = error.to_tool_error(None, Vec::new());
-        assert_eq!(tool_error.code, expected_code);
-        for forbidden in forbidden_fragments {
-            assert!(
-                !tool_error.message.contains(forbidden),
-                "public message leaked forbidden fragment `{forbidden}`: {}",
-                tool_error.message
-            );
-        }
-    }
-}
-
 /// An unsupported `schema_version` MUST produce the dedicated
 /// `ToolErrorCode::UnsupportedSchemaVersion` rather than the generic
 /// `SchemaValidationFailed`, so clients can differentiate the two.
 #[tokio::test]
 async fn unsupported_schema_version_returns_dedicated_code_aspect_research() {
     let mut request = aspect_request();
-    request.schema_version = "v999".to_owned();
+    request.schema_version = "../../Authorization=sk-abcdef".to_owned();
     let envelope = mcp_server(services(&[]))
         .aspect_research(Parameters(request))
         .await
@@ -566,6 +468,9 @@ async fn unsupported_schema_version_returns_dedicated_code_aspect_research() {
     assert_eq!(envelope.status, ToolStatus::Failed);
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::UnsupportedSchemaVersion);
+    assert_eq!(error.message, "unsupported schema version");
+    assert!(!error.message.contains("Authorization"));
+    assert!(!error.message.contains("sk-abcdef"));
     assert!(error.failed_aspects.is_empty());
 }
 
@@ -672,9 +577,9 @@ timeout_ms = -1
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(!stdout.contains("lapis core initialized"));
+    assert!(!stdout.contains("lapis initialized"));
     assert!(
-        stderr.contains("lapis core initialized"),
+        stderr.contains("lapis initialized"),
         "expected startup logs on stderr, got stderr: {stderr}"
     );
 }

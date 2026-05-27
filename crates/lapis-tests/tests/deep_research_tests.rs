@@ -3,10 +3,10 @@ mod support;
 use std::collections::BTreeSet;
 use std::sync::atomic::Ordering;
 
-use lapis_core::error::Error;
-use lapis_core::orchestrator::workflow::deep_research;
-use lapis_core::schema::budget::{AgentBudget, BudgetConfig, ResearchBudget};
-use lapis_core::schema::limit::Limit;
+use lapis_error::Error;
+use lapis_workflow::Limit;
+use lapis_workflow::deep_research;
+use lapis_workflow::{AgentBudget, BudgetConfig, ResearchBudget};
 use support::research::{
     deep_request, services, services_with_token_usage, unlimited_budget_config,
 };
@@ -318,7 +318,7 @@ async fn global_model_budget_stops_before_extra_model_call() {
 /// `total_tokens` exceeds the cap, even if call counters are still in range.
 #[tokio::test]
 async fn global_token_budget_stops_when_total_exceeds_max() {
-    use lapis_core::schema::report::TokenUsage;
+    use lapis_workflow::TokenUsage;
     let mut request = deep_request(1);
     request.budget.max_tokens = Limit::limited(100);
     let services = services_with_token_usage(
@@ -348,7 +348,7 @@ async fn global_token_budget_stops_when_total_exceeds_max() {
 /// counts against the cap.
 #[tokio::test]
 async fn global_token_budget_falls_back_to_input_plus_output() {
-    use lapis_core::schema::report::TokenUsage;
+    use lapis_workflow::TokenUsage;
     let mut request = deep_request(1);
     request.budget.max_tokens = Limit::limited(100);
     let services = services_with_token_usage(
@@ -379,7 +379,7 @@ async fn global_token_budget_falls_back_to_input_plus_output() {
 /// provider report formats.
 #[test]
 fn token_usage_merge_counts_mixed_provider_reporting_formats() {
-    use lapis_core::schema::report::TokenUsage;
+    use lapis_workflow::TokenUsage;
     let merged = TokenUsage::merge(
         Some(TokenUsage {
             input_tokens: None,
@@ -401,7 +401,7 @@ fn token_usage_merge_counts_mixed_provider_reporting_formats() {
 /// call goes out.
 #[tokio::test]
 async fn global_token_budget_blocks_dispatch_after_cap_is_reached() {
-    use lapis_core::schema::report::TokenUsage;
+    use lapis_workflow::TokenUsage;
     let mut request = deep_request(2);
     request.budget.max_tokens = Limit::limited(100);
     request.budget.max_concurrent_agents = Limit::limited(1);

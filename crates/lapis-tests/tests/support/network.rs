@@ -4,9 +4,9 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use lapis_core::error::{Error, Result};
-use lapis_core::net::client::NetworkClient;
-use lapis_core::schema::network::{NetworkRequest, NetworkResponse};
+use lapis_error::{Error, Result};
+use lapis_net::client::NetworkClient;
+use lapis_net::{NetworkRequest, NetworkResponse};
 
 #[derive(Clone, Default)]
 pub struct MockNetworkClient {

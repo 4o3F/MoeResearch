@@ -1,10 +1,10 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use lapis_core::config::loader::load_config;
-use lapis_core::error::Result;
-use lapis_core::net::reqwest_client::ReqwestNetworkClient;
-use lapis_core::schema::config::LapisConfig;
+use lapis_config::LapisConfig;
+use lapis_config::load_config;
+use lapis_error::Result;
+use lapis_net::reqwest_client::ReqwestNetworkClient;
 
 static CONFIG_ID: AtomicUsize = AtomicUsize::new(0);
 
