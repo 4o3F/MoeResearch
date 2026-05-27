@@ -9,10 +9,11 @@ use snafu::ResultExt;
 use crate::error::{Error, JsonSnafu, Result};
 use crate::model::provider::ModelProvider;
 use crate::net::NetworkClient;
+use crate::net::provider_http::{bearer_json_post, provider_status_retryable};
 use crate::schema::model::{
     ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse, ModelTool, ModelToolCall,
 };
-use crate::schema::network::{Header, NetworkRequest};
+use crate::schema::network::NetworkRequest;
 use crate::schema::report::{AspectResearchResult, TokenUsage};
 
 pub struct OpenAiProvider {
@@ -85,22 +86,13 @@ impl OpenAiProvider {
         })
         .context(JsonSnafu)?;
 
-        Ok(NetworkRequest {
-            method: "POST".to_owned(),
-            url: format!("{}/responses", self.base_url.trim_end_matches('/')),
-            headers: vec![
-                Header {
-                    name: "authorization".to_owned(),
-                    value: format!("Bearer {}", self.api_key),
-                },
-                Header {
-                    name: "content-type".to_owned(),
-                    value: "application/json".to_owned(),
-                },
-            ],
-            body: Some(body),
-            timeout_ms: self.timeout_ms,
-        })
+        Ok(bearer_json_post(
+            &self.base_url,
+            "responses",
+            &self.api_key,
+            body,
+            self.timeout_ms,
+        ))
     }
 
     fn map_response(&self, body: Value) -> Result<ModelResponse> {
@@ -189,7 +181,7 @@ impl ModelProvider for OpenAiProvider {
             return Err(Error::HttpStatus {
                 status: response.status,
                 message: "openai model provider returned non-success status".to_owned(),
-                retryable: response.status == 429 || response.status >= 500,
+                retryable: provider_status_retryable(response.status),
             });
         }
 

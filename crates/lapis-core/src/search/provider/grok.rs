@@ -7,7 +7,7 @@ use snafu::ResultExt;
 
 use crate::error::{Error, JsonSnafu, Result};
 use crate::net::NetworkClient;
-use crate::schema::network::{Header, NetworkRequest};
+use crate::net::provider_http::{bearer_json_post, provider_status_retryable};
 use crate::schema::policy::Freshness;
 use crate::schema::search::{SearchRequest, SearchResponse, SearchResult};
 use crate::search::provider::SearchProvider;
@@ -34,8 +34,8 @@ impl GrokSearchProvider {
 
     /// Constructs the provider with the response-size cap supplied from
     /// configuration. `None` leaves the cap to the upstream provider default.
-    /// Validation of this input is owned by `ProviderEndpoint::validate`; this
-    /// constructor trusts its caller.
+    /// Validation of this input is owned by `SearchProviderEndpoint::validate`;
+    /// this constructor trusts its caller.
     #[must_use]
     pub fn with_max_output_tokens(
         network: Arc<dyn NetworkClient>,
@@ -80,29 +80,20 @@ impl SearchProvider for GrokSearchProvider {
 
         let response = self
             .network
-            .send(NetworkRequest {
-                method: "POST".to_owned(),
-                url: format!("{}/responses", self.base_url.trim_end_matches('/')),
-                headers: vec![
-                    Header {
-                        name: "authorization".to_owned(),
-                        value: format!("Bearer {}", self.api_key),
-                    },
-                    Header {
-                        name: "content-type".to_owned(),
-                        value: "application/json".to_owned(),
-                    },
-                ],
-                body: Some(body),
-                timeout_ms: self.timeout_ms,
-            })
+            .send(bearer_json_post(
+                &self.base_url,
+                "responses",
+                &self.api_key,
+                body,
+                self.timeout_ms,
+            ))
             .await?;
 
         if !(200..300).contains(&response.status) {
             return Err(Error::HttpStatus {
                 status: response.status,
                 message: "grok search provider returned non-success status".to_owned(),
-                retryable: response.status == 429 || response.status >= 500,
+                retryable: provider_status_retryable(response.status),
             });
         }
 

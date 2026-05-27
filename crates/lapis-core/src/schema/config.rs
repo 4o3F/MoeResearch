@@ -12,8 +12,8 @@ use crate::schema::budget::BudgetConfig;
 pub struct LapisConfig {
     pub logging: LoggingConfig,
     pub network: NetworkConfig,
-    pub search: ProviderRegistry,
-    pub model: ProviderRegistry,
+    pub search: SearchProviderRegistry,
+    pub model: ModelProviderRegistry,
     pub budget: BudgetConfig,
 }
 
@@ -21,8 +21,8 @@ impl LapisConfig {
     pub fn validate(&self) -> Result<()> {
         self.network.validate()?;
         self.budget.validate()?;
-        self.search.validate("search")?;
-        self.model.validate("model")
+        self.search.validate()?;
+        self.model.validate()
     }
 }
 
@@ -66,11 +66,11 @@ impl NetworkConfig {
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProviderRegistry {
-    pub providers: BTreeMap<String, ProviderEndpoint>,
+pub struct ModelProviderRegistry {
+    pub providers: BTreeMap<String, ModelProviderEndpoint>,
 }
 
-impl ProviderRegistry {
+impl ModelProviderRegistry {
     pub fn enabled_count(&self) -> usize {
         self.providers
             .values()
@@ -78,9 +78,9 @@ impl ProviderRegistry {
             .count()
     }
 
-    pub(crate) fn validate(&self, kind: &str) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         for (name, provider) in &self.providers {
-            provider.validate(kind, name)?;
+            provider.validate(name)?;
         }
         Ok(())
     }
@@ -88,122 +88,144 @@ impl ProviderRegistry {
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProviderEndpoint {
+pub struct SearchProviderRegistry {
+    pub providers: BTreeMap<String, SearchProviderEndpoint>,
+}
+
+impl SearchProviderRegistry {
+    pub fn enabled_count(&self) -> usize {
+        self.providers
+            .values()
+            .filter(|provider| provider.enabled)
+            .count()
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        for (name, provider) in &self.providers {
+            provider.validate(name)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelProviderEndpoint {
     pub enabled: bool,
     pub base_url: String,
     pub api_key_env: Option<String>,
     pub timeout_ms: Option<u64>,
     pub model: Option<String>,
-    /// Grok-only `max_output_tokens` knob, capping the model's response
-    /// budget for a single search call. Must be greater than zero when set.
+}
+
+impl ModelProviderEndpoint {
+    fn validate(&self, name: &str) -> Result<()> {
+        if name != "openai" {
+            return Err(Error::ConfigInvalid {
+                message: format!("unknown model.providers.{name} provider"),
+            });
+        }
+
+        validate_timeout("model", name, self.timeout_ms)?;
+        validate_enabled_common("model", name, self.enabled, self.api_key_env.as_ref())?;
+        validate_model("model", name, self.enabled, self.model.as_ref())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SearchProviderEndpoint {
+    pub enabled: bool,
+    pub base_url: String,
+    pub api_key_env: Option<String>,
+    pub timeout_ms: Option<u64>,
+    pub model: Option<String>,
     #[serde(default)]
     pub max_output_tokens: Option<u32>,
 }
 
-impl ProviderEndpoint {
-    /// Validates this endpoint within the context of its registry.
-    ///
-    /// `kind` is the registry name (`"model"` or `"search"`); `name` is the
-    /// TOML provider key (e.g. `"openai"`, `"exa"`, `"grok"`). The dispatch
-    /// is name-aware: only providers that actually consume a model identifier
-    /// require `model` to be set, and only known provider names are accepted.
-    ///
-    /// # Errors
-    /// - `Error::ConfigInvalid` when a structural rule is violated
-    ///   (zero timeout, missing required `model`, unknown provider name).
-    /// - `Error::ProviderUnavailable` when an enabled provider is missing the
-    ///   `api_key_env` field or the referenced environment variable is unset.
-    fn validate(&self, kind: &str, name: &str) -> Result<()> {
-        if self.timeout_ms == Some(0) {
-            return Err(Error::ConfigInvalid {
-                message: format!("{kind}.providers.{name}.timeout_ms must not be zero"),
-            });
-        }
+impl SearchProviderEndpoint {
+    fn validate(&self, name: &str) -> Result<()> {
+        validate_timeout("search", name, self.timeout_ms)?;
 
-        match (kind, name) {
-            ("model", "openai") => {
-                self.validate_enabled_common(kind, name)?;
-                self.validate_model(kind, name)
+        match name {
+            "exa" => {
+                validate_enabled_common("search", name, self.enabled, self.api_key_env.as_ref())
             }
-            ("search", "grok") => {
-                self.validate_enabled_common(kind, name)?;
-                self.validate_model(kind, name)?;
-                self.validate_grok_knobs(name)
+            "grok" => {
+                validate_enabled_common("search", name, self.enabled, self.api_key_env.as_ref())?;
+                validate_model("search", name, self.enabled, self.model.as_ref())?;
+                validate_grok_knobs(name, self.max_output_tokens)
             }
-            ("search", "exa") => self.validate_enabled_common(kind, name),
             _ => Err(Error::ConfigInvalid {
-                message: format!("unknown {kind}.providers.{name} provider"),
+                message: format!("unknown search.providers.{name} provider"),
             }),
         }
     }
+}
 
-    /// Validates Grok-specific search knobs. Runs regardless of `enabled` so a
-    /// disabled stanza still cannot ship an invalid value.
-    ///
-    /// # Errors
-    /// Returns `Error::ConfigInvalid` when `max_output_tokens` is `Some(0)`.
-    fn validate_grok_knobs(&self, name: &str) -> Result<()> {
-        if self.max_output_tokens == Some(0) {
-            return Err(Error::ConfigInvalid {
-                message: format!(
-                    "search.providers.{name}.max_output_tokens must be greater than zero"
-                ),
-            });
-        }
-        Ok(())
+fn validate_timeout(kind: &str, name: &str, timeout_ms: Option<u64>) -> Result<()> {
+    if timeout_ms == Some(0) {
+        return Err(Error::ConfigInvalid {
+            message: format!("{kind}.providers.{name}.timeout_ms must not be zero"),
+        });
+    }
+    Ok(())
+}
+
+fn validate_enabled_common(
+    kind: &str,
+    name: &str,
+    enabled: bool,
+    api_key_env: Option<&String>,
+) -> Result<()> {
+    if !enabled {
+        return Ok(());
+    }
+    validate_env_key(kind, name, api_key_env)
+}
+
+fn validate_env_key(kind: &str, name: &str, api_key_env: Option<&String>) -> Result<()> {
+    let env_name = api_key_env.ok_or_else(|| Error::ProviderUnavailable {
+        provider: format!("{kind}:{name}"),
+        message: "enabled provider must set api_key_env".to_owned(),
+    })?;
+
+    if std::env::var_os(env_name).is_none() {
+        return Err(Error::ProviderUnavailable {
+            provider: format!("{kind}:{name}"),
+            message: format!("environment variable {env_name} is not set"),
+        });
     }
 
-    /// Validates the constraints common to every enabled provider regardless
-    /// of name (currently: `api_key_env` resolves to a set environment
-    /// variable). Disabled providers skip these checks so a disabled stanza
-    /// does not require credentials to be present in the environment.
-    fn validate_enabled_common(&self, kind: &str, name: &str) -> Result<()> {
-        if !self.enabled {
-            return Ok(());
-        }
-        self.validate_env_key(kind, name)
+    Ok(())
+}
+
+fn validate_model(kind: &str, name: &str, enabled: bool, model: Option<&String>) -> Result<()> {
+    if !enabled {
+        return Ok(());
     }
 
-    fn validate_env_key(&self, kind: &str, name: &str) -> Result<()> {
-        let env_name = self
-            .api_key_env
-            .as_ref()
-            .ok_or_else(|| Error::ProviderUnavailable {
-                provider: format!("{kind}:{name}"),
-                message: "enabled provider must set api_key_env".to_owned(),
-            })?;
+    let model = model
+        .map(|model| model.trim())
+        .ok_or_else(|| Error::ConfigInvalid {
+            message: format!("{kind}.providers.{name}.model must be set"),
+        })?;
 
-        if std::env::var_os(env_name).is_none() {
-            return Err(Error::ProviderUnavailable {
-                provider: format!("{kind}:{name}"),
-                message: format!("environment variable {env_name} is not set"),
-            });
-        }
-
-        Ok(())
+    if model.is_empty() {
+        return Err(Error::ConfigInvalid {
+            message: format!("{kind}.providers.{name}.model must not be empty"),
+        });
     }
 
-    fn validate_model(&self, kind: &str, name: &str) -> Result<()> {
-        if !self.enabled {
-            // Skip model validation for disabled providers so example configs
-            // can leave `model = ""` for stanzas the operator does not use.
-            return Ok(());
-        }
+    Ok(())
+}
 
-        let model = self
-            .model
-            .as_ref()
-            .map(|model| model.trim())
-            .ok_or_else(|| Error::ConfigInvalid {
-                message: format!("{kind}.providers.{name}.model must be set"),
-            })?;
-
-        if model.is_empty() {
-            return Err(Error::ConfigInvalid {
-                message: format!("{kind}.providers.{name}.model must not be empty"),
-            });
-        }
-
-        Ok(())
+fn validate_grok_knobs(name: &str, max_output_tokens: Option<u32>) -> Result<()> {
+    if max_output_tokens == Some(0) {
+        return Err(Error::ConfigInvalid {
+            message: format!("search.providers.{name}.max_output_tokens must be greater than zero"),
+        });
     }
+    Ok(())
 }

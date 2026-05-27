@@ -26,10 +26,6 @@ impl ModelService {
             .insert(provider.name().to_owned(), Arc::new(provider));
     }
 
-    pub fn register_arc(&mut self, provider: Arc<dyn ModelProvider>) {
-        self.providers.insert(provider.name().to_owned(), provider);
-    }
-
     pub fn provider_names(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
     }

@@ -1,16 +1,18 @@
+mod support;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use lapis_core::error::{Error, Result};
 use lapis_core::model::provider::{ModelProvider, OpenAiProvider};
 use lapis_core::model::service::ModelService;
-use lapis_core::net::client::MockNetworkClient;
 use lapis_core::schema::model::{
     ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse, ModelTool, ModelToolCall,
 };
 use lapis_core::schema::network::NetworkResponse;
 use lapis_core::schema::policy::ModelPolicy;
 use serde_json::{Value, json};
+use support::network::MockNetworkClient;
 
 struct StaticProvider(&'static str);
 

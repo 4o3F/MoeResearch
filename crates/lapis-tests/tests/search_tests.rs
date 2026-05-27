@@ -1,6 +1,7 @@
+mod support;
+
 use async_trait::async_trait;
 use lapis_core::error::{Error, Result};
-use lapis_core::net::client::MockNetworkClient;
 use lapis_core::schema::network::NetworkResponse;
 use lapis_core::schema::policy::{Freshness, SearchPolicy};
 use lapis_core::schema::search::{SearchRequest, SearchResponse, SearchResult};
@@ -10,6 +11,7 @@ use lapis_core::search::service::SearchService;
 use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use support::network::MockNetworkClient;
 
 struct StaticProvider(&'static str);
 

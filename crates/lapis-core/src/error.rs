@@ -217,19 +217,20 @@ impl Error {
         aspect_id: Option<String>,
         failed_aspects: Vec<AspectFailure>,
     ) -> ToolError {
-        let retryable = if self.code() == ToolErrorCode::PartialResult && !failed_aspects.is_empty()
-        {
-            failed_aspects.iter().all(|failure| failure.retryable)
-        } else {
-            self.retryable()
-        };
-
         ToolError {
             code: self.code(),
             message: self.public_message(),
             aspect_id,
-            retryable,
+            retryable: self.tool_error_retryable(&failed_aspects),
             failed_aspects,
+        }
+    }
+
+    fn tool_error_retryable(&self, failed_aspects: &[AspectFailure]) -> bool {
+        if self.code() == ToolErrorCode::PartialResult && !failed_aspects.is_empty() {
+            failed_aspects.iter().all(|failure| failure.retryable)
+        } else {
+            self.retryable()
         }
     }
 }

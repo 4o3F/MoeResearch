@@ -402,11 +402,14 @@ ToolError
 
 约定：
 
+- `ToolEnvelope` 的顶层字段始终序列化；无值字段使用 JSON `null`，不省略 key。
+- `ToolError.failed_aspects` 始终存在；没有 aspect 级失败时为 `[]`，不使用 `null` 或省略字段。
 - `status=ok` 时，`data` 承载 Layer 2 输出的业务结果；单 aspect 成功结果不在 `data` 中携带 runtime trace、provider usage 或 budget usage。
 - `status=partial` 用于多 aspect 工作流中部分 aspect 失败但整体仍返回可用结果的场景。
 - `status=failed` 时，`data` 为 `null`，`error` 说明失败原因；运行期 model/search/tool call 诊断通过结构化 `tracing` 日志输出。
 - `run_id` 对 `deep_research` 成功或部分成功结果必填，并与 `DeepResearchResult.run_id` 一致；单 aspect 工具可返回 `null`，调用方应使用 `request_id` 与 `aspect_id` 关联日志。
 - terminal `deep_research` 若由 aspect failures 聚合导致，顶层 `error.code` 使用 `partial_result`，每个 aspect 的真实 `error_code`、`message` 和 `retryable` 写入 `error.failed_aspects`，顺序与请求中的 `aspect_tasks` 一致。
+- terminal `partial_result` 的顶层 `error.retryable` 由所有 `error.failed_aspects[*].retryable` 聚合：仅当所有 aspect 失败都可重试时为 `true`。
 - `aspect_research` 失败、runtime 启动前的校验错误（例如无效输入、schema version 不支持）以及纯顶层 deep-research 失败返回稳定 `ToolError`，且 `error.failed_aspects=[]`。
 - Layer 3 对 Layer 2 透明提供标准化搜索结果，包括 query、source title、URL、snippet、summary、provider 和发布时间等字段。不得在 envelope 中返回 secrets、Authorization header、API key、完整 prompt 或 raw provider request/response body。
 
@@ -631,7 +634,6 @@ enabled = true
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
 timeout_ms = 30000
-model = ""
 
 [search.providers.grok]
 enabled = true

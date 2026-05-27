@@ -26,10 +26,6 @@ impl SearchService {
             .insert(provider.name().to_owned(), Arc::new(provider));
     }
 
-    pub fn provider_names(&self) -> Vec<String> {
-        self.providers.keys().cloned().collect()
-    }
-
     pub async fn search(
         &self,
         request: SearchRequest,

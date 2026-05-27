@@ -27,18 +27,16 @@ pub async fn aspect_research(
     search_service: &SearchService,
     budget_config: &BudgetConfig,
 ) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
-    request
-        .validate_for_execution(&WorkflowValidationContext {
-            budget_config,
-            supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
-            supported_tool_name: SEARCH_TOOL_NAME,
-        })
-        .map_err(|error| AgentRuntimeFailure { error })?;
     let research_budget = ResearchBudgetGuard::unlimited();
     research_budget.record_agent_started();
-    AgentRuntime::new(model_service, search_service, &request, research_budget)
-        .run()
-        .await
+    run_aspect_runtime(
+        request,
+        model_service,
+        search_service,
+        budget_config,
+        research_budget,
+    )
+    .await
 }
 
 pub async fn deep_research(
@@ -181,7 +179,7 @@ async fn execute_aspects(
         async move {
             research_budget.record_agent_started();
             let aspect_id = aspect_request.task.aspect.aspect_id.clone();
-            let result = aspect_research_with_guard(
+            let result = run_aspect_runtime(
                 aspect_request,
                 model_service,
                 search_service,
@@ -210,14 +208,7 @@ async fn execute_aspects(
     run
 }
 
-/// Runs one aspect of a deep research using the supplied cross-aspect guard.
-///
-/// Re-validates the request shape locally (the deep request was already
-/// validated by `deep_research`, but each aspect carries its own copy of
-/// the policies that the agent loop needs to honor) and then dispatches the
-/// loop with the shared guard so concurrent aspects observe the same global
-/// counters.
-async fn aspect_research_with_guard(
+async fn run_aspect_runtime(
     request: AspectResearchRequest,
     model_service: &ModelService,
     search_service: &SearchService,

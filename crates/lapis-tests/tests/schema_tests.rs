@@ -160,6 +160,22 @@ fn aspect_research_request_roundtrips_json() {
 }
 
 #[test]
+fn aspect_and_deep_research_request_schemas_remain_distinct() {
+    let aspect_schema =
+        serde_json::to_value(schema_for!(AspectResearchRequest)).expect("aspect request schema");
+    let deep_schema =
+        serde_json::to_value(schema_for!(DeepResearchRequest)).expect("deep request schema");
+
+    assert!(aspect_schema.pointer("/properties/task").is_some());
+    assert!(aspect_schema.pointer("/properties/aspect_tasks").is_none());
+    assert!(aspect_schema.pointer("/properties/user_question").is_none());
+
+    assert!(deep_schema.pointer("/properties/aspect_tasks").is_some());
+    assert!(deep_schema.pointer("/properties/user_question").is_some());
+    assert!(deep_schema.pointer("/properties/task").is_none());
+}
+
+#[test]
 fn aspect_report_schema_omits_embedded_evidence() {
     let report = AspectReport {
         aspect_id: "aspect-1".to_owned(),
