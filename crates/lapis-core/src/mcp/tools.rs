@@ -1,12 +1,12 @@
 use rmcp::{Json, handler::server::wrapper::Parameters, tool, tool_router};
 
-use crate::error::Error;
+use crate::error::{Error, ErrorCode};
 use crate::mcp::server::LapisMcpServer;
 use crate::orchestrator::agent_loop::AgentRuntimeOutput;
 use crate::orchestrator::workflow::{
     aspect_research as run_aspect_research, deep_research as run_deep_research,
 };
-use crate::schema::mcp::{ToolEnvelope, ToolStatus};
+use crate::schema::mcp::{ToolEnvelope, ToolError, ToolErrorCode, ToolStatus};
 use crate::schema::report::{AspectFailure, AspectResearchResult, DeepResearchResult};
 use crate::schema::research::{AspectResearchRequest, DeepResearchRequest};
 
@@ -192,6 +192,45 @@ fn failed_envelope<T>(
         run_id: None,
         status: ToolStatus::Failed,
         data: None,
-        error: Some(error.to_tool_error(aspect_id, failed_aspects)),
+        error: Some(tool_error_from_error(error, aspect_id, failed_aspects)),
+    }
+}
+
+#[must_use]
+fn tool_error_from_error(
+    error: &Error,
+    aspect_id: Option<String>,
+    failed_aspects: Vec<AspectFailure>,
+) -> ToolError {
+    ToolError {
+        code: tool_error_code(error.code()),
+        message: error.public_message(),
+        aspect_id,
+        retryable: tool_error_retryable(error, &failed_aspects),
+        failed_aspects,
+    }
+}
+
+fn tool_error_retryable(error: &Error, failed_aspects: &[AspectFailure]) -> bool {
+    if error.code() == ErrorCode::PartialResult && !failed_aspects.is_empty() {
+        failed_aspects.iter().all(|failure| failure.retryable)
+    } else {
+        error.retryable()
+    }
+}
+
+fn tool_error_code(code: ErrorCode) -> ToolErrorCode {
+    match code {
+        ErrorCode::InvalidInput => ToolErrorCode::InvalidInput,
+        ErrorCode::UnsupportedSchemaVersion => ToolErrorCode::UnsupportedSchemaVersion,
+        ErrorCode::ConfigInvalid => ToolErrorCode::ConfigInvalid,
+        ErrorCode::ProviderUnavailable => ToolErrorCode::ProviderUnavailable,
+        ErrorCode::NetworkFailed => ToolErrorCode::NetworkFailed,
+        ErrorCode::BudgetExceeded => ToolErrorCode::BudgetExceeded,
+        ErrorCode::ToolPolicyDenied => ToolErrorCode::ToolPolicyDenied,
+        ErrorCode::SchemaValidationFailed => ToolErrorCode::SchemaValidationFailed,
+        ErrorCode::Timeout => ToolErrorCode::Timeout,
+        ErrorCode::PartialResult => ToolErrorCode::PartialResult,
+        ErrorCode::Internal => ToolErrorCode::Internal,
     }
 }

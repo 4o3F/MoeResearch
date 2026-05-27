@@ -376,10 +376,9 @@ fn order_failures_by_request(
 /// Builds the per-aspect failure record embedded inside a partial or failed
 /// `DeepResearchResult`.
 ///
-/// `error_code` is the `snake_case` `ToolErrorCode` identifier (matching the
-/// MCP envelope's `error.code` field) rather than `Debug` output, so external
-/// clients can dispatch on a single, stable string. `message` is the same
-/// redacted summary used in the public envelope.
+/// `error_code` is the `snake_case` transport-neutral `ErrorCode` identifier
+/// rather than `Debug` output, so external clients can dispatch on a stable
+/// string. `message` is the same redacted summary used in the public envelope.
 fn aspect_failure(aspect_id: &str, error: &Error) -> AspectFailure {
     AspectFailure {
         aspect_id: aspect_id.to_owned(),
