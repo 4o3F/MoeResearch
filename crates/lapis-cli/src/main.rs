@@ -1,5 +1,4 @@
 #![warn(clippy::pedantic)]
-#![allow(dead_code, clippy::struct_field_names, clippy::missing_errors_doc)]
 
 use std::path::PathBuf;
 use std::sync::Arc;

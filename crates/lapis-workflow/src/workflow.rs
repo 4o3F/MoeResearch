@@ -70,7 +70,15 @@ pub async fn deep_research(
         research_budget.clone(),
     )
     .await;
-    run.budget_usage = research_budget.snapshot();
+    run.budget_usage = match research_budget.snapshot() {
+        Ok(usage) => usage,
+        Err(error) => {
+            return Err(DeepResearchFailure::with_aspects(
+                error,
+                order_failures_by_request(&request, run.failures),
+            ));
+        }
+    };
     if let Err(error) = request.budget.ensure_usage_within(&run.budget_usage) {
         tracing::warn!(
             request_id = %request_id,

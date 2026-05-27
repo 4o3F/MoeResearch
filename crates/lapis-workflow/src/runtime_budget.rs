@@ -16,7 +16,7 @@
 //! stable.
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 use lapis_error::{Error, Result};
@@ -264,18 +264,11 @@ impl ResearchBudgetGuard {
     /// advance the counter, matching the upstream provider contract that
     /// `usage = None` means "untracked", not "zero".
     ///
-    /// # Panics
-    /// Panics if the internal `Mutex<Option<TokenUsage>>` is poisoned by a
-    /// previous panic while the lock was held; under normal operation this
-    /// cannot happen because the merge body cannot panic.
     pub fn record_token_usage(&self, usage: Option<TokenUsage>) -> Result<()> {
         let Some(delta) = usage else {
             return Ok(());
         };
-        let mut guard = self
-            .token_usage
-            .lock()
-            .expect("research budget guard token usage mutex poisoned");
+        let mut guard = self.token_usage_lock()?;
         let merged = TokenUsage::merge(guard.clone(), Some(delta));
         if let Some(total) = merged.as_ref().and_then(TokenUsage::total_or_sum) {
             self.budget.ensure_tokens_within(total)?;
@@ -286,23 +279,17 @@ impl ResearchBudgetGuard {
 
     /// Returns a point-in-time snapshot of all cross-aspect counters.
     ///
-    /// # Panics
-    /// Panics if the internal token-usage mutex is poisoned; see
-    /// [`Self::record_token_usage`] for why this should never occur.
-    #[must_use]
-    pub fn snapshot(&self) -> ResearchBudgetUsage {
-        let token_usage = self
-            .token_usage
-            .lock()
-            .expect("research budget guard token usage mutex poisoned")
-            .clone();
-        ResearchBudgetUsage {
+    /// # Errors
+    /// Returns [`Error::Internal`] if the internal token-usage mutex is poisoned.
+    pub fn snapshot(&self) -> Result<ResearchBudgetUsage> {
+        let token_usage = self.token_usage_lock()?.clone();
+        Ok(ResearchBudgetUsage {
             agents_started: self.agents_started.load(Ordering::SeqCst),
             model_calls_used: usize_from_u64(self.model_calls.load(Ordering::SeqCst)),
             search_calls_used: usize_from_u64(self.search_calls.load(Ordering::SeqCst)),
             elapsed_ms: self.elapsed_ms(),
             token_usage,
-        }
+        })
     }
 
     /// Rejects provider dispatch when any research-level budget is already
@@ -328,15 +315,9 @@ impl ResearchBudgetGuard {
     }
 
     /// Rejects dispatch when cumulative token usage has already reached the cap.
-    ///
-    /// # Panics
-    /// Panics if the token-usage mutex is poisoned; see
-    /// [`Self::record_token_usage`] for why this should never occur.
     fn check_token_budget_not_exhausted(&self) -> Result<()> {
         let used = self
-            .token_usage
-            .lock()
-            .expect("research budget guard token usage mutex poisoned")
+            .token_usage_lock()?
             .as_ref()
             .and_then(TokenUsage::total_or_sum)
             .unwrap_or(0);
@@ -346,6 +327,12 @@ impl ResearchBudgetGuard {
             });
         }
         Ok(())
+    }
+
+    fn token_usage_lock(&self) -> Result<MutexGuard<'_, Option<TokenUsage>>> {
+        self.token_usage.lock().map_err(|_| Error::Internal {
+            message: "research budget token usage lock poisoned".to_owned(),
+        })
     }
 
     /// Returns elapsed research runtime in milliseconds, saturating on overflow.
