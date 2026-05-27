@@ -1,15 +1,15 @@
-use lapis_core::schema::budget::{AgentBudget, ResearchBudget};
-use lapis_core::schema::limit::{CountLimit, DurationLimitMs, Limit};
-use lapis_core::schema::model::{ModelInputItem, ModelMessageRole, ModelRequest};
-use lapis_core::schema::policy::{
-    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
-};
-use lapis_core::schema::report::{
+use lapis_model::{ModelInputItem, ModelMessageRole, ModelRequest};
+use lapis_workflow::{AgentBudget, ResearchBudget};
+use lapis_workflow::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
     SourceType,
 };
-use lapis_core::schema::research::{
+use lapis_workflow::{
     AspectResearchRequest, AspectResearchTask, AspectSpec, DeepResearchRequest, ResearchContext,
+};
+use lapis_workflow::{CountLimit, DurationLimitMs, Limit};
+use lapis_workflow::{
+    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
 };
 use schemars::schema_for;
 use serde_json::json;
@@ -37,6 +37,7 @@ fn minimal_request() -> ModelRequest {
         previous_response_id: None,
         input: vec![ModelInputItem::message(ModelMessageRole::User, "hello")],
         tools: Vec::new(),
+        response_format: None,
         temperature: None,
         max_tokens: None,
     }

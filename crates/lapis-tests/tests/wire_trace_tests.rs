@@ -1,5 +1,5 @@
 //! Integration tests for the trace-level wire body capture in
-//! `lapis_core::net::reqwest_client`.
+//! `lapis_net::reqwest_client`.
 //!
 //! Each test spins up a minimal HTTP mock server on a loopback port,
 //! installs a thread-local tracing subscriber that captures emitted
@@ -21,9 +21,8 @@
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
-use lapis_core::net::NetworkClient;
-use lapis_core::net::reqwest_client::ReqwestNetworkClient;
-use lapis_core::schema::network::{Header, NetworkRequest};
+use lapis_net::reqwest_client::ReqwestNetworkClient;
+use lapis_net::{Header, NetworkClient, NetworkRequest};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tracing_subscriber::layer::SubscriberExt;

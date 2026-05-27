@@ -6,25 +6,25 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use lapis_core::error::Result;
-use lapis_core::model::provider::ModelProvider;
-use lapis_core::model::service::ModelService;
-use lapis_core::schema::budget::{AgentBudget, BudgetConfig, ResearchBudget};
-use lapis_core::schema::limit::Limit;
-use lapis_core::schema::model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
-use lapis_core::schema::policy::{
-    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
-};
-use lapis_core::schema::report::{
+use lapis_error::Result;
+use lapis_model::ModelProvider;
+use lapis_model::ModelService;
+use lapis_model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
+use lapis_search::SearchProvider;
+use lapis_search::SearchService;
+use lapis_search::{SearchRequest, SearchResponse, SearchResult};
+use lapis_workflow::Limit;
+use lapis_workflow::{AgentBudget, BudgetConfig, ResearchBudget};
+use lapis_workflow::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
     OpenQuestion, TokenUsage,
 };
-use lapis_core::schema::research::{
+use lapis_workflow::{
     AspectResearchRequest, AspectResearchTask, AspectSpec, DeepResearchRequest, ResearchContext,
 };
-use lapis_core::schema::search::{SearchRequest, SearchResponse, SearchResult};
-use lapis_core::search::provider::SearchProvider;
-use lapis_core::search::service::SearchService;
+use lapis_workflow::{
+    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
+};
 use serde_json::json;
 
 pub struct Services {

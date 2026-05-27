@@ -1,14 +1,14 @@
-use lapis_core::error::Error;
-use lapis_core::net::policy::RedactionPolicy;
-use lapis_core::orchestrator::tool_policy::{SEARCH_TOOL_NAME, ToolPolicyGuard, search_model_tool};
-use lapis_core::orchestrator::validator::validate_output;
-use lapis_core::schema::model::ModelToolCall;
-use lapis_core::schema::policy::{EvidencePolicy, OutputPolicy, ToolName};
-use lapis_core::schema::report::{
+use lapis_error::Error;
+use lapis_model::ModelToolCall;
+use lapis_net::policy::RedactionPolicy;
+use lapis_workflow::AspectSpec;
+use lapis_workflow::validate_output;
+use lapis_workflow::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
     SourceType,
 };
-use lapis_core::schema::research::AspectSpec;
+use lapis_workflow::{EvidencePolicy, OutputPolicy, ToolName};
+use lapis_workflow::{SEARCH_TOOL_NAME, ToolPolicyGuard, search_model_tool};
 use serde_json::json;
 
 fn aspect_prompt() -> String {
@@ -119,19 +119,13 @@ fn result(report: AspectReport, evidence: Vec<Evidence>) -> AspectResearchResult
 
 fn validate(
     report: &AspectReport,
-) -> lapis_core::error::Result<(
-    AspectResearchResult,
-    lapis_core::schema::report::ValidationStatus,
-)> {
+) -> lapis_error::Result<(AspectResearchResult, lapis_workflow::ValidationStatus)> {
     validate_result(&result(report.clone(), evidence()))
 }
 
 fn validate_result(
     result: &AspectResearchResult,
-) -> lapis_core::error::Result<(
-    AspectResearchResult,
-    lapis_core::schema::report::ValidationStatus,
-)> {
+) -> lapis_error::Result<(AspectResearchResult, lapis_workflow::ValidationStatus)> {
     validate_output(
         &serde_json::to_string(result).expect("serialize result"),
         &validator_aspect(),
