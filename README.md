@@ -20,8 +20,14 @@ This project is not a general-purpose chatbot and does not provide a Web UI. Its
 ├── Cargo.toml                 # Cargo workspace configuration
 ├── lapis.example.toml         # Example configuration
 ├── crates/
-│   ├── lapis-cli/             # lapis CLI binary entrypoint
-│   ├── lapis-core/            # MCP, config, providers, orchestration, and schemas
+│   ├── lapis-cli/             # lapis CLI binary entrypoint and composition root
+│   ├── lapis-config/          # TOML configuration DTOs and loader
+│   ├── lapis-error/           # Transport-neutral error API
+│   ├── lapis-mcp/             # MCP envelope, server, and tool adapter
+│   ├── lapis-model/           # Model provider boundary and OpenAI adapter
+│   ├── lapis-net/             # Network client, redaction, retry, and wire tracing
+│   ├── lapis-search/          # Search provider boundary and Exa/Grok adapters
+│   ├── lapis-workflow/        # Research workflow, policies, budgets, and reports
 │   └── lapis-tests/           # Integration tests
 ├── docs/                      # Product and design documentation
 ├── prompts/                   # Layer 1 / Layer 2 research prompt assets
@@ -229,7 +235,7 @@ The server currently exposes two research tools:
 | `aspect_research` | Runs one research aspect and returns an `AspectResearchResult`. |
 | `deep_research` | Runs a multi-aspect deep research plan and returns a `DeepResearchResult`. |
 
-Tool inputs and outputs use schemas from `lapis-core`. The upper orchestration layer should:
+Tool inputs and outputs use schemas owned by the domain crates (`lapis-workflow`, `lapis-mcp`, `lapis-model`, and `lapis-search`). The upper orchestration layer should:
 
 - Split the user request into explicit research aspects.
 - Select one model provider for each aspect.

@@ -6,7 +6,10 @@ publish = false
 
 [dependencies]
 async-trait.workspace = true
-lapis-core = { path = "../lapis-core" }
+lapis-config = { path = "../lapis-config" }
+lapis-error = { path = "../lapis-error" }
+lapis-mcp = { path = "../lapis-mcp" }
+lapis-model = { path = "../lapis-model" }
 lapis-net = { path = "../lapis-net" }
 lapis-search = { path = "../lapis-search" }
 lapis-workflow = { path = "../lapis-workflow" }

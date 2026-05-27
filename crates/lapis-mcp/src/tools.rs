@@ -1,14 +1,14 @@
 use rmcp::{Json, handler::server::wrapper::Parameters, tool, tool_router};
 
-use crate::error::{Error, ErrorCode};
-use crate::mcp::server::LapisMcpServer;
-use crate::orchestrator::agent_loop::AgentRuntimeOutput;
-use crate::orchestrator::workflow::{
-    aspect_research as run_aspect_research, deep_research as run_deep_research,
+use lapis_error::{Error, ErrorCode};
+use lapis_workflow::agent_loop::AgentRuntimeOutput;
+use lapis_workflow::{
+    AspectFailure, AspectResearchRequest, AspectResearchResult, DeepResearchRequest,
+    DeepResearchResult, aspect_research as run_aspect_research, deep_research as run_deep_research,
 };
-use crate::schema::mcp::{ToolEnvelope, ToolError, ToolErrorCode, ToolStatus};
-use crate::schema::report::{AspectFailure, AspectResearchResult, DeepResearchResult};
-use crate::schema::research::{AspectResearchRequest, DeepResearchRequest};
+
+use crate::envelope::{ToolEnvelope, ToolError, ToolErrorCode, ToolStatus};
+use crate::server::LapisMcpServer;
 
 #[tool_router(server_handler)]
 impl LapisMcpServer {
@@ -32,8 +32,8 @@ impl LapisMcpServer {
         Json(
             match run_aspect_research(
                 request,
-                self.model_service.inner(),
-                self.search_service.inner(),
+                &self.model_service,
+                &self.search_service,
                 &self.budget_config,
             )
             .await
@@ -54,10 +54,6 @@ impl LapisMcpServer {
                         aspect_id = %aspect_id,
                         tool = "aspect_research",
                         error_code = failure.error.code().as_str(),
-                        // Full internal Display — only the redacted code +
-                        // public message flow into the MCP envelope; the
-                        // operator log keeps the detailed message so
-                        // schema/budget failures can be diagnosed locally.
                         error_detail = %failure.error,
                         retryable = failure.error.retryable(),
                         status = "failed",
@@ -93,8 +89,8 @@ impl LapisMcpServer {
         Json(
             match run_deep_research(
                 request,
-                self.model_service.inner(),
-                self.search_service.inner(),
+                &self.model_service,
+                &self.search_service,
                 &self.budget_config,
             )
             .await
@@ -170,15 +166,6 @@ fn deep_success_envelope(
     }
 }
 
-/// Builds a `failed` MCP envelope.
-///
-/// `aspect_id = Some(_)` is required for single-aspect tool failures (e.g.
-/// `aspect_research`) so external clients can pinpoint the failing aspect.
-/// Top-level deep-research failures pass `None`.
-///
-/// `data` and `run_id` are intentionally `None`; the envelope serializes them
-/// as JSON `null` to satisfy the contract pinned by `tool_envelope_failed_*`
-/// golden tests.
 fn failed_envelope<T>(
     schema_version: String,
     request_id: String,

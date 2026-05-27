@@ -9,14 +9,14 @@ use std::thread;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use lapis_core::error::{Error, Result};
-use lapis_core::mcp::LapisMcpServer;
-use lapis_core::model::provider::ModelProvider;
-use lapis_core::model::service::ModelService;
-use lapis_core::schema::limit::Limit;
-use lapis_core::schema::mcp::{ToolEnvelope, ToolErrorCode, ToolStatus};
-use lapis_core::schema::model::{ModelRequest, ModelResponse};
-use lapis_core::schema::report::AspectResearchResult;
+use lapis_error::{Error, Result};
+use lapis_mcp::LapisMcpServer;
+use lapis_mcp::{ToolEnvelope, ToolErrorCode, ToolStatus};
+use lapis_model::ModelProvider;
+use lapis_model::ModelService;
+use lapis_model::{ModelRequest, ModelResponse};
+use lapis_workflow::AspectResearchResult;
+use lapis_workflow::Limit;
 use rmcp::ServerHandler;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::schemars::schema_for;
@@ -577,9 +577,9 @@ timeout_ms = -1
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(!stdout.contains("lapis core initialized"));
+    assert!(!stdout.contains("lapis initialized"));
     assert!(
-        stderr.contains("lapis core initialized"),
+        stderr.contains("lapis initialized"),
         "expected startup logs on stderr, got stderr: {stderr}"
     );
 }

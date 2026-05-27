@@ -2,8 +2,10 @@ use std::path::{Path, PathBuf};
 
 use snafu::ResultExt;
 
-use crate::error::{ConfigIoSnafu, ConfigParseSnafu, Error, Result};
-use crate::schema::config::LapisConfig;
+use lapis_error::{ConfigIoSnafu, ConfigParseSnafu, Error, Result};
+
+use crate::LapisConfig;
+
 pub fn load_config(path: Option<&Path>) -> Result<LapisConfig> {
     let path = path.map_or_else(default_config_path, Path::to_path_buf);
 

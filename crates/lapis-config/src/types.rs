@@ -4,8 +4,9 @@ use reqwest::header::HeaderValue;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
-use crate::schema::budget::BudgetConfig;
+use lapis_error::{Error, Result};
+
+use crate::limit::{CountLimit, DurationLimitMs, TokenLimit};
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -78,7 +79,7 @@ impl ModelProviderRegistry {
             .count()
     }
 
-    pub(crate) fn validate(&self) -> Result<()> {
+    fn validate(&self) -> Result<()> {
         for (name, provider) in &self.providers {
             provider.validate(name)?;
         }
@@ -100,7 +101,7 @@ impl SearchProviderRegistry {
             .count()
     }
 
-    pub(crate) fn validate(&self) -> Result<()> {
+    fn validate(&self) -> Result<()> {
         for (name, provider) in &self.providers {
             provider.validate(name)?;
         }
@@ -162,6 +163,67 @@ impl SearchProviderEndpoint {
             }),
         }
     }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BudgetConfig {
+    pub research: ResearchBudgetConfig,
+    pub per_agent: AgentBudgetConfig,
+}
+
+impl BudgetConfig {
+    pub fn validate(&self) -> Result<()> {
+        self.research
+            .max_agents
+            .require_non_zero("budget.research.max_agents")?;
+        self.research
+            .max_concurrent_agents
+            .require_non_zero("budget.research.max_concurrent_agents")?;
+        self.research
+            .total_timeout_ms
+            .require_non_zero("budget.research.total_timeout_ms")?;
+        self.per_agent
+            .max_turns
+            .require_non_zero("budget.per_agent.max_turns")?;
+        self.per_agent
+            .timeout_ms
+            .require_non_zero("budget.per_agent.timeout_ms")?;
+
+        if self
+            .research
+            .max_concurrent_agents
+            .exceeds(self.research.max_agents)
+        {
+            return Err(Error::ConfigInvalid {
+                message: "budget.research.max_concurrent_agents must not exceed \
+                          budget.research.max_agents"
+                    .to_owned(),
+            });
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResearchBudgetConfig {
+    pub max_agents: CountLimit,
+    pub max_concurrent_agents: CountLimit,
+    pub max_total_model_calls: CountLimit,
+    pub max_total_search_calls: CountLimit,
+    pub total_timeout_ms: DurationLimitMs,
+    pub max_tokens: TokenLimit,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentBudgetConfig {
+    pub max_turns: CountLimit,
+    pub max_tool_calls: CountLimit,
+    pub max_search_calls: CountLimit,
+    pub timeout_ms: DurationLimitMs,
 }
 
 fn validate_timeout(kind: &str, name: &str, timeout_ms: Option<u64>) -> Result<()> {

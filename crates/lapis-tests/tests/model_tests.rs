@@ -3,16 +3,16 @@ mod support;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use lapis_core::error::{Error, Result};
-use lapis_core::model::provider::{ModelProvider, OpenAiProvider};
-use lapis_core::model::service::ModelService;
-use lapis_core::schema::model::{
+use lapis_error::{Error, Result};
+use lapis_model::ModelService;
+use lapis_model::{
     JsonSchemaFormat, ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse,
     ModelResponseFormat, ModelTool, ModelToolCall,
 };
-use lapis_core::schema::network::NetworkResponse;
-use lapis_core::schema::policy::ModelPolicy;
-use lapis_core::schema::report::AspectResearchResult;
+use lapis_model::{ModelProvider, OpenAiProvider};
+use lapis_net::NetworkResponse;
+use lapis_workflow::AspectResearchResult;
+use lapis_workflow::ModelPolicy;
 use schemars::schema_for;
 use serde_json::{Value, json};
 use support::network::MockNetworkClient;
@@ -123,6 +123,14 @@ fn model_policy(allowed_providers: &[&str]) -> ModelPolicy {
     }
 }
 
+async fn complete_with_policy(
+    service: &ModelService,
+    request: ModelRequest,
+    policy: &ModelPolicy,
+) -> Result<ModelResponse> {
+    service.complete(policy.apply_to(request)?).await
+}
+
 #[tokio::test]
 async fn routes_requested_allowed_provider() {
     let mut service = ModelService::new();
@@ -130,8 +138,7 @@ async fn routes_requested_allowed_provider() {
     service.register(StaticProvider("beta"));
     let policy = model_policy(&["beta"]);
 
-    let response = service
-        .complete(request("beta"), &policy)
+    let response = complete_with_policy(&service, request("beta"), &policy)
         .await
         .expect("model response");
 
@@ -144,8 +151,7 @@ async fn rejects_empty_request_provider() {
     service.register(StaticProvider("alpha"));
     let policy = model_policy(&["alpha"]);
 
-    let error = service
-        .complete(request(""), &policy)
+    let error = complete_with_policy(&service, request(""), &policy)
         .await
         .expect_err("missing provider error");
 
@@ -158,8 +164,7 @@ async fn rejects_disallowed_provider() {
     service.register(StaticProvider("beta"));
     let policy = model_policy(&["alpha"]);
 
-    let error = service
-        .complete(request("beta"), &policy)
+    let error = complete_with_policy(&service, request("beta"), &policy)
         .await
         .expect_err("disallowed provider error");
 
@@ -175,8 +180,7 @@ async fn applies_policy_settings_before_dispatch() {
     policy.temperature = Some(0.7);
     policy.max_tokens = Some(128);
 
-    service
-        .complete(request("alpha"), &policy)
+    complete_with_policy(&service, request("alpha"), &policy)
         .await
         .expect("model response");
     let request = seen
@@ -200,8 +204,7 @@ async fn validates_request_after_policy_settings() {
     policy.temperature = Some(3.0);
     policy.max_tokens = Some(128);
 
-    let error = service
-        .complete(request("alpha"), &policy)
+    let error = complete_with_policy(&service, request("alpha"), &policy)
         .await
         .expect_err("invalid model request");
 
@@ -217,8 +220,7 @@ async fn rejects_zero_policy_max_tokens_before_dispatch() {
     let mut policy = model_policy(&["alpha"]);
     policy.max_tokens = Some(0);
 
-    let error = service
-        .complete(request("alpha"), &policy)
+    let error = complete_with_policy(&service, request("alpha"), &policy)
         .await
         .expect_err("invalid model request");
 
@@ -235,8 +237,7 @@ async fn rejects_empty_model_messages_before_dispatch() {
     let mut invalid = request("alpha");
     invalid.input = vec![];
 
-    let error = service
-        .complete(invalid, &policy)
+    let error = complete_with_policy(&service, invalid, &policy)
         .await
         .expect_err("invalid model request");
 
@@ -257,8 +258,7 @@ async fn rejects_invalid_json_schema_response_format_before_dispatch() {
         schema: serde_json::json!({"type": "object"}),
     }));
 
-    let error = service
-        .complete(invalid, &policy)
+    let error = complete_with_policy(&service, invalid, &policy)
         .await
         .expect_err("invalid response format");
 
@@ -272,8 +272,7 @@ async fn rejects_invalid_json_schema_response_format_before_dispatch() {
         schema: serde_json::json!(true),
     }));
 
-    let error = service
-        .complete(invalid, &policy)
+    let error = complete_with_policy(&service, invalid, &policy)
         .await
         .expect_err("invalid response format");
 

@@ -390,9 +390,9 @@ struct OpenAiResponse {
 /// The variant set is intentionally open via `#[serde(other)]` so that any
 /// future provider-side output kind (e.g. new reasoning modes, tool result
 /// envelopes) deserializes into `Unknown` and is silently ignored by the
-/// parser, mirroring the tolerant strategy in
-/// `crates/lapis-core/src/search/provider/grok.rs`. This keeps Lapis robust
-/// against provider additions without requiring a client-side update.
+/// parser, mirroring the tolerant strategy in `lapis-search`'s Grok adapter.
+/// This keeps Lapis robust against provider additions without requiring a
+/// client-side update.
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum OpenAiResponseOutput {

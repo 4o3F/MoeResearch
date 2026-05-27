@@ -1,4 +1,4 @@
-use lapis_core::net::policy::RedactionPolicy;
+use lapis_net::policy::RedactionPolicy;
 use serde_json::json;
 
 #[test]

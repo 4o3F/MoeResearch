@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use rmcp::service::serve_server;
 
-use crate::error::{Error, Result};
-use crate::model::service::ModelService;
-use crate::schema::budget::BudgetConfig;
-use crate::search::service::SearchService;
+use lapis_error::{Error, Result};
+use lapis_model::ModelService;
+use lapis_search::SearchService;
+use lapis_workflow::BudgetConfig;
 
 #[derive(Clone)]
 pub struct LapisMcpServer {
@@ -15,6 +15,7 @@ pub struct LapisMcpServer {
 }
 
 impl LapisMcpServer {
+    #[must_use]
     pub fn new(
         model_service: ModelService,
         search_service: SearchService,

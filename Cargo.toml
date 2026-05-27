@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "crates/lapis-core",
     "crates/lapis-error",
     "crates/lapis-config",
     "crates/lapis-net",

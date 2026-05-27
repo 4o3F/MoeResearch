@@ -853,40 +853,28 @@ name = "lapis-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "lapis-core",
+ "lapis-config",
+ "lapis-error",
+ "lapis-mcp",
+ "lapis-model",
+ "lapis-net",
+ "lapis-search",
+ "lapis-workflow",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
 name = "lapis-config"
 version = "0.1.0"
-
-[[package]]
-name = "lapis-core"
-version = "0.1.0"
 dependencies = [
- "async-trait",
- "clap",
- "futures",
  "lapis-error",
- "lapis-model",
- "lapis-net",
- "lapis-search",
- "lapis-workflow",
  "reqwest",
- "rmcp",
  "schemars",
  "serde",
- "serde_json",
  "snafu",
- "time",
- "tokio",
  "toml",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
 ]
 
 [[package]]
@@ -901,6 +889,16 @@ dependencies = [
 [[package]]
 name = "lapis-mcp"
 version = "0.1.0"
+dependencies = [
+ "lapis-error",
+ "lapis-model",
+ "lapis-search",
+ "lapis-workflow",
+ "rmcp",
+ "schemars",
+ "serde",
+ "tracing",
+]
 
 [[package]]
 name = "lapis-model"
@@ -949,7 +947,10 @@ name = "lapis-tests"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "lapis-core",
+ "lapis-config",
+ "lapis-error",
+ "lapis-mcp",
+ "lapis-model",
  "lapis-net",
  "lapis-search",
  "lapis-workflow",
