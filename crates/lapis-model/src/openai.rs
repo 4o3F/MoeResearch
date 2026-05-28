@@ -7,7 +7,7 @@ use snafu::ResultExt;
 
 use lapis_error::{Error, JsonSnafu, Result};
 use lapis_net::provider_http::{bearer_json_sse_post, provider_status_retryable};
-use lapis_net::{NetworkClient, NetworkRequest, SseEvent};
+use lapis_net::{NetworkClient, NetworkRequest, SseEvent, SseNetworkResponse};
 
 use crate::{
     JsonSchemaFormat, ModelInputItem, ModelMessageRole, ModelProvider, ModelRequest, ModelResponse,
@@ -173,7 +173,7 @@ impl ModelProvider for OpenAiProvider {
     async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
         self.validate_request(&request)?;
         let network_request = self.build_network_request(request)?;
-        let response = self.network.send_sse(network_request).await?;
+        let response = self.network.send(network_request).await?;
 
         if !(200..300).contains(&response.status) {
             return Err(Error::HttpStatus {
@@ -183,7 +183,9 @@ impl ModelProvider for OpenAiProvider {
             });
         }
 
-        self.map_response(assemble_openai_sse(response.events)?)
+        let sse_response: SseNetworkResponse =
+            serde_json::from_value(response.body).context(JsonSnafu)?;
+        self.map_response(assemble_openai_sse(sse_response.events)?)
     }
 }
 

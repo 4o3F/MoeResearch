@@ -15,6 +15,10 @@ pub struct MockNetworkClient {
     requests: Arc<Mutex<Vec<NetworkRequest>>>,
 }
 
+pub fn mock_completed_sse(body: serde_json::Value) -> Arc<MockNetworkClient> {
+    Arc::new(MockNetworkClient::new_sse([completed_sse_response(body)]))
+}
+
 pub fn completed_sse_response(body: serde_json::Value) -> SseNetworkResponse {
     SseNetworkResponse {
         status: 200,
@@ -70,24 +74,40 @@ impl MockNetworkClient {
 #[async_trait]
 impl NetworkClient for MockNetworkClient {
     async fn send(&self, request: NetworkRequest) -> Result<NetworkResponse> {
+        let accept_sse = request.headers.iter().any(|header| {
+            header.name.eq_ignore_ascii_case("accept")
+                && header
+                    .value
+                    .split(',')
+                    .any(|value| value.trim().eq_ignore_ascii_case("text/event-stream"))
+        });
         self.requests.lock().expect("requests lock").push(request);
+
+        if accept_sse {
+            let response = self
+                .sse_responses
+                .lock()
+                .expect("sse responses lock")
+                .pop_front()
+                .ok_or_else(|| Error::NetworkFailed {
+                    message: "mock SSE network response queue is empty".to_owned(),
+                })?;
+            let status = response.status;
+            let headers = response.headers.clone();
+            let body = serde_json::to_value(response).map_err(|source| Error::Json { source })?;
+            return Ok(NetworkResponse {
+                status,
+                headers,
+                body,
+            });
+        }
+
         self.responses
             .lock()
             .expect("responses lock")
             .pop_front()
             .ok_or_else(|| Error::NetworkFailed {
                 message: "mock network response queue is empty".to_owned(),
-            })
-    }
-
-    async fn send_sse(&self, request: NetworkRequest) -> Result<SseNetworkResponse> {
-        self.requests.lock().expect("requests lock").push(request);
-        self.sse_responses
-            .lock()
-            .expect("sse responses lock")
-            .pop_front()
-            .ok_or_else(|| Error::NetworkFailed {
-                message: "mock SSE network response queue is empty".to_owned(),
             })
     }
 }

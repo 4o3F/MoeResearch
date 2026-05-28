@@ -22,7 +22,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use lapis_net::reqwest_client::ReqwestNetworkClient;
-use lapis_net::{Header, NetworkClient, NetworkRequest};
+use lapis_net::{Header, NetworkClient, NetworkRequest, SseNetworkResponse};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tracing_subscriber::layer::SubscriberExt;
@@ -271,13 +271,35 @@ fn request_to(url: String) -> NetworkRequest {
     NetworkRequest {
         method: "POST".to_owned(),
         url,
-        headers: vec![Header {
-            name: "content-type".to_owned(),
-            value: "application/json".to_owned(),
-        }],
+        headers: vec![
+            Header {
+                name: "content-type".to_owned(),
+                value: "application/json".to_owned(),
+            },
+            Header {
+                name: "accept".to_owned(),
+                value: "application/json".to_owned(),
+            },
+        ],
         body: Some(serde_json::json!({ "input": "hello" })),
         timeout_ms: Some(5_000),
     }
+}
+
+fn sse_request_to(url: String) -> NetworkRequest {
+    let mut request = request_to(url);
+    request
+        .headers
+        .retain(|header| !header.name.eq_ignore_ascii_case("accept"));
+    request.headers.push(Header {
+        name: "accept".to_owned(),
+        value: "text/event-stream".to_owned(),
+    });
+    request
+}
+
+fn sse_body(response: lapis_net::NetworkResponse) -> SseNetworkResponse {
+    serde_json::from_value(response.body).expect("SSE response body")
 }
 
 // ---------------------------------------------------------------------------
@@ -552,9 +574,10 @@ async fn sse_response_collects_events_until_done_marker() {
     let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
     let client = build_client();
     let response = client
-        .send_sse(request_to(server.url("/responses")))
+        .send(sse_request_to(server.url("/responses")))
         .await
         .expect("SSE request succeeds");
+    let response = sse_body(response);
 
     assert_eq!(response.status, 200);
     assert_eq!(response.events.len(), 2);
@@ -581,11 +604,35 @@ async fn sse_response_rejects_oversized_event_data() {
 
     let client = build_client();
     let error = client
-        .send_sse(request_to(server.url("/responses")))
+        .send(sse_request_to(server.url("/responses")))
         .await
         .expect_err("oversized SSE event should fail");
 
     assert!(error.to_string().contains("SSE event exceeded data limit"));
+    assert!(!error.retryable());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sse_response_rejects_total_data_overflow() {
+    let chunk = "x".repeat(3 * 1024);
+    let mut body = String::new();
+    for _ in 0..3000 {
+        body.push_str("event: response.output_text.delta\n");
+        body.push_str(&format!("data: {{\"blob\":\"{chunk}\"}}\n\n"));
+    }
+    let server = MockServer::start(vec![CannedResponse::event_stream(200, body)]).await;
+
+    let client = build_client();
+    let error = client
+        .send(sse_request_to(server.url("/responses")))
+        .await
+        .expect_err("oversized SSE stream should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("SSE stream exceeded total data limit")
+    );
     assert!(!error.retryable());
 }
 

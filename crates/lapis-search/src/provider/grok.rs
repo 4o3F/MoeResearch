@@ -8,7 +8,7 @@ use snafu::ResultExt;
 
 use lapis_error::{Error, JsonSnafu, Result};
 use lapis_net::provider_http::{bearer_json_sse_post, provider_status_retryable};
-use lapis_net::{NetworkClient, SseEvent};
+use lapis_net::{NetworkClient, SseEvent, SseNetworkResponse};
 
 use crate::{Freshness, SearchProvider, SearchRequest, SearchResponse, SearchResult};
 
@@ -80,7 +80,7 @@ impl SearchProvider for GrokSearchProvider {
 
         let response = self
             .network
-            .send_sse(bearer_json_sse_post(
+            .send(bearer_json_sse_post(
                 &self.base_url,
                 "responses",
                 &self.api_key,
@@ -97,8 +97,10 @@ impl SearchProvider for GrokSearchProvider {
             });
         }
 
+        let sse_response: SseNetworkResponse =
+            serde_json::from_value(response.body).context(JsonSnafu)?;
         let provider_response: GrokSearchResponse =
-            serde_json::from_value(assemble_grok_sse(response.events)?).context(JsonSnafu)?;
+            serde_json::from_value(assemble_grok_sse(sse_response.events)?).context(JsonSnafu)?;
 
         Ok(SearchResponse {
             provider: self.name().to_owned(),
