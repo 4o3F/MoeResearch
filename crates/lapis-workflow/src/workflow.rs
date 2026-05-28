@@ -1,3 +1,9 @@
+//! Workflow orchestration for standalone aspect and multi-aspect deep research.
+//!
+//! This module owns the execution boundary: validate incoming requests, derive
+//! the effective research budget from operator config and request limits, run
+//! aspect agents, then aggregate successes and failures into the public result.
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -5,10 +11,11 @@ use futures::{StreamExt, stream};
 use uuid::Uuid;
 
 use crate::agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
-use crate::budget::BudgetConfig;
+use crate::budget::{BudgetConfig, ResearchBudget};
+use crate::limit::Limit;
 use crate::report::{
-    AspectFailure, AspectReport, AspectResearchResult, Confidence, CoverageSummary,
-    DeepResearchResult, Evidence, OpenQuestion, ResearchBudgetUsage,
+    AspectFailure, AspectReport, AspectResearchResult, Confidence, ConfidenceSummary,
+    CoverageSummary, DeepResearchResult, Evidence, OpenQuestion, ResearchBudgetUsage,
 };
 use crate::research::{AspectResearchRequest, DeepResearchRequest, WorkflowValidationContext};
 use crate::runtime_budget::ResearchBudgetGuard;
@@ -19,13 +26,19 @@ use lapis_search::SearchService;
 
 const SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["0.1"];
 
+/// Runs one aspect agent.
+///
+/// `AspectResearchRequest` has no request-level [`ResearchBudget`], so the
+/// standalone tool inherits the operator `budget.research` caps from config.
+/// The request task still supplies the per-agent turn/tool/search budget.
 pub async fn aspect_research(
     request: AspectResearchRequest,
     model_service: &ModelService,
     search_service: &SearchService,
     budget_config: &BudgetConfig,
 ) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
-    let research_budget = ResearchBudgetGuard::unlimited();
+    let research_budget =
+        ResearchBudgetGuard::new(effective_research_budget(&budget_config.research, None));
     research_budget.record_agent_started();
     run_aspect_runtime(
         request,
@@ -37,12 +50,32 @@ pub async fn aspect_research(
     .await
 }
 
+/// Runs a Layer 1 deep-research plan.
+///
+/// The runtime budget is the stricter value for each research-budget dimension:
+/// operator config is the hard ceiling, and the Layer 1 request can only narrow
+/// a single run. `Limit::Unlimited` means "this layer adds no cap", not
+/// "ignore the other layer's finite cap". Finalization still honors
+/// `execution_policy.fail_fast` during execution and `allow_partial_results`
+/// when shaping the final result.
 pub async fn deep_research(
-    request: DeepResearchRequest,
+    mut request: DeepResearchRequest,
     model_service: &ModelService,
     search_service: &SearchService,
     budget_config: &BudgetConfig,
 ) -> std::result::Result<DeepResearchResult, Box<DeepResearchFailure>> {
+    let requested_budget = request.budget.clone();
+    let effective_budget =
+        effective_research_budget(&budget_config.research, Some(&requested_budget));
+    if effective_budget != requested_budget {
+        tracing::debug!(
+            request_id = %request.request_id,
+            requested_budget = ?requested_budget,
+            effective_budget = ?effective_budget,
+            "deep research budget constrained by effective budget"
+        );
+    }
+    request.budget = effective_budget.clone();
     request
         .validate_for_execution(&WorkflowValidationContext {
             budget_config,
@@ -61,7 +94,7 @@ pub async fn deep_research(
         "deep research started"
     );
 
-    let research_budget = ResearchBudgetGuard::new(request.budget.clone());
+    let research_budget = ResearchBudgetGuard::new(effective_budget.clone());
     let mut run = execute_aspects(
         &request,
         model_service,
@@ -79,7 +112,7 @@ pub async fn deep_research(
             ));
         }
     };
-    if let Err(error) = request.budget.ensure_usage_within(&run.budget_usage) {
+    if let Err(error) = effective_budget.ensure_usage_within(&run.budget_usage) {
         tracing::warn!(
             request_id = %request_id,
             run_id = %run_id,
@@ -172,6 +205,11 @@ impl DeepResearchRun {
     }
 }
 
+/// Executes every aspect with one shared research-level guard.
+///
+/// The request passed here already carries the effective merged budget. Its
+/// concurrency cap controls scheduling, while the shared `ResearchBudgetGuard`
+/// reserves global model/search/token capacity before provider dispatch.
 async fn execute_aspects(
     request: &DeepResearchRequest,
     model_service: &ModelService,
@@ -231,6 +269,54 @@ async fn run_aspect_runtime(
     AgentRuntime::new(model_service, search_service, &request, research_budget)
         .run()
         .await
+}
+
+/// Merges operator config and optional Layer 1 request budgets.
+///
+/// Each field chooses the stricter limit. `Unlimited` means the corresponding
+/// layer does not constrain that dimension, so a finite limit from the other
+/// layer wins. If both layers are unlimited, the effective field remains
+/// unlimited; no hidden hard cap is introduced here.
+fn effective_research_budget(
+    configured: &ResearchBudget,
+    requested: Option<&ResearchBudget>,
+) -> ResearchBudget {
+    let Some(requested) = requested else {
+        return configured.clone();
+    };
+
+    ResearchBudget {
+        max_agents: stricter_limit(configured.max_agents, requested.max_agents),
+        max_concurrent_agents: stricter_limit(
+            configured.max_concurrent_agents,
+            requested.max_concurrent_agents,
+        ),
+        max_total_model_calls: stricter_limit(
+            configured.max_total_model_calls,
+            requested.max_total_model_calls,
+        ),
+        max_total_search_calls: stricter_limit(
+            configured.max_total_search_calls,
+            requested.max_total_search_calls,
+        ),
+        total_timeout_ms: stricter_limit(configured.total_timeout_ms, requested.total_timeout_ms),
+        max_tokens: stricter_limit(configured.max_tokens, requested.max_tokens),
+    }
+}
+
+fn stricter_limit<T>(configured: Limit<T>, requested: Limit<T>) -> Limit<T>
+where
+    T: Copy + Ord,
+{
+    match (configured, requested) {
+        (Limit::Unlimited, Limit::Unlimited) => Limit::Unlimited,
+        (Limit::Unlimited, Limit::Limited(value)) | (Limit::Limited(value), Limit::Unlimited) => {
+            Limit::Limited(value)
+        }
+        (Limit::Limited(configured), Limit::Limited(requested)) => {
+            Limit::Limited(configured.min(requested))
+        }
+    }
 }
 
 fn aspect_requests(request: &DeepResearchRequest) -> Vec<AspectResearchRequest> {
@@ -394,10 +480,8 @@ fn aspect_failure(aspect_id: &str, error: &Error) -> AspectFailure {
     }
 }
 
-fn confidence_summary(
-    aspect_reports: &[crate::report::AspectReport],
-) -> crate::report::ConfidenceSummary {
-    let mut summary = crate::report::ConfidenceSummary::zero();
+fn confidence_summary(aspect_reports: &[AspectReport]) -> ConfidenceSummary {
+    let mut summary = ConfidenceSummary::zero();
     for report in aspect_reports {
         match report.confidence {
             Confidence::High => summary.high += 1,

@@ -201,7 +201,7 @@ async fn rejects_plan_exceeding_max_agents() {
 }
 
 #[tokio::test]
-async fn rejects_research_budget_above_configured_limits() {
+async fn rejects_plan_when_effective_max_agents_cannot_cover_aspects() {
     let request = deep_request(3);
     let services = services(&[]);
     let limits = BudgetConfig {
@@ -214,7 +214,7 @@ async fn rejects_research_budget_above_configured_limits() {
 
     let failure = deep_research(request, &services.model, &services.search, &limits)
         .await
-        .expect_err("budget exceeds configured limits");
+        .expect_err("effective max_agents cannot cover requested aspects");
 
     assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
     assert!(failure.failed_aspects.is_empty());
@@ -222,24 +222,24 @@ async fn rejects_research_budget_above_configured_limits() {
 }
 
 #[tokio::test]
-async fn rejects_research_concurrency_above_configured_limits() {
+async fn research_concurrency_above_configured_limits_is_clamped() {
     let request = deep_request(3);
     let services = services(&[]);
     let limits = BudgetConfig {
         research: ResearchBudget {
+            max_agents: Limit::limited(3),
             max_concurrent_agents: Limit::limited(1),
             ..ResearchBudget::unlimited()
         },
         per_agent: AgentBudget::unlimited(),
     };
 
-    let failure = deep_research(request, &services.model, &services.search, &limits)
+    let result = deep_research(request, &services.model, &services.search, &limits)
         .await
-        .expect_err("concurrency exceeds configured limits");
+        .expect("configured concurrency should cap request concurrency");
 
-    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
-    assert!(failure.failed_aspects.is_empty());
-    assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(result.completed_aspects.len(), 3);
+    assert_eq!(services.max_in_flight.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -307,6 +307,56 @@ async fn global_model_budget_stops_before_extra_model_call() {
     )
     .await
     .expect_err("global model budget");
+
+    assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.failed_aspects.len(), 1);
+    assert_eq!(failure.failed_aspects[0].error_code, "budget_exceeded");
+    assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn request_unlimited_model_budget_inherits_config_cap() {
+    let mut request = deep_request(2);
+    request.budget.max_total_model_calls = Limit::unlimited();
+    request.budget.max_concurrent_agents = Limit::limited(1);
+    request.execution_policy.allow_partial_results = false;
+    let services = services(&[]);
+    let limits = BudgetConfig {
+        research: ResearchBudget {
+            max_total_model_calls: Limit::limited(2),
+            ..ResearchBudget::unlimited()
+        },
+        per_agent: AgentBudget::unlimited(),
+    };
+
+    let failure = deep_research(request, &services.model, &services.search, &limits)
+        .await
+        .expect_err("configured model budget should cap unlimited request");
+
+    assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.failed_aspects.len(), 1);
+    assert_eq!(failure.failed_aspects[0].error_code, "budget_exceeded");
+    assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn config_model_budget_wins_when_request_budget_is_higher() {
+    let mut request = deep_request(2);
+    request.budget.max_total_model_calls = Limit::limited(10);
+    request.budget.max_concurrent_agents = Limit::limited(1);
+    request.execution_policy.allow_partial_results = false;
+    let services = services(&[]);
+    let limits = BudgetConfig {
+        research: ResearchBudget {
+            max_total_model_calls: Limit::limited(2),
+            ..ResearchBudget::unlimited()
+        },
+        per_agent: AgentBudget::unlimited(),
+    };
+
+    let failure = deep_research(request, &services.model, &services.search, &limits)
+        .await
+        .expect_err("configured model budget should be stricter");
 
     assert!(matches!(failure.error, Error::PartialResult { .. }));
     assert_eq!(failure.failed_aspects.len(), 1);
@@ -429,17 +479,25 @@ async fn global_token_budget_blocks_dispatch_after_cap_is_reached() {
     assert_eq!(services.search_calls.load(Ordering::SeqCst), 0);
 }
 
-/// `ResearchBudget::max_tokens` is checked against the corresponding
-/// configured cap during request validation, so an unbounded request is
-/// rejected when the operator restricts tokens.
+/// The operator token cap is merged into the effective budget instead of
+/// rejecting an otherwise well-formed request during validation.
 #[tokio::test]
-async fn request_budget_max_tokens_validated_against_config_cap() {
+async fn request_budget_max_tokens_is_clamped_to_config_cap() {
+    use lapis_workflow::TokenUsage;
     let mut request = deep_request(1);
-    request.budget.max_tokens = Limit::limited(1_000_000);
-    let services = services(&[]);
+    request.budget.max_concurrent_agents = Limit::limited(1);
+    request.budget.max_tokens = Limit::limited(1_000);
+    let services = services_with_token_usage(
+        &[],
+        Some(TokenUsage {
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: Some(100),
+        }),
+    );
     let limits = BudgetConfig {
         research: ResearchBudget {
-            max_tokens: Limit::limited(1_000),
+            max_tokens: Limit::limited(150),
             ..ResearchBudget::unlimited()
         },
         per_agent: AgentBudget::unlimited(),
@@ -447,11 +505,12 @@ async fn request_budget_max_tokens_validated_against_config_cap() {
 
     let failure = deep_research(request, &services.model, &services.search, &limits)
         .await
-        .expect_err("token budget exceeds configured cap");
+        .expect_err("configured token budget should cap request");
 
-    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
-    assert!(failure.failed_aspects.is_empty());
-    assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
+    assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.failed_aspects.len(), 1);
+    assert_eq!(failure.failed_aspects[0].error_code, "budget_exceeded");
+    assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
 }
 
 /// Two concurrent aspects share the same cross-aspect guard: with

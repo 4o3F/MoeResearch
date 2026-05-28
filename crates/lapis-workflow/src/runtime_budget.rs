@@ -198,9 +198,8 @@ impl ResearchBudgetGuard {
 
     /// Constructs a guard with no caps on any dimension.
     ///
-    /// Intended for the standalone `aspect_research` MCP entry point: the
-    /// per-aspect [`AgentBudgetGuard`] still enforces the local turn/tool
-    /// caps, and there is no aggregate research budget to apply.
+    /// Intended for tests and controlled direct-runtime callers only. Workflow
+    /// entry points should derive their guard from operator/request budgets.
     #[must_use]
     pub fn unlimited() -> Arc<Self> {
         Self::new(ResearchBudget::unlimited())

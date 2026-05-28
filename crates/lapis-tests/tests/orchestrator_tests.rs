@@ -805,6 +805,52 @@ async fn delegates_valid_request_to_runtime() {
 }
 
 #[tokio::test]
+async fn aspect_research_uses_configured_research_model_call_budget() {
+    let request = aspect_request();
+    let (model_service, search_service, model_calls, search_calls) = services(vec![
+        tool_response("search"),
+        final_response(valid_report_json()),
+    ]);
+    let limits = BudgetConfig {
+        research: ResearchBudget {
+            max_total_model_calls: Limit::limited(1),
+            ..ResearchBudget::unlimited()
+        },
+        per_agent: AgentBudget::unlimited(),
+    };
+
+    let failure = aspect_research(request, &model_service, &search_service, &limits)
+        .await
+        .expect_err("configured research model budget should cap aspect_research");
+
+    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
+    assert_eq!(model_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(search_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn aspect_research_uses_configured_research_search_budget() {
+    let request = aspect_request();
+    let (model_service, search_service, model_calls, search_calls) =
+        services(vec![tool_response("search")]);
+    let limits = BudgetConfig {
+        research: ResearchBudget {
+            max_total_search_calls: Limit::limited(0),
+            ..ResearchBudget::unlimited()
+        },
+        per_agent: AgentBudget::unlimited(),
+    };
+
+    let failure = aspect_research(request, &model_service, &search_service, &limits)
+        .await
+        .expect_err("configured research search budget should cap aspect_research");
+
+    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
+    assert_eq!(model_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(search_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn fake_model_and_search_complete_successfully() {
     let request = aspect_request();
     let (model_service, search_service, model_calls, search_calls) = services(vec![

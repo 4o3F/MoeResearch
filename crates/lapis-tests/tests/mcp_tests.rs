@@ -17,6 +17,7 @@ use lapis_model::ModelService;
 use lapis_model::{ModelRequest, ModelResponse};
 use lapis_workflow::AspectResearchResult;
 use lapis_workflow::Limit;
+use lapis_workflow::{AgentBudget, BudgetConfig, ResearchBudget};
 use rmcp::ServerHandler;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::schemars::schema_for;
@@ -82,6 +83,10 @@ fn sequence_services(responses: Vec<ModelResponse>) -> Services {
 
 fn mcp_server(services: Services) -> LapisMcpServer {
     LapisMcpServer::new(services.model, services.search, unlimited_budget_config())
+}
+
+fn mcp_server_with_budget(services: Services, budget_config: BudgetConfig) -> LapisMcpServer {
+    LapisMcpServer::new(services.model, services.search, budget_config)
 }
 
 #[test]
@@ -193,6 +198,33 @@ async fn aspect_research_budget_failure_envelope_returns_tool_error() {
     assert!(error.failed_aspects.is_empty());
     assert!(envelope.run_id.is_none());
     assert_eq!(search_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn aspect_research_config_research_budget_failure_returns_tool_error() {
+    let services = sequence_services(vec![tool_response()]);
+    let search_calls = services.search_calls.clone();
+    let budget_config = BudgetConfig {
+        research: ResearchBudget {
+            max_total_search_calls: Limit::limited(0),
+            ..ResearchBudget::unlimited()
+        },
+        per_agent: AgentBudget::unlimited(),
+    };
+
+    let envelope = mcp_server_with_budget(services, budget_config)
+        .aspect_research(Parameters(aspect_request()))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    assert!(envelope.data.is_none());
+    assert!(envelope.run_id.is_none());
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::BudgetExceeded);
+    assert_eq!(error.aspect_id.as_deref(), Some("aspect-1"));
+    assert!(error.failed_aspects.is_empty());
+    assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
