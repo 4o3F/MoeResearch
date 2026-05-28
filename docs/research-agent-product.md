@@ -486,7 +486,7 @@ SearchResponse
 
 ### 10.5 Schema Version
 
-当前 workflow 接受的 `schema_version` 取值（见 `crates/lapis-workflow/src/research.rs` 的 `SUPPORTED_SCHEMA_VERSIONS` 常量）：`m4`、`m5`、`1`、`1.0`。任何其他取值会触发 `ToolErrorCode::unsupported_schema_version`，并通过 MCP envelope 的 `error` 字段返回。
+当前 workflow 接受的 `schema_version` 取值（见 `crates/lapis-workflow/src/workflow.rs` 的 `SUPPORTED_SCHEMA_VERSIONS` 常量）：`0.1`。任何其他取值会触发 `ToolErrorCode::unsupported_schema_version`，并通过 MCP envelope 的 `error` 字段返回。
 
 新增 schema version 时必须：
 
