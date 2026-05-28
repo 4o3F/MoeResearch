@@ -233,7 +233,7 @@ fn aspect_prompt() -> String {
 
 fn aspect_request() -> AspectResearchRequest {
     AspectResearchRequest {
-        schema_version: "m4".to_owned(),
+        schema_version: "0.1".to_owned(),
         request_id: "request-1".to_owned(),
         task: AspectResearchTask {
             aspect: AspectSpec {

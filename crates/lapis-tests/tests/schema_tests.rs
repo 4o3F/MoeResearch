@@ -99,7 +99,7 @@ fn execution_policy(timeout_ms: Option<u64>) -> ExecutionPolicy {
 #[test]
 fn deep_research_request_roundtrips_plan_fields_json() {
     let request = DeepResearchRequest {
-        schema_version: "m5".to_owned(),
+        schema_version: "0.1".to_owned(),
         request_id: "request-1".to_owned(),
         user_question: "What should Lapis build first?".to_owned(),
         aspect_tasks: vec![AspectResearchTask {
@@ -137,7 +137,7 @@ fn deep_research_request_roundtrips_plan_fields_json() {
 #[test]
 fn aspect_research_request_roundtrips_json() {
     let request = AspectResearchRequest {
-        schema_version: "m4".to_owned(),
+        schema_version: "0.1".to_owned(),
         request_id: "req-1".to_owned(),
         task: AspectResearchTask {
             aspect: aspect(),

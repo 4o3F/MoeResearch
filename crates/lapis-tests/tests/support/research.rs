@@ -151,7 +151,7 @@ pub fn static_search_service(search_calls: Arc<AtomicUsize>) -> SearchService {
 
 pub fn aspect_request() -> AspectResearchRequest {
     AspectResearchRequest {
-        schema_version: "m4".to_owned(),
+        schema_version: "0.1".to_owned(),
         request_id: "request-1".to_owned(),
         task: AspectResearchTask {
             aspect: aspect(1),
@@ -168,7 +168,7 @@ pub fn aspect_request() -> AspectResearchRequest {
 
 pub fn deep_request(count: usize) -> DeepResearchRequest {
     DeepResearchRequest {
-        schema_version: "m5".to_owned(),
+        schema_version: "0.1".to_owned(),
         request_id: "request-1".to_owned(),
         user_question: "What is true?".to_owned(),
         aspect_tasks: (1..=count).map(aspect_task).collect(),

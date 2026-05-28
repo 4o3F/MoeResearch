@@ -17,7 +17,7 @@ use lapis_error::{Error, Result};
 use lapis_model::ModelService;
 use lapis_search::SearchService;
 
-const SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["m4", "m5", "1", "1.0"];
+const SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["0.1"];
 
 pub async fn aspect_research(
     request: AspectResearchRequest,
