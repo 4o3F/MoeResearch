@@ -7,8 +7,8 @@ use serde_json::Value;
 use snafu::ResultExt;
 
 use lapis_error::{Error, JsonSnafu, Result};
-use lapis_net::provider_http::{bearer_json_sse_post, provider_status_retryable};
-use lapis_net::{NetworkClient, SseEvent, SseNetworkResponse};
+use lapis_net::provider_http::{bearer_sse_post, provider_status_retryable};
+use lapis_net::{NetworkClient, SseEvent, SseNetworkStream};
 
 use crate::{Freshness, SearchProvider, SearchRequest, SearchResponse, SearchResult};
 
@@ -78,9 +78,9 @@ impl SearchProvider for GrokSearchProvider {
         })
         .context(JsonSnafu)?;
 
-        let response = self
+        let mut response = self
             .network
-            .send(bearer_json_sse_post(
+            .send_sse(bearer_sse_post(
                 &self.base_url,
                 "responses",
                 &self.api_key,
@@ -97,10 +97,8 @@ impl SearchProvider for GrokSearchProvider {
             });
         }
 
-        let sse_response: SseNetworkResponse =
-            serde_json::from_value(response.body).context(JsonSnafu)?;
         let provider_response: GrokSearchResponse =
-            serde_json::from_value(assemble_grok_sse(sse_response.events)?).context(JsonSnafu)?;
+            serde_json::from_value(assemble_grok_sse(&mut response).await?).context(JsonSnafu)?;
 
         Ok(SearchResponse {
             provider: self.name().to_owned(),
@@ -109,8 +107,11 @@ impl SearchProvider for GrokSearchProvider {
     }
 }
 
-fn assemble_grok_sse(events: Vec<SseEvent>) -> Result<Value> {
-    for event in events {
+async fn assemble_grok_sse(stream: &mut SseNetworkStream) -> Result<Value> {
+    while let Some(event) = stream.next_event().await? {
+        if event.data == "[DONE]" {
+            break;
+        }
         let value: Value = serde_json::from_str(&event.data).context(JsonSnafu)?;
         match sse_event_type(&event, &value) {
             Some("response.completed") => {

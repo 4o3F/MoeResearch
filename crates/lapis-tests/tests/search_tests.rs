@@ -2,7 +2,7 @@ mod support;
 
 use async_trait::async_trait;
 use lapis_error::{Error, Result};
-use lapis_net::NetworkResponse;
+use lapis_net::JsonNetworkResponse;
 use lapis_search::Freshness;
 use lapis_search::SearchProvider;
 use lapis_search::SearchService;
@@ -245,7 +245,7 @@ async fn rejects_invalid_search_policy_before_provider_dispatch() {
 
 #[tokio::test]
 async fn forwards_policy_domain_filters_to_exa_provider() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
         status: 200,
         headers: vec![],
         body: json!({ "results": [] }),
@@ -272,7 +272,7 @@ async fn forwards_policy_domain_filters_to_exa_provider() {
 
 #[tokio::test]
 async fn maps_exa_response_to_standard_search_response() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
         status: 200,
         headers: vec![],
         body: json!({
@@ -814,7 +814,7 @@ async fn grok_sse_completed_missing_response_errors() {
 
 #[tokio::test]
 async fn exa_request_includes_start_and_end_published_date_from_freshness_since_until() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
         status: 200,
         headers: vec![],
         body: json!({ "results": [] }),
@@ -843,7 +843,7 @@ async fn exa_request_includes_start_and_end_published_date_from_freshness_since_
 /// `null`), so Exa applies its default unbounded window.
 #[tokio::test]
 async fn exa_request_omits_dates_when_freshness_is_none() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
         status: 200,
         headers: vec![],
         body: json!({ "results": [] }),
@@ -869,7 +869,7 @@ async fn exa_request_omits_dates_when_freshness_is_none() {
 /// pinning the contract that providers honor either bound independently.
 #[tokio::test]
 async fn exa_request_forwards_since_only_freshness_window() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
         status: 200,
         headers: vec![],
         body: json!({ "results": [] }),

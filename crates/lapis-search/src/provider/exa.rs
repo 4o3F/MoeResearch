@@ -56,7 +56,7 @@ impl SearchProvider for ExaSearchProvider {
 
         let response = self
             .network
-            .send(bearer_json_post(
+            .send_json(bearer_json_post(
                 &self.base_url,
                 "search",
                 &self.api_key,

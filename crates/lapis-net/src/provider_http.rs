@@ -35,7 +35,7 @@ pub fn bearer_json_post(
     }
 }
 
-pub fn bearer_json_sse_post(
+pub fn bearer_sse_post(
     base_url: &str,
     path: &str,
     api_key: &str,

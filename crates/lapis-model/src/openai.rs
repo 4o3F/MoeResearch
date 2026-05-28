@@ -6,8 +6,8 @@ use serde_json::Value;
 use snafu::ResultExt;
 
 use lapis_error::{Error, JsonSnafu, Result};
-use lapis_net::provider_http::{bearer_json_sse_post, provider_status_retryable};
-use lapis_net::{NetworkClient, NetworkRequest, SseEvent, SseNetworkResponse};
+use lapis_net::provider_http::{bearer_sse_post, provider_status_retryable};
+use lapis_net::{NetworkClient, NetworkRequest, SseEvent, SseNetworkStream};
 
 use crate::{
     JsonSchemaFormat, ModelInputItem, ModelMessageRole, ModelProvider, ModelRequest, ModelResponse,
@@ -84,7 +84,7 @@ impl OpenAiProvider {
         })
         .context(JsonSnafu)?;
 
-        Ok(bearer_json_sse_post(
+        Ok(bearer_sse_post(
             &self.base_url,
             "responses",
             &self.api_key,
@@ -173,26 +173,27 @@ impl ModelProvider for OpenAiProvider {
     async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
         self.validate_request(&request)?;
         let network_request = self.build_network_request(request)?;
-        let response = self.network.send(network_request).await?;
+        let mut stream = self.network.send_sse(network_request).await?;
 
-        if !(200..300).contains(&response.status) {
+        if !(200..300).contains(&stream.status) {
             return Err(Error::HttpStatus {
-                status: response.status,
+                status: stream.status,
                 message: "openai model provider returned non-success status".to_owned(),
-                retryable: provider_status_retryable(response.status),
+                retryable: provider_status_retryable(stream.status),
             });
         }
 
-        let sse_response: SseNetworkResponse =
-            serde_json::from_value(response.body).context(JsonSnafu)?;
-        self.map_response(assemble_openai_sse(sse_response.events)?)
+        self.map_response(assemble_openai_sse(&mut stream).await?)
     }
 }
 
-fn assemble_openai_sse(events: Vec<SseEvent>) -> Result<Value> {
+async fn assemble_openai_sse(stream: &mut SseNetworkStream) -> Result<Value> {
     let mut saw_semantic_event = false;
 
-    for event in events {
+    while let Some(event) = stream.next_event().await? {
+        if event.data == "[DONE]" {
+            break;
+        }
         let value: Value = serde_json::from_str(&event.data).context(JsonSnafu)?;
         match sse_event_type(&event, &value) {
             Some("response.completed") => {

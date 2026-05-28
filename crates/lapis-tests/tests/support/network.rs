@@ -6,12 +6,12 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use lapis_error::{Error, Result};
 use lapis_net::client::NetworkClient;
-use lapis_net::{NetworkRequest, NetworkResponse, SseEvent, SseNetworkResponse};
+use lapis_net::{JsonNetworkResponse, NetworkRequest, SseEvent, SseNetworkStream};
 
 #[derive(Clone, Default)]
 pub struct MockNetworkClient {
-    responses: Arc<Mutex<VecDeque<NetworkResponse>>>,
-    sse_responses: Arc<Mutex<VecDeque<SseNetworkResponse>>>,
+    responses: Arc<Mutex<VecDeque<JsonNetworkResponse>>>,
+    sse_responses: Arc<Mutex<VecDeque<MockSseResponse>>>,
     requests: Arc<Mutex<Vec<NetworkRequest>>>,
 }
 
@@ -19,8 +19,8 @@ pub fn mock_completed_sse(body: serde_json::Value) -> Arc<MockNetworkClient> {
     Arc::new(MockNetworkClient::new_sse([completed_sse_response(body)]))
 }
 
-pub fn completed_sse_response(body: serde_json::Value) -> SseNetworkResponse {
-    SseNetworkResponse {
+pub fn completed_sse_response(body: serde_json::Value) -> MockSseResponse {
+    MockSseResponse {
         status: 200,
         headers: vec![],
         events: vec![SseEvent {
@@ -34,8 +34,8 @@ pub fn completed_sse_response(body: serde_json::Value) -> SseNetworkResponse {
     }
 }
 
-pub fn sse_response(status: u16, events: Vec<SseEvent>) -> SseNetworkResponse {
-    SseNetworkResponse {
+pub fn sse_response(status: u16, events: Vec<SseEvent>) -> MockSseResponse {
+    MockSseResponse {
         status,
         headers: vec![],
         events,
@@ -49,8 +49,24 @@ pub fn sse_json_event(event: &str, data: serde_json::Value) -> SseEvent {
     }
 }
 
+pub struct MockSseResponse {
+    pub status: u16,
+    pub headers: Vec<lapis_net::Header>,
+    pub events: Vec<SseEvent>,
+}
+
+fn has_accept(request: &NetworkRequest, expected: &str) -> bool {
+    request.headers.iter().any(|header| {
+        header.name.eq_ignore_ascii_case("accept")
+            && header
+                .value
+                .split(',')
+                .any(|value| value.split(';').next().unwrap_or_default().trim() == expected)
+    })
+}
+
 impl MockNetworkClient {
-    pub fn new(responses: impl IntoIterator<Item = NetworkResponse>) -> Self {
+    pub fn new(responses: impl IntoIterator<Item = JsonNetworkResponse>) -> Self {
         Self {
             responses: Arc::new(Mutex::new(responses.into_iter().collect())),
             sse_responses: Arc::new(Mutex::new(VecDeque::new())),
@@ -58,7 +74,7 @@ impl MockNetworkClient {
         }
     }
 
-    pub fn new_sse(responses: impl IntoIterator<Item = SseNetworkResponse>) -> Self {
+    pub fn new_sse(responses: impl IntoIterator<Item = MockSseResponse>) -> Self {
         Self {
             responses: Arc::new(Mutex::new(VecDeque::new())),
             sse_responses: Arc::new(Mutex::new(responses.into_iter().collect())),
@@ -73,35 +89,13 @@ impl MockNetworkClient {
 
 #[async_trait]
 impl NetworkClient for MockNetworkClient {
-    async fn send(&self, request: NetworkRequest) -> Result<NetworkResponse> {
-        let accept_sse = request.headers.iter().any(|header| {
-            header.name.eq_ignore_ascii_case("accept")
-                && header
-                    .value
-                    .split(',')
-                    .any(|value| value.trim().eq_ignore_ascii_case("text/event-stream"))
-        });
-        self.requests.lock().expect("requests lock").push(request);
-
-        if accept_sse {
-            let response = self
-                .sse_responses
-                .lock()
-                .expect("sse responses lock")
-                .pop_front()
-                .ok_or_else(|| Error::NetworkFailed {
-                    message: "mock SSE network response queue is empty".to_owned(),
-                })?;
-            let status = response.status;
-            let headers = response.headers.clone();
-            let body = serde_json::to_value(response).map_err(|source| Error::Json { source })?;
-            return Ok(NetworkResponse {
-                status,
-                headers,
-                body,
+    async fn send_json(&self, request: NetworkRequest) -> Result<JsonNetworkResponse> {
+        if !has_accept(&request, "application/json") {
+            return Err(Error::InvalidInput {
+                message: "mock JSON request missing application/json Accept".to_owned(),
             });
         }
-
+        self.requests.lock().expect("requests lock").push(request);
         self.responses
             .lock()
             .expect("responses lock")
@@ -109,5 +103,27 @@ impl NetworkClient for MockNetworkClient {
             .ok_or_else(|| Error::NetworkFailed {
                 message: "mock network response queue is empty".to_owned(),
             })
+    }
+
+    async fn send_sse(&self, request: NetworkRequest) -> Result<SseNetworkStream> {
+        if !has_accept(&request, "text/event-stream") {
+            return Err(Error::InvalidInput {
+                message: "mock SSE request missing text/event-stream Accept".to_owned(),
+            });
+        }
+        self.requests.lock().expect("requests lock").push(request);
+        let response = self
+            .sse_responses
+            .lock()
+            .expect("sse responses lock")
+            .pop_front()
+            .ok_or_else(|| Error::NetworkFailed {
+                message: "mock SSE network response queue is empty".to_owned(),
+            })?;
+        Ok(SseNetworkStream::from_events(
+            response.status,
+            response.headers,
+            response.events,
+        ))
     }
 }

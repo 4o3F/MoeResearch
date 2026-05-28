@@ -7,4 +7,4 @@ pub mod reqwest_client;
 pub mod types;
 
 pub use client::NetworkClient;
-pub use types::{Header, NetworkRequest, NetworkResponse, SseEvent, SseNetworkResponse};
+pub use types::{Header, JsonNetworkResponse, NetworkRequest, SseEvent, SseNetworkStream};
