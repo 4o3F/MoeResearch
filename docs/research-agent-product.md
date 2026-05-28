@@ -510,9 +510,12 @@ SearchResponse
 
 ```text
 trait NetworkClient {
-  async fn send(request: NetworkRequest) -> Result<NetworkResponse, NetworkError>;
+  async fn send_json(request: NetworkRequest) -> Result<JsonNetworkResponse, NetworkError>;
+  async fn send_sse(request: NetworkRequest) -> Result<SseNetworkStream, NetworkError>;
 }
 ```
+
+`send_json` 表示读取完整 JSON/text 响应；`send_sse` 只负责解析通用 SSE frame 并逐个交给 provider。Provider 自行解释业务 terminal event 并通过停止读取/drop stream 关闭上游连接。
 
 Provider 实现关系：
 
@@ -523,12 +526,12 @@ sequenceDiagram
   participant Future as FutureSearchProvider
   participant Net as NetworkClient trait
 
-  Exa->>Net: send(NetworkRequest)
-  Net-->>Exa: NetworkResponse
-  Grok->>Net: send(NetworkRequest)
-  Net-->>Grok: NetworkResponse
-  Future->>Net: send(NetworkRequest)
-  Net-->>Future: NetworkResponse
+  Exa->>Net: send_json(NetworkRequest)
+  Net-->>Exa: JsonNetworkResponse
+  Grok->>Net: send_sse(NetworkRequest)
+  Net-->>Grok: SseNetworkStream
+  Future->>Net: send_json/send_sse(NetworkRequest)
+  Net-->>Future: JsonNetworkResponse/SseNetworkStream
 ```
 
 禁止模式：
@@ -553,10 +556,10 @@ sequenceDiagram
   Tool->>Service: search(SearchRequest with explicit provider)
   Service->>Provider: dispatch only request.provider
   Provider->>Impl: 调用 Exa / Grok / Future provider
-  Impl->>Net: send(NetworkRequest)
+  Impl->>Net: send_json/send_sse(NetworkRequest)
   Net->>Reqwest: 执行 HTTP 请求
-  Reqwest-->>Net: HTTP 响应
-  Net-->>Impl: NetworkResponse
+  Reqwest-->>Net: HTTP 响应或 SSE event stream
+  Net-->>Impl: JsonNetworkResponse 或 SseNetworkStream
   Impl-->>Provider: SearchResponse
   Provider-->>Service: 标准化搜索结果
   Service-->>Tool: 返回 SearchResponse

@@ -10,6 +10,8 @@ path = "src/lib.rs"
 
 [dependencies]
 async-trait.workspace = true
+eventsource-stream.workspace = true
+futures.workspace = true
 lapis-error = { path = "../lapis-error" }
 reqwest.workspace = true
 schemars.workspace = true

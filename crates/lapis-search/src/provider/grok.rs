@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use snafu::ResultExt;
 
 use lapis_error::{Error, JsonSnafu, Result};
-use lapis_net::NetworkClient;
-use lapis_net::provider_http::{bearer_json_post, provider_status_retryable};
+use lapis_net::provider_http::{bearer_sse_post, provider_status_retryable};
+use lapis_net::{NetworkClient, SseEvent, SseNetworkStream};
 
 use crate::{Freshness, SearchProvider, SearchRequest, SearchResponse, SearchResult};
 
@@ -73,13 +74,13 @@ impl SearchProvider for GrokSearchProvider {
                 filters: grok_filters(&request),
             })],
             max_output_tokens: self.max_output_tokens,
-            stream: false,
+            stream: true,
         })
         .context(JsonSnafu)?;
 
-        let response = self
+        let mut response = self
             .network
-            .send(bearer_json_post(
+            .send_sse(bearer_sse_post(
                 &self.base_url,
                 "responses",
                 &self.api_key,
@@ -97,12 +98,55 @@ impl SearchProvider for GrokSearchProvider {
         }
 
         let provider_response: GrokSearchResponse =
-            serde_json::from_value(response.body).context(JsonSnafu)?;
+            serde_json::from_value(assemble_grok_sse(&mut response).await?).context(JsonSnafu)?;
 
         Ok(SearchResponse {
             provider: self.name().to_owned(),
             results: map_grok_response(provider_response, max_results),
         })
+    }
+}
+
+async fn assemble_grok_sse(stream: &mut SseNetworkStream) -> Result<Value> {
+    while let Some(event) = stream.next_event().await? {
+        if event.data == "[DONE]" {
+            break;
+        }
+        let value: Value = serde_json::from_str(&event.data).context(JsonSnafu)?;
+        match sse_event_type(&event, &value) {
+            Some("response.completed") => {
+                return value.get("response").cloned().ok_or_else(|| {
+                    Error::SchemaValidationFailed {
+                        message: "grok response.completed missing response".to_owned(),
+                    }
+                });
+            }
+            Some("response.failed" | "response.incomplete") => {
+                return Err(Error::ProviderUnavailable {
+                    provider: "grok".to_owned(),
+                    message: "SSE stream ended with terminal failure".to_owned(),
+                });
+            }
+            Some("error") => {
+                return Err(Error::ProviderUnavailable {
+                    provider: "grok".to_owned(),
+                    message: "SSE stream returned error event".to_owned(),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    Err(Error::SchemaValidationFailed {
+        message: "grok SSE ended before terminal response event".to_owned(),
+    })
+}
+
+fn sse_event_type<'a>(event: &'a SseEvent, data: &'a Value) -> Option<&'a str> {
+    if !event.event.is_empty() && event.event != "message" {
+        Some(event.event.as_str())
+    } else {
+        data.get("type").and_then(Value::as_str)
     }
 }
 

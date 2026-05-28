@@ -147,6 +147,28 @@ fn rejects_network_limits_section() {
 }
 
 #[test]
+fn rejects_network_stream_knobs() {
+    for field in [
+        "stream_max_event_bytes",
+        "stream_max_events",
+        "stream_log_events",
+    ] {
+        let input = VALID_CONFIG.replace(
+            "user_agent = \"lapis/0.1.0\"",
+            &format!("user_agent = \"lapis/0.1.0\"\n{field} = 100"),
+        );
+
+        let err = load_config_from_test_str(&input).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains(&format!("unknown field `{field}`")),
+            "unexpected error for {field}: {err}"
+        );
+    }
+}
+
+#[test]
 fn rejects_zero_provider_timeout() {
     let input = VALID_CONFIG.replace(
         "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",

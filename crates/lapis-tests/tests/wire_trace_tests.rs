@@ -14,17 +14,19 @@
 //! Each test uses `#[tokio::test(flavor = "current_thread")]` because
 //! `tracing::subscriber::set_default` installs a *thread-local* default
 //! subscriber. With a single-threaded runtime the test future, its
-//! `client.send().await` chain, and the trace emission all run on the
+//! `client.send_json().await` chain, and the trace emission all run on the
 //! same OS thread, so the captured-subscriber guard remains in effect
 //! for the entire test body.
 
 use std::io::Write;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use lapis_net::reqwest_client::ReqwestNetworkClient;
 use lapis_net::{Header, NetworkClient, NetworkRequest};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio::sync::oneshot;
 use tracing_subscriber::layer::SubscriberExt;
 
 // ---------------------------------------------------------------------------
@@ -127,6 +129,7 @@ fn field_bool(event: &serde_json::Value, name: &str) -> Option<bool> {
 struct CannedResponse {
     status: u16,
     body: String,
+    content_type: &'static str,
     /// Advertised Content-Length, which may intentionally differ from `body`.
     content_length: usize,
 }
@@ -138,6 +141,31 @@ impl CannedResponse {
         Self {
             status,
             body,
+            content_type: "application/json",
+            content_length,
+        }
+    }
+
+    fn event_stream(status: u16, body: impl Into<String>) -> Self {
+        let body = body.into();
+        let content_length = body.len();
+        Self {
+            status,
+            body,
+            content_type: "text/event-stream",
+            content_length,
+        }
+    }
+
+    fn event_stream_with_content_length(
+        status: u16,
+        body: impl Into<String>,
+        content_length: usize,
+    ) -> Self {
+        Self {
+            status,
+            body: body.into(),
+            content_type: "text/event-stream",
             content_length,
         }
     }
@@ -147,6 +175,7 @@ impl CannedResponse {
         Self {
             status,
             body: body.into(),
+            content_type: "application/json",
             content_length,
         }
     }
@@ -220,8 +249,9 @@ impl MockServer {
                     //    succeeds on text bodies because lapis only parses
                     //    the body string after read.
                     let response = format!(
-                        "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
+                        "HTTP/1.1 {status} OK\r\nContent-Type: {content_type}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
                         status = canned.status,
+                        content_type = canned.content_type,
                         len = canned.content_length,
                         body = canned.body
                     );
@@ -241,6 +271,39 @@ impl MockServer {
     }
 }
 
+async fn start_open_sse(body: impl Into<String>) -> (String, oneshot::Sender<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind loopback");
+    let port = listener.local_addr().expect("local_addr").port();
+    let body = body.into();
+    let (stop_tx, mut stop_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let (mut socket, _) = match listener.accept().await {
+            Ok(pair) => pair,
+            Err(_) => return,
+        };
+        let mut head = Vec::with_capacity(512);
+        let mut byte = [0u8; 1];
+        while socket.read_exact(&mut byte).await.is_ok() {
+            head.push(byte[0]);
+            if head.ends_with(b"\r\n\r\n") {
+                break;
+            }
+        }
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\n\r\n{body}"
+        );
+        let _ = socket.write_all(response.as_bytes()).await;
+        let _ = (&mut stop_rx).await;
+        let _ = socket.shutdown().await;
+    });
+
+    tokio::task::yield_now().await;
+    (format!("http://127.0.0.1:{port}"), stop_tx)
+}
+
 fn build_client() -> ReqwestNetworkClient {
     // `max_retries = 0` for tests that do not exercise retry; the retry
     // test overrides this via a dedicated constructor call.
@@ -256,13 +319,31 @@ fn request_to(url: String) -> NetworkRequest {
     NetworkRequest {
         method: "POST".to_owned(),
         url,
-        headers: vec![Header {
-            name: "content-type".to_owned(),
-            value: "application/json".to_owned(),
-        }],
+        headers: vec![
+            Header {
+                name: "content-type".to_owned(),
+                value: "application/json".to_owned(),
+            },
+            Header {
+                name: "accept".to_owned(),
+                value: "application/json".to_owned(),
+            },
+        ],
         body: Some(serde_json::json!({ "input": "hello" })),
         timeout_ms: Some(5_000),
     }
+}
+
+fn sse_request_to(url: String) -> NetworkRequest {
+    let mut request = request_to(url);
+    request
+        .headers
+        .retain(|header| !header.name.eq_ignore_ascii_case("accept"));
+    request.headers.push(Header {
+        name: "accept".to_owned(),
+        value: "text/event-stream".to_owned(),
+    });
+    request
 }
 
 // ---------------------------------------------------------------------------
@@ -280,7 +361,7 @@ async fn wire_trace_disabled_emits_no_body_events() {
     let (buffer, _guard) = capture_tracing("lapis_core=debug");
     let client = build_client();
     let _ = client
-        .send(request_to(server.url("/responses")))
+        .send_json(request_to(server.url("/responses")))
         .await
         .expect("request succeeds");
 
@@ -313,7 +394,7 @@ async fn wire_trace_enabled_emits_paired_outbound_and_inbound() {
     let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
     let client = build_client();
     let _ = client
-        .send(request_to(server.url("/responses")))
+        .send_json(request_to(server.url("/responses")))
         .await
         .expect("request succeeds");
 
@@ -364,7 +445,7 @@ async fn wire_trace_retry_emits_new_correlation_per_attempt() {
     let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
     let client = build_client_with_retries(1);
     let _ = client
-        .send(request_to(server.url("/responses")))
+        .send_json(request_to(server.url("/responses")))
         .await
         .expect("retry succeeds");
 
@@ -408,7 +489,7 @@ async fn response_body_read_failure_is_retryable() {
     let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=debug");
     let client = build_client_with_retries(1);
     let response = client
-        .send(request_to(server.url("/responses")))
+        .send_json(request_to(server.url("/responses")))
         .await
         .expect("body read failure should retry");
 
@@ -461,7 +542,10 @@ async fn transport_error_detail_log_redacts_request_secrets() {
         "input": "hello",
     }));
 
-    let _ = client.send(request).await.expect_err("body read fails");
+    let _ = client
+        .send_json(request)
+        .await
+        .expect_err("body read fails");
 
     let events = parse_events(&buffer);
     let transport_error = events
@@ -501,7 +585,7 @@ async fn wire_trace_truncates_oversized_inbound_body() {
     let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
     let client = build_client();
     let _ = client
-        .send(request_to(server.url("/responses")))
+        .send_json(request_to(server.url("/responses")))
         .await
         .expect("oversized response succeeds");
 
@@ -523,6 +607,187 @@ async fn wire_trace_truncates_oversized_inbound_body() {
     assert_eq!(parsed["original_bytes"], serde_json::json!(original_size));
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn sse_stream_allows_provider_to_stop_without_done_or_eof() {
+    let body = concat!(
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n",
+    );
+    let (base_url, stop) = start_open_sse(body).await;
+
+    let client = build_client();
+    let mut stream = client
+        .send_sse(sse_request_to(format!("{base_url}/responses")))
+        .await
+        .expect("SSE request starts");
+    let event = tokio::time::timeout(Duration::from_secs(2), stream.next_event())
+        .await
+        .expect("provider terminal event arrives before EOF")
+        .expect("event read succeeds")
+        .expect("event present");
+
+    assert_eq!(event.event, "response.completed");
+    drop(stream);
+    let _ = stop.send(());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sse_failure_before_first_event_retries() {
+    let incomplete = "event: response.created\n";
+    let completed = concat!(
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n",
+    );
+    let server = MockServer::start(vec![
+        CannedResponse::event_stream_with_content_length(200, incomplete, 1024),
+        CannedResponse::event_stream(200, completed),
+    ])
+    .await;
+
+    let client = build_client_with_retries(1);
+    let mut stream = client
+        .send_sse(sse_request_to(server.url("/responses")))
+        .await
+        .expect("SSE request retries after pre-event failure");
+    let event = stream
+        .next_event()
+        .await
+        .expect("retried event read succeeds")
+        .expect("retried event present");
+
+    assert_eq!(event.event, "response.completed");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sse_failure_after_first_event_is_not_retryable() {
+    let body = concat!(
+        "event: response.created\n",
+        "data: {\"type\":\"response.created\"}\n\n",
+        "event: response.output_text.delta\n",
+    );
+    let server = MockServer::start(vec![CannedResponse::event_stream_with_content_length(
+        200, body, 1024,
+    )])
+    .await;
+
+    let client = build_client_with_retries(1);
+    let mut stream = client
+        .send_sse(sse_request_to(server.url("/responses")))
+        .await
+        .expect("SSE request starts after first event");
+    let event = stream
+        .next_event()
+        .await
+        .expect("first event read succeeds")
+        .expect("first event present");
+    let error = stream
+        .next_event()
+        .await
+        .expect_err("post-handoff stream failure should surface through channel");
+
+    assert_eq!(event.event, "response.created");
+    assert!(!error.retryable());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sse_stream_delivers_done_as_regular_event() {
+    let body = concat!(
+        "event: response.created\n",
+        "data: {\"type\":\"response.created\"}\n\n",
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n",
+        "data: [DONE]\n\n",
+    );
+    let server = MockServer::start(vec![CannedResponse::event_stream(200, body)]).await;
+
+    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
+    let client = build_client();
+    let mut stream = client
+        .send_sse(sse_request_to(server.url("/responses")))
+        .await
+        .expect("SSE request succeeds");
+
+    assert_eq!(stream.status, 200);
+    let created = stream
+        .next_event()
+        .await
+        .expect("created event read")
+        .expect("created event present");
+    let completed = stream
+        .next_event()
+        .await
+        .expect("completed event read")
+        .expect("completed event present");
+    let done = stream
+        .next_event()
+        .await
+        .expect("done event read")
+        .expect("done event present");
+    assert_eq!(created.event, "response.created");
+    assert_eq!(completed.event, "response.completed");
+    assert_eq!(done.data, "[DONE]");
+
+    let events = parse_events(&buffer);
+    assert!(events.iter().any(|event| {
+        message_of(event) == "inbound SSE event metadata" && field_str(event, "body").is_none()
+    }));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sse_response_rejects_oversized_event_data() {
+    let body = format!(
+        "event: response.output_text.delta\ndata: {{\"blob\":\"{}\"}}\n\n",
+        "x".repeat(70 * 1024)
+    );
+    let server = MockServer::start(vec![CannedResponse::event_stream(200, body)]).await;
+
+    let client = build_client();
+    let error = match client
+        .send_sse(sse_request_to(server.url("/responses")))
+        .await
+    {
+        Ok(_) => panic!("oversized SSE event should fail"),
+        Err(error) => error,
+    };
+
+    assert!(error.to_string().contains("SSE event exceeded data limit"));
+    assert!(!error.retryable());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sse_response_rejects_total_data_overflow() {
+    let chunk = "x".repeat(3 * 1024);
+    let mut body = String::new();
+    for _ in 0..3000 {
+        body.push_str("event: response.output_text.delta\n");
+        body.push_str(&format!("data: {{\"blob\":\"{chunk}\"}}\n\n"));
+    }
+    let server = MockServer::start(vec![CannedResponse::event_stream(200, body)]).await;
+
+    let client = build_client();
+    let mut stream = client
+        .send_sse(sse_request_to(server.url("/responses")))
+        .await
+        .expect("SSE request starts");
+
+    let mut error = None;
+    while error.is_none() {
+        match stream.next_event().await {
+            Ok(Some(_)) => {}
+            Ok(None) => break,
+            Err(next_error) => error = Some(next_error),
+        }
+    }
+    let error = error.expect("oversized SSE stream should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("SSE stream exceeded total data limit")
+    );
+    assert!(!error.retryable());
+}
+
 /// Non-2xx responses must drop the full body from the debug event and
 /// expose only a short `body_excerpt`. The complete payload remains
 /// available in the trace-level inbound event.
@@ -535,7 +800,7 @@ async fn wire_non_success_debug_event_uses_excerpt_not_full_body() {
     let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
     let client = build_client();
     let _ = client
-        .send(request_to(server.url("/responses")))
+        .send_json(request_to(server.url("/responses")))
         .await
         .expect_err("4xx must surface an error to the caller");
 

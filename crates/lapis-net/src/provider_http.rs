@@ -25,10 +25,32 @@ pub fn bearer_json_post(
                 name: "content-type".to_owned(),
                 value: "application/json".to_owned(),
             },
+            Header {
+                name: "accept".to_owned(),
+                value: "application/json".to_owned(),
+            },
         ],
         body: Some(body),
         timeout_ms,
     }
+}
+
+pub fn bearer_sse_post(
+    base_url: &str,
+    path: &str,
+    api_key: &str,
+    body: Value,
+    timeout_ms: Option<u64>,
+) -> NetworkRequest {
+    let mut request = bearer_json_post(base_url, path, api_key, body, timeout_ms);
+    request
+        .headers
+        .retain(|header| !header.name.eq_ignore_ascii_case("accept"));
+    request.headers.push(Header {
+        name: "accept".to_owned(),
+        value: "text/event-stream".to_owned(),
+    });
+    request
 }
 
 pub fn provider_status_retryable(status: u16) -> bool {

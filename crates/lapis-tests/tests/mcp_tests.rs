@@ -133,6 +133,8 @@ fn tool_envelope_schema_omits_trace_payloads() {
     let schema_json = schema.to_string();
     assert!(!schema_json.contains("PartialTrace"));
     assert!(!schema_json.contains("TraceSummary"));
+    assert!(!schema_json.contains("Sse"));
+    assert!(!schema_json.contains("stream"));
     assert!(schema_json.contains("failed_aspects"));
 }
 

@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use lapis_error::{JsonSnafu, Result};
-use lapis_net::{Header, NetworkClient, NetworkRequest};
+use lapis_net::NetworkClient;
+use lapis_net::provider_http::bearer_json_post;
 
 use crate::{SearchProvider, SearchRequest, SearchResponse, SearchResult};
 
@@ -55,22 +56,13 @@ impl SearchProvider for ExaSearchProvider {
 
         let response = self
             .network
-            .send(NetworkRequest {
-                method: "POST".to_owned(),
-                url: format!("{}/search", self.base_url.trim_end_matches('/')),
-                headers: vec![
-                    Header {
-                        name: "authorization".to_owned(),
-                        value: format!("Bearer {}", self.api_key),
-                    },
-                    Header {
-                        name: "content-type".to_owned(),
-                        value: "application/json".to_owned(),
-                    },
-                ],
-                body: Some(body),
-                timeout_ms: self.timeout_ms,
-            })
+            .send_json(bearer_json_post(
+                &self.base_url,
+                "search",
+                &self.api_key,
+                body,
+                self.timeout_ms,
+            ))
             .await?;
 
         let provider_response: ExaSearchResponse =

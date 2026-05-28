@@ -1,10 +1,14 @@
+use std::fmt::Display;
 use std::time::{Duration, Instant};
 
+use eventsource_stream::Eventsource;
+use futures::{Stream, StreamExt};
 use lapis_error::{Error, Result};
+use tokio::sync::mpsc;
 
 use crate::client::NetworkClient;
 use crate::policy::RedactionPolicy;
-use crate::{Header, NetworkRequest, NetworkResponse};
+use crate::{Header, JsonNetworkResponse, NetworkRequest, SseEvent, SseNetworkStream};
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Method, RequestBuilder, Response, Url};
 use uuid::Uuid;
@@ -24,12 +28,25 @@ pub(crate) const MAX_WIRE_BODY_BYTES: usize = 64 * 1024;
 /// full provider body still appears in the trace-level wire event when
 /// the operator opts in.
 const MAX_DEBUG_EXCERPT_BYTES: usize = 256;
+const MAX_SSE_EVENTS: usize = 4096;
+const MAX_SSE_DATA_BYTES: usize = MAX_WIRE_BODY_BYTES;
+const MAX_SSE_TOTAL_DATA_BYTES: usize = 8 * 1024 * 1024;
+const SSE_EVENT_CHANNEL_CAPACITY: usize = 32;
 
 pub struct ReqwestNetworkClient {
     client: reqwest::Client,
     default_timeout_ms: u64,
     max_retries: usize,
     retry_backoff_ms: u64,
+}
+
+struct RequestAttempt {
+    builder: RequestBuilder,
+    attempt: u32,
+    host: String,
+    path: String,
+    timeout_ms: u64,
+    correlation_id: Uuid,
 }
 
 impl ReqwestNetworkClient {
@@ -67,7 +84,8 @@ impl ReqwestNetworkClient {
         })
     }
 
-    async fn send_once(&self, request: NetworkRequest, attempt: u32) -> Result<NetworkResponse> {
+    /// Validates request metadata and builds the reqwest request for one attempt.
+    fn prepare_request(&self, request: NetworkRequest, attempt: u32) -> Result<RequestAttempt> {
         let method = request
             .method
             .parse::<Method>()
@@ -81,12 +99,8 @@ impl ReqwestNetworkClient {
         validate_timeout("request.timeout_ms", timeout_ms)?;
         let host = url.host_str().unwrap_or("unknown").to_owned();
         let path = url.path().to_owned();
-        let redaction = RedactionPolicy;
-        // A fresh correlation id per attempt — operators can grep both the
-        // outbound and inbound wire events for the same UUID to reconstruct
-        // a single round trip, and retried attempts get distinct ids so
-        // they cannot be conflated.
         let correlation_id = Uuid::new_v4();
+        let redaction = RedactionPolicy;
 
         tracing::debug!(
             target: "lapis_core::net::reqwest_client",
@@ -98,17 +112,13 @@ impl ReqwestNetworkClient {
             "sending outbound request"
         );
 
-        // Trace-level wire body capture. The helper internally re-checks
-        // `enabled!()` so the rendering / truncation work is skipped
-        // entirely when the operator has not opted in via
-        // `RUST_LOG=...reqwest_client=trace`.
         if let Some(body) = request.body.as_ref() {
             emit_outbound_wire_trace(correlation_id, attempt, &method, &host, &path, body);
         }
 
         let mut builder = self
             .client
-            .request(method, url)
+            .request(method.clone(), url)
             .timeout(Duration::from_millis(timeout_ms));
         builder = apply_headers(builder, &request.headers)?;
 
@@ -116,6 +126,30 @@ impl ReqwestNetworkClient {
             builder = builder.json(&body);
         }
 
+        Ok(RequestAttempt {
+            builder,
+            attempt,
+            host,
+            path,
+            timeout_ms,
+            correlation_id,
+        })
+    }
+
+    /// Sends one HTTP attempt and reads a complete JSON/text body.
+    async fn send_json_once(
+        &self,
+        request: NetworkRequest,
+        attempt: u32,
+    ) -> Result<JsonNetworkResponse> {
+        let RequestAttempt {
+            builder,
+            attempt,
+            host,
+            path,
+            timeout_ms,
+            correlation_id,
+        } = self.prepare_request(request, attempt)?;
         let started_at = Instant::now();
         let response = send_request(
             builder,
@@ -131,6 +165,25 @@ impl ReqwestNetworkClient {
         .await?;
         let status = response.status();
         let headers = response_headers(&response);
+
+        if !status.is_success() {
+            return handle_non_success_response(
+                response,
+                &TransportErrorLogContext {
+                    phase: "read_response_body",
+                    attempt,
+                    correlation_id,
+                    host: &host,
+                    path: &path,
+                    timeout_ms,
+                },
+                status.as_u16(),
+                headers,
+                started_at,
+            )
+            .await;
+        }
+
         let text = read_response_body(
             response,
             &TransportErrorLogContext {
@@ -144,11 +197,6 @@ impl ReqwestNetworkClient {
         )
         .await?;
         let duration_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
-
-        // Trace-level wire body capture for the inbound side. Fires for
-        // both success and non-success statuses so a single trace stream
-        // contains the complete plaintext payload; the debug-level event
-        // below only carries a short excerpt to keep error logs compact.
         emit_inbound_wire_trace(
             correlation_id,
             attempt,
@@ -159,34 +207,120 @@ impl ReqwestNetworkClient {
             &text,
         );
 
-        if !status.is_success() {
-            let redacted = redaction.redact_body_text(&text);
-            let excerpt = excerpt_for_debug(&redacted, MAX_DEBUG_EXCERPT_BYTES);
-            tracing::debug!(
-            target: "lapis_core::net::reqwest_client",
-                status = status.as_u16(),
-                host = %host,
-                path = %path,
-                headers = ?redaction.redact_headers(&headers),
-                body_excerpt = %excerpt,
-                "outbound response returned non-success status"
-            );
-            return Err(Error::HttpStatus {
-                status: status.as_u16(),
-                message: "provider returned non-success status".to_owned(),
-                retryable: is_retryable_status(status.as_u16()),
-            });
-        }
-
         let body = serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text));
 
-        Ok(NetworkResponse {
+        Ok(JsonNetworkResponse {
             status: status.as_u16(),
             headers,
             body,
         })
     }
 
+    /// Sends one HTTP attempt and returns a lazy SSE event stream.
+    async fn send_sse_once(
+        &self,
+        request: NetworkRequest,
+        attempt: u32,
+    ) -> Result<SseNetworkStream> {
+        let RequestAttempt {
+            builder,
+            attempt,
+            host,
+            path,
+            timeout_ms,
+            correlation_id,
+        } = self.prepare_request(request, attempt)?;
+        let started_at = Instant::now();
+        let response = send_request(
+            builder,
+            &TransportErrorLogContext {
+                phase: "send_request",
+                attempt,
+                correlation_id,
+                host: &host,
+                path: &path,
+                timeout_ms,
+            },
+        )
+        .await?;
+        let status = response.status();
+        let headers = response_headers(&response);
+
+        if !status.is_success() {
+            return match handle_non_success_response(
+                response,
+                &TransportErrorLogContext {
+                    phase: "read_response_body",
+                    attempt,
+                    correlation_id,
+                    host: &host,
+                    path: &path,
+                    timeout_ms,
+                },
+                status.as_u16(),
+                headers,
+                started_at,
+            )
+            .await
+            {
+                Err(error) => Err(error),
+                Ok(_) => Err(Error::NetworkFailed {
+                    message: "non-success SSE response unexpectedly succeeded".to_owned(),
+                }),
+            };
+        }
+
+        let mut stream = response.bytes_stream().eventsource();
+        let mut event_count = 0usize;
+        let mut total_data_bytes = 0usize;
+        let first_event = match stream.next().await {
+            Some(Ok(event)) => event,
+            Some(Err(source)) => return Err(sse_stream_error(&source, true)),
+            None => {
+                return Err(Error::NetworkFailed {
+                    message: "SSE stream ended without events".to_owned(),
+                });
+            }
+        };
+        enforce_sse_caps(
+            first_event.data.len(),
+            &mut event_count,
+            &mut total_data_bytes,
+        )?;
+
+        let (sender, receiver) = mpsc::channel(SSE_EVENT_CHANNEL_CAPACITY);
+        sender
+            .send(Ok(SseEvent {
+                event: first_event.event,
+                data: first_event.data,
+            }))
+            .await
+            .map_err(|_| Error::NetworkFailed {
+                message: "SSE receiver closed before stream handoff".to_owned(),
+            })?;
+        let reader = tokio::spawn(pump_sse_events(
+            stream,
+            sender,
+            SsePumpContext {
+                attempt,
+                correlation_id,
+                host,
+                path,
+                status: status.as_u16(),
+            },
+            event_count,
+            total_data_bytes,
+        ));
+
+        Ok(SseNetworkStream::new(
+            status.as_u16(),
+            headers,
+            receiver,
+            reader,
+        ))
+    }
+
+    /// Maps reqwest transport failures into Lapis retry-aware errors.
     fn transport_error(source: &reqwest::Error) -> Error {
         let retryable = is_retryable_transport_error(source);
         let message = if source.is_timeout() {
@@ -206,7 +340,6 @@ impl ReqwestNetworkClient {
     }
 }
 
-/// Metadata emitted with operator-only transport failure diagnostics.
 struct TransportErrorLogContext<'a> {
     /// Request phase where reqwest reported the transport error.
     phase: &'static str,
@@ -236,6 +369,203 @@ fn apply_headers(mut builder: RequestBuilder, headers: &[Header]) -> Result<Requ
         builder = builder.header(name, value);
     }
     Ok(builder)
+}
+
+struct SsePumpContext {
+    attempt: u32,
+    correlation_id: Uuid,
+    host: String,
+    path: String,
+    status: u16,
+}
+
+fn validate_accept_header(headers: &[Header], expected: &str) -> Result<()> {
+    let mut saw_accept = false;
+    let mut saw_expected = false;
+
+    for header in headers
+        .iter()
+        .filter(|header| header.name.eq_ignore_ascii_case("accept"))
+    {
+        saw_accept = true;
+        for value in header.value.split(',') {
+            let media_type = value.split(';').next().unwrap_or_default().trim();
+            if media_type.is_empty() {
+                continue;
+            }
+            if media_type.eq_ignore_ascii_case(expected) {
+                saw_expected = true;
+            } else if media_type.eq_ignore_ascii_case("application/json")
+                || media_type.eq_ignore_ascii_case("text/event-stream")
+            {
+                return Err(Error::InvalidInput {
+                    message: format!(
+                        "request expected Accept {expected}, got incompatible {media_type}"
+                    ),
+                });
+            } else {
+                return Err(Error::InvalidInput {
+                    message: format!("unsupported Accept header response type {media_type}"),
+                });
+            }
+        }
+    }
+
+    if !saw_accept {
+        return Err(Error::InvalidInput {
+            message: "missing Accept header".to_owned(),
+        });
+    }
+    if !saw_expected {
+        return Err(Error::InvalidInput {
+            message: format!("request missing expected Accept {expected}"),
+        });
+    }
+    Ok(())
+}
+
+/// Reads and logs a non-success provider response before returning `HttpStatus`.
+async fn handle_non_success_response(
+    response: Response,
+    context: &TransportErrorLogContext<'_>,
+    status: u16,
+    headers: Vec<Header>,
+    started_at: Instant,
+) -> Result<JsonNetworkResponse> {
+    let text = read_response_body(response, context).await?;
+    let duration_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+    emit_inbound_wire_trace(
+        context.correlation_id,
+        context.attempt,
+        context.host,
+        context.path,
+        status,
+        duration_ms,
+        &text,
+    );
+    let redaction = RedactionPolicy;
+    let redacted = redaction.redact_body_text(&text);
+    let excerpt = excerpt_for_debug(&redacted, MAX_DEBUG_EXCERPT_BYTES);
+    tracing::debug!(
+        target: "lapis_core::net::reqwest_client",
+        status,
+        host = %context.host,
+        path = %context.path,
+        headers = ?redaction.redact_headers(&headers),
+        body_excerpt = %excerpt,
+        "outbound response returned non-success status"
+    );
+    Err(Error::HttpStatus {
+        status,
+        message: "provider returned non-success status".to_owned(),
+        retryable: is_retryable_status(status),
+    })
+}
+
+async fn pump_sse_events<S, E>(
+    mut stream: S,
+    sender: mpsc::Sender<Result<SseEvent>>,
+    context: SsePumpContext,
+    mut event_count: usize,
+    mut total_data_bytes: usize,
+) where
+    S: Stream<Item = std::result::Result<eventsource_stream::Event, E>> + Unpin,
+    E: Display,
+{
+    loop {
+        tokio::select! {
+            _ = sender.closed() => {
+                tracing::debug!(
+                    target: "lapis_core::net::reqwest_client",
+                    status = context.status,
+                    host = %context.host,
+                    path = %context.path,
+                    event_count,
+                    total_data_bytes,
+                    "SSE receiver dropped; closing response stream"
+                );
+                return;
+            }
+            next = stream.next() => {
+                let Some(next) = next else {
+                    break;
+                };
+                let event = match next {
+                    Ok(event) => event,
+                    Err(source) => {
+                        let _ = sender.send(Err(sse_stream_error(&source, false))).await;
+                        return;
+                    }
+                };
+                tracing::trace!(
+                    target: "lapis_core::net::reqwest_client",
+                    correlation_id = %context.correlation_id,
+                    attempt = context.attempt,
+                    host = %context.host,
+                    path = %context.path,
+                    event = %event.event,
+                    data_bytes = event.data.len(),
+                    "inbound SSE event metadata"
+                );
+                if let Err(error) = enforce_sse_caps(
+                    event.data.len(),
+                    &mut event_count,
+                    &mut total_data_bytes,
+                ) {
+                    let _ = sender.send(Err(error)).await;
+                    return;
+                }
+                if sender
+                    .send(Ok(SseEvent {
+                        event: event.event,
+                        data: event.data,
+                    }))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }
+    }
+
+    tracing::debug!(
+        target: "lapis_core::net::reqwest_client",
+        status = context.status,
+        host = %context.host,
+        path = %context.path,
+        event_count,
+        total_data_bytes,
+        "SSE upstream stream ended"
+    );
+}
+
+fn enforce_sse_caps(
+    data_len: usize,
+    event_count: &mut usize,
+    total_data_bytes: &mut usize,
+) -> Result<()> {
+    if *event_count >= MAX_SSE_EVENTS {
+        return Err(Error::HttpTransport {
+            message: "SSE stream exceeded event limit".to_owned(),
+            retryable: false,
+        });
+    }
+    if data_len > MAX_SSE_DATA_BYTES {
+        return Err(Error::HttpTransport {
+            message: "SSE event exceeded data limit".to_owned(),
+            retryable: false,
+        });
+    }
+    *total_data_bytes = total_data_bytes.saturating_add(data_len);
+    if *total_data_bytes > MAX_SSE_TOTAL_DATA_BYTES {
+        return Err(Error::HttpTransport {
+            message: "SSE stream exceeded total data limit".to_owned(),
+            retryable: false,
+        });
+    }
+    *event_count += 1;
+    Ok(())
 }
 
 /// Sends the HTTP request and logs sanitized reqwest details on transport failure.
@@ -285,6 +615,15 @@ fn response_headers(response: &Response) -> Vec<Header> {
 /// Returns whether a reqwest transport failure is worth retrying.
 fn is_retryable_transport_error(source: &reqwest::Error) -> bool {
     source.is_timeout() || source.is_connect() || source.is_body() || source.is_decode()
+}
+
+/// Converts SSE parser failures into public-safe retry-aware transport errors.
+fn sse_stream_error(source: &impl Display, retryable: bool) -> Error {
+    let detail = redact_sensitive_fragments(&source.to_string());
+    Error::HttpTransport {
+        message: format!("SSE stream handling failed: {detail}"),
+        retryable,
+    }
 }
 
 /// Emits operator-only transport diagnostics without request or response bodies.
@@ -489,34 +828,26 @@ fn excerpt_for_debug(raw: &str, cap: usize) -> String {
 
 #[async_trait::async_trait]
 impl NetworkClient for ReqwestNetworkClient {
-    async fn send(&self, request: NetworkRequest) -> Result<NetworkResponse> {
+    async fn send_json(&self, request: NetworkRequest) -> Result<JsonNetworkResponse> {
+        validate_accept_header(&request.headers, "application/json")?;
         let mut last_error = None;
 
         for attempt in 0..=self.max_retries {
             let attempt_u32 = u32::try_from(attempt).unwrap_or(u32::MAX);
-            match self.send_once(request.clone(), attempt_u32).await {
+            match self.send_json_once(request.clone(), attempt_u32).await {
                 Ok(response) => return Ok(response),
                 Err(error) => {
-                    let retryable = matches!(
-                        error,
-                        Error::HttpTransport {
-                            retryable: true,
-                            ..
-                        } | Error::HttpStatus {
-                            retryable: true,
-                            ..
-                        }
-                    );
+                    let retryable = is_retryable_error(&error);
                     if !retryable || attempt == self.max_retries {
                         return Err(error);
                     }
 
                     tracing::warn!(
-                    target: "lapis_core::net::reqwest_client",
-                                    attempt = attempt_u32,
-                                    error = %error,
-                                    "retrying outbound request"
-                                );
+                        target: "lapis_core::net::reqwest_client",
+                        attempt = attempt_u32,
+                        error = %error,
+                        "retrying outbound request"
+                    );
                     last_error = Some(error);
                     tokio::time::sleep(Duration::from_millis(self.retry_backoff_ms)).await;
                 }
@@ -527,4 +858,48 @@ impl NetworkClient for ReqwestNetworkClient {
             message: "request failed without an error".to_owned(),
         }))
     }
+
+    async fn send_sse(&self, request: NetworkRequest) -> Result<SseNetworkStream> {
+        validate_accept_header(&request.headers, "text/event-stream")?;
+        let mut last_error = None;
+
+        for attempt in 0..=self.max_retries {
+            let attempt_u32 = u32::try_from(attempt).unwrap_or(u32::MAX);
+            match self.send_sse_once(request.clone(), attempt_u32).await {
+                Ok(response) => return Ok(response),
+                Err(error) => {
+                    let retryable = is_retryable_error(&error);
+                    if !retryable || attempt == self.max_retries {
+                        return Err(error);
+                    }
+
+                    tracing::warn!(
+                        target: "lapis_core::net::reqwest_client",
+                        attempt = attempt_u32,
+                        error = %error,
+                        "retrying outbound request"
+                    );
+                    last_error = Some(error);
+                    tokio::time::sleep(Duration::from_millis(self.retry_backoff_ms)).await;
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| Error::NetworkFailed {
+            message: "request failed without an error".to_owned(),
+        }))
+    }
+}
+
+fn is_retryable_error(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::HttpTransport {
+            retryable: true,
+            ..
+        } | Error::HttpStatus {
+            retryable: true,
+            ..
+        }
+    )
 }
