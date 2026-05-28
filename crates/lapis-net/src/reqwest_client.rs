@@ -1,10 +1,12 @@
 use std::time::{Duration, Instant};
 
+use eventsource_stream::Eventsource;
+use futures::StreamExt;
 use lapis_error::{Error, Result};
 
 use crate::client::NetworkClient;
 use crate::policy::RedactionPolicy;
-use crate::{Header, NetworkRequest, NetworkResponse};
+use crate::{Header, NetworkRequest, NetworkResponse, SseEvent, SseNetworkResponse};
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Method, RequestBuilder, Response, Url};
 use uuid::Uuid;
@@ -24,6 +26,8 @@ pub(crate) const MAX_WIRE_BODY_BYTES: usize = 64 * 1024;
 /// full provider body still appears in the trace-level wire event when
 /// the operator opts in.
 const MAX_DEBUG_EXCERPT_BYTES: usize = 256;
+const MAX_SSE_EVENTS: usize = 4096;
+const MAX_SSE_DATA_BYTES: usize = MAX_WIRE_BODY_BYTES;
 
 pub struct ReqwestNetworkClient {
     client: reqwest::Client,
@@ -187,6 +191,167 @@ impl ReqwestNetworkClient {
         })
     }
 
+    async fn send_sse_once(
+        &self,
+        request: NetworkRequest,
+        attempt: u32,
+    ) -> Result<SseNetworkResponse> {
+        let method = request
+            .method
+            .parse::<Method>()
+            .map_err(|source| Error::InvalidInput {
+                message: format!("invalid HTTP method `{}`: {source}", request.method),
+            })?;
+        let url = Url::parse(&request.url).map_err(|_| Error::InvalidInput {
+            message: "invalid outbound URL".to_owned(),
+        })?;
+        let timeout_ms = request.timeout_ms.unwrap_or(self.default_timeout_ms);
+        validate_timeout("request.timeout_ms", timeout_ms)?;
+        let host = url.host_str().unwrap_or("unknown").to_owned();
+        let path = url.path().to_owned();
+        let redaction = RedactionPolicy;
+        let correlation_id = Uuid::new_v4();
+
+        tracing::debug!(
+            target: "lapis_core::net::reqwest_client",
+            method = %method,
+            host = %host,
+            path = %path,
+            headers = ?redaction.redact_headers(&request.headers),
+            timeout_ms,
+            "sending outbound request"
+        );
+
+        if let Some(body) = request.body.as_ref() {
+            emit_outbound_wire_trace(correlation_id, attempt, &method, &host, &path, body);
+        }
+
+        let mut builder = self
+            .client
+            .request(method, url)
+            .timeout(Duration::from_millis(timeout_ms));
+        builder = apply_headers(builder, &request.headers)?;
+
+        if let Some(body) = request.body {
+            builder = builder.json(&body);
+        }
+
+        let started_at = Instant::now();
+        let response = send_request(
+            builder,
+            &TransportErrorLogContext {
+                phase: "send_request",
+                attempt,
+                correlation_id,
+                host: &host,
+                path: &path,
+                timeout_ms,
+            },
+        )
+        .await?;
+        let status = response.status();
+        let headers = response_headers(&response);
+
+        if !status.is_success() {
+            let text = read_response_body(
+                response,
+                &TransportErrorLogContext {
+                    phase: "read_response_body",
+                    attempt,
+                    correlation_id,
+                    host: &host,
+                    path: &path,
+                    timeout_ms,
+                },
+            )
+            .await?;
+            let duration_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+            emit_inbound_wire_trace(
+                correlation_id,
+                attempt,
+                &host,
+                &path,
+                status.as_u16(),
+                duration_ms,
+                &text,
+            );
+            let redacted = redaction.redact_body_text(&text);
+            let excerpt = excerpt_for_debug(&redacted, MAX_DEBUG_EXCERPT_BYTES);
+            tracing::debug!(
+                target: "lapis_core::net::reqwest_client",
+                status = status.as_u16(),
+                host = %host,
+                path = %path,
+                headers = ?redaction.redact_headers(&headers),
+                body_excerpt = %excerpt,
+                "outbound response returned non-success status"
+            );
+            return Err(Error::HttpStatus {
+                status: status.as_u16(),
+                message: "provider returned non-success status".to_owned(),
+                retryable: is_retryable_status(status.as_u16()),
+            });
+        }
+
+        let mut events = Vec::new();
+        let mut saw_event = false;
+        let mut stream = response.bytes_stream().eventsource();
+
+        while let Some(next) = stream.next().await {
+            let event = match next {
+                Ok(event) => event,
+                Err(_) => return Err(sse_stream_error(saw_event)),
+            };
+            saw_event = true;
+            tracing::trace!(
+                target: "lapis_core::net::reqwest_client",
+                correlation_id = %correlation_id,
+                attempt,
+                host = %host,
+                path = %path,
+                event = %event.event,
+                data_bytes = event.data.len(),
+                "inbound SSE event metadata"
+            );
+            if event.data == "[DONE]" {
+                break;
+            }
+            if events.len() >= MAX_SSE_EVENTS {
+                return Err(Error::HttpTransport {
+                    message: "SSE stream exceeded event limit".to_owned(),
+                    retryable: false,
+                });
+            }
+            if event.data.len() > MAX_SSE_DATA_BYTES {
+                return Err(Error::HttpTransport {
+                    message: "SSE event exceeded data limit".to_owned(),
+                    retryable: false,
+                });
+            }
+            events.push(SseEvent {
+                event: event.event,
+                data: event.data,
+            });
+        }
+
+        let duration_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+        tracing::debug!(
+            target: "lapis_core::net::reqwest_client",
+            status = status.as_u16(),
+            host = %host,
+            path = %path,
+            duration_ms,
+            event_count = events.len(),
+            "outbound SSE response completed"
+        );
+
+        Ok(SseNetworkResponse {
+            status: status.as_u16(),
+            headers,
+            events,
+        })
+    }
+
     fn transport_error(source: &reqwest::Error) -> Error {
         let retryable = is_retryable_transport_error(source);
         let message = if source.is_timeout() {
@@ -285,6 +450,13 @@ fn response_headers(response: &Response) -> Vec<Header> {
 /// Returns whether a reqwest transport failure is worth retrying.
 fn is_retryable_transport_error(source: &reqwest::Error) -> bool {
     source.is_timeout() || source.is_connect() || source.is_body() || source.is_decode()
+}
+
+fn sse_stream_error(saw_event: bool) -> Error {
+    Error::HttpTransport {
+        message: "SSE stream handling failed".to_owned(),
+        retryable: !saw_event,
+    }
 }
 
 /// Emits operator-only transport diagnostics without request or response bodies.
@@ -497,26 +669,17 @@ impl NetworkClient for ReqwestNetworkClient {
             match self.send_once(request.clone(), attempt_u32).await {
                 Ok(response) => return Ok(response),
                 Err(error) => {
-                    let retryable = matches!(
-                        error,
-                        Error::HttpTransport {
-                            retryable: true,
-                            ..
-                        } | Error::HttpStatus {
-                            retryable: true,
-                            ..
-                        }
-                    );
+                    let retryable = is_retryable_error(&error);
                     if !retryable || attempt == self.max_retries {
                         return Err(error);
                     }
 
                     tracing::warn!(
-                    target: "lapis_core::net::reqwest_client",
-                                    attempt = attempt_u32,
-                                    error = %error,
-                                    "retrying outbound request"
-                                );
+                        target: "lapis_core::net::reqwest_client",
+                        attempt = attempt_u32,
+                        error = %error,
+                        "retrying outbound request"
+                    );
                     last_error = Some(error);
                     tokio::time::sleep(Duration::from_millis(self.retry_backoff_ms)).await;
                 }
@@ -527,4 +690,47 @@ impl NetworkClient for ReqwestNetworkClient {
             message: "request failed without an error".to_owned(),
         }))
     }
+
+    async fn send_sse(&self, request: NetworkRequest) -> Result<SseNetworkResponse> {
+        let mut last_error = None;
+
+        for attempt in 0..=self.max_retries {
+            let attempt_u32 = u32::try_from(attempt).unwrap_or(u32::MAX);
+            match self.send_sse_once(request.clone(), attempt_u32).await {
+                Ok(response) => return Ok(response),
+                Err(error) => {
+                    let retryable = is_retryable_error(&error);
+                    if !retryable || attempt == self.max_retries {
+                        return Err(error);
+                    }
+
+                    tracing::warn!(
+                        target: "lapis_core::net::reqwest_client",
+                        attempt = attempt_u32,
+                        error = %error,
+                        "retrying outbound request"
+                    );
+                    last_error = Some(error);
+                    tokio::time::sleep(Duration::from_millis(self.retry_backoff_ms)).await;
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| Error::NetworkFailed {
+            message: "request failed without an error".to_owned(),
+        }))
+    }
+}
+
+fn is_retryable_error(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::HttpTransport {
+            retryable: true,
+            ..
+        } | Error::HttpStatus {
+            retryable: true,
+            ..
+        }
+    )
 }

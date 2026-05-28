@@ -12,7 +12,7 @@ use lapis_workflow::SearchPolicy;
 use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use support::network::MockNetworkClient;
+use support::network::{MockNetworkClient, completed_sse_response, sse_json_event, sse_response};
 
 struct StaticProvider(&'static str);
 
@@ -293,10 +293,8 @@ async fn maps_exa_response_to_standard_search_response() {
 
 #[tokio::test]
 async fn maps_grok_response_to_standard_search_response() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [
                 { "type": "web_search_call", "status": "completed" },
                 {
@@ -315,7 +313,7 @@ async fn maps_grok_response_to_standard_search_response() {
                 }
             ]
         }),
-    }]));
+    )]));
     let provider = GrokSearchProvider::new(
         network,
         "https://api.x.ai/v1".to_owned(),
@@ -345,11 +343,9 @@ async fn maps_grok_response_to_standard_search_response() {
 
 #[tokio::test]
 async fn grok_search_uses_responses_web_search_request() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({ "output": [] }),
-    }]));
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({ "output": [] }),
+    )]));
     let provider = GrokSearchProvider::new(
         network.clone(),
         "https://api.x.ai/v1/".to_owned(),
@@ -390,10 +386,16 @@ async fn grok_search_uses_responses_web_search_request() {
             .iter()
             .any(|header| { header.name == "content-type" && header.value == "application/json" })
     );
+    assert!(
+        request
+            .headers
+            .iter()
+            .any(|header| { header.name == "accept" && header.value == "text/event-stream" })
+    );
 
     let body = request.body.as_ref().expect("request body");
     assert_eq!(body["model"], "configured-grok-model");
-    assert_eq!(body["stream"], false);
+    assert_eq!(body["stream"], true);
     assert_eq!(body["input"][0]["role"], "user");
     assert_eq!(body["tools"][0]["type"], "web_search");
     assert!(body["tools"][0].get("search_context_size").is_none());
@@ -411,10 +413,8 @@ async fn grok_search_uses_responses_web_search_request() {
 
 #[tokio::test]
 async fn grok_search_uses_annotation_local_text_for_snippets() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "message",
                 "content": [
@@ -437,7 +437,7 @@ async fn grok_search_uses_annotation_local_text_for_snippets() {
                 ]
             }]
         }),
-    }]));
+    )]));
     let provider = GrokSearchProvider::new(
         network,
         "https://api.x.ai/v1".to_owned(),
@@ -479,10 +479,8 @@ async fn grok_search_emits_distinct_per_source_summaries() {
     let suffix_start = prefix.len() + middle.len();
     let tail_start = text.len() - 6;
 
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "message",
                 "content": [{
@@ -507,7 +505,7 @@ async fn grok_search_emits_distinct_per_source_summaries() {
                 }]
             }]
         }),
-    }]));
+    )]));
     let provider = GrokSearchProvider::new(
         network,
         "https://api.x.ai/v1".to_owned(),
@@ -551,10 +549,8 @@ async fn grok_search_emits_distinct_per_source_summaries() {
 
 #[tokio::test]
 async fn grok_search_ignores_unknown_content_and_annotations() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "message",
                 "content": [
@@ -575,7 +571,7 @@ async fn grok_search_ignores_unknown_content_and_annotations() {
                 ]
             }]
         }),
-    }]));
+    )]));
     let provider = GrokSearchProvider::new(
         network,
         "https://api.x.ai/v1".to_owned(),
@@ -595,10 +591,8 @@ async fn grok_search_ignores_unknown_content_and_annotations() {
 
 #[tokio::test]
 async fn grok_search_dedupes_citations_and_limits_results() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "message",
                 "content": [{
@@ -630,7 +624,7 @@ async fn grok_search_dedupes_citations_and_limits_results() {
                 }]
             }]
         }),
-    }]));
+    )]));
     let provider = GrokSearchProvider::new(
         network,
         "https://api.x.ai/v1".to_owned(),
@@ -657,10 +651,8 @@ async fn grok_search_dedupes_citations_and_limits_results() {
 /// references (e.g. reddit/substack threads) are not silently dropped.
 #[tokio::test]
 async fn grok_search_appends_search_sources_when_citations_underfill() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "message",
                 "content": [{
@@ -681,7 +673,7 @@ async fn grok_search_appends_search_sources_when_citations_underfill() {
                 ]
             }]
         }),
-    }]));
+    )]));
     let provider = GrokSearchProvider::new(
         network,
         "https://api.x.ai/v1".to_owned(),
@@ -725,10 +717,8 @@ async fn grok_search_appends_search_sources_when_citations_underfill() {
 /// fill first, and fallback sources MUST NOT cause an overflow.
 #[tokio::test]
 async fn grok_search_search_sources_respect_max_results_cap() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "message",
                 "content": [{
@@ -748,7 +738,7 @@ async fn grok_search_search_sources_respect_max_results_cap() {
                 ]
             }]
         }),
-    }]));
+    )]));
     let provider = GrokSearchProvider::new(
         network,
         "https://api.x.ai/v1".to_owned(),
@@ -776,11 +766,7 @@ async fn grok_search_search_sources_respect_max_results_cap() {
 
 #[tokio::test]
 async fn grok_search_rejects_non_success_status() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 429,
-        headers: vec![],
-        body: json!({ "error": "rate limit" }),
-    }]));
+    let network = Arc::new(MockNetworkClient::new_sse([sse_response(429, vec![])]));
     let provider = GrokSearchProvider::new(
         network,
         "https://api.x.ai/v1".to_owned(),
@@ -807,6 +793,103 @@ async fn grok_search_rejects_non_success_status() {
 /// When `freshness.since` and `freshness.until` are both supplied, the Exa
 /// request body MUST include `start_published_date` and `end_published_date`
 /// so Exa applies the date window server-side.
+#[tokio::test]
+async fn grok_sse_terminal_failure_returns_provider_error() {
+    let network = Arc::new(MockNetworkClient::new_sse([sse_response(
+        200,
+        vec![sse_json_event(
+            "response.incomplete",
+            json!({ "type": "response.incomplete" }),
+        )],
+    )]));
+    let provider = GrokSearchProvider::new(
+        network,
+        "https://api.x.ai/v1".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    let error = provider
+        .search(SearchRequest::new("grok", "lapis", 1))
+        .await
+        .expect_err("terminal failure errors");
+
+    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "grok"));
+}
+
+#[tokio::test]
+async fn grok_sse_error_event_returns_provider_error() {
+    let network = Arc::new(MockNetworkClient::new_sse([sse_response(
+        200,
+        vec![sse_json_event("error", json!({ "type": "error" }))],
+    )]));
+    let provider = GrokSearchProvider::new(
+        network,
+        "https://api.x.ai/v1".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    let error = provider
+        .search(SearchRequest::new("grok", "lapis", 1))
+        .await
+        .expect_err("error event errors");
+
+    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "grok"));
+}
+
+#[tokio::test]
+async fn grok_sse_missing_terminal_event_errors() {
+    let network = Arc::new(MockNetworkClient::new_sse([sse_response(
+        200,
+        vec![sse_json_event(
+            "response.created",
+            json!({ "type": "response.created" }),
+        )],
+    )]));
+    let provider = GrokSearchProvider::new(
+        network,
+        "https://api.x.ai/v1".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    let error = provider
+        .search(SearchRequest::new("grok", "lapis", 1))
+        .await
+        .expect_err("missing terminal errors");
+
+    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+}
+
+#[tokio::test]
+async fn grok_sse_completed_missing_response_errors() {
+    let network = Arc::new(MockNetworkClient::new_sse([sse_response(
+        200,
+        vec![sse_json_event(
+            "response.completed",
+            json!({ "type": "response.completed" }),
+        )],
+    )]));
+    let provider = GrokSearchProvider::new(
+        network,
+        "https://api.x.ai/v1".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    let error = provider
+        .search(SearchRequest::new("grok", "lapis", 1))
+        .await
+        .expect_err("missing response errors");
+
+    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+}
+
 #[tokio::test]
 async fn exa_request_includes_start_and_end_published_date_from_freshness_since_until() {
     let network = Arc::new(MockNetworkClient::new([NetworkResponse {
@@ -893,11 +976,9 @@ async fn exa_request_forwards_since_only_freshness_window() {
 /// date range.
 #[tokio::test]
 async fn grok_search_prompt_includes_freshness_window_when_present() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({ "output": [] }),
-    }]));
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({ "output": [] }),
+    )]));
     let provider = GrokSearchProvider::new(
         network.clone(),
         "https://api.x.ai/v1".to_owned(),
@@ -923,11 +1004,9 @@ async fn grok_search_prompt_includes_freshness_window_when_present() {
 /// line entirely so the model does not invent constraints.
 #[tokio::test]
 async fn grok_search_prompt_omits_freshness_when_none() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({ "output": [] }),
-    }]));
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({ "output": [] }),
+    )]));
     let provider = GrokSearchProvider::new(
         network.clone(),
         "https://api.x.ai/v1".to_owned(),
@@ -950,11 +1029,9 @@ async fn grok_search_prompt_omits_freshness_when_none() {
 /// so operators can cap response cost.
 #[tokio::test]
 async fn grok_search_request_uses_configured_max_output_tokens() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({ "output": [] }),
-    }]));
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({ "output": [] }),
+    )]));
     let provider = GrokSearchProvider::with_max_output_tokens(
         network.clone(),
         "https://api.x.ai/v1".to_owned(),
@@ -978,11 +1055,9 @@ async fn grok_search_request_uses_configured_max_output_tokens() {
 /// applies its own default.
 #[tokio::test]
 async fn grok_search_request_omits_max_output_tokens_when_unconfigured() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({ "output": [] }),
-    }]));
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({ "output": [] }),
+    )]));
     let provider = GrokSearchProvider::new(
         network.clone(),
         "https://api.x.ai/v1".to_owned(),

@@ -6,9 +6,8 @@ use serde_json::Value;
 use snafu::ResultExt;
 
 use lapis_error::{Error, JsonSnafu, Result};
-use lapis_net::NetworkClient;
-use lapis_net::NetworkRequest;
-use lapis_net::provider_http::{bearer_json_post, provider_status_retryable};
+use lapis_net::provider_http::{bearer_json_sse_post, provider_status_retryable};
+use lapis_net::{NetworkClient, NetworkRequest, SseEvent};
 
 use crate::{
     JsonSchemaFormat, ModelInputItem, ModelMessageRole, ModelProvider, ModelRequest, ModelResponse,
@@ -81,11 +80,11 @@ impl OpenAiProvider {
             parallel_tool_calls: false,
             temperature: request.temperature,
             max_output_tokens: request.max_tokens,
-            stream: false,
+            stream: true,
         })
         .context(JsonSnafu)?;
 
-        Ok(bearer_json_post(
+        Ok(bearer_json_sse_post(
             &self.base_url,
             "responses",
             &self.api_key,
@@ -174,7 +173,7 @@ impl ModelProvider for OpenAiProvider {
     async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
         self.validate_request(&request)?;
         let network_request = self.build_network_request(request)?;
-        let response = self.network.send(network_request).await?;
+        let response = self.network.send_sse(network_request).await?;
 
         if !(200..300).contains(&response.status) {
             return Err(Error::HttpStatus {
@@ -184,7 +183,56 @@ impl ModelProvider for OpenAiProvider {
             });
         }
 
-        self.map_response(response.body)
+        self.map_response(assemble_openai_sse(response.events)?)
+    }
+}
+
+fn assemble_openai_sse(events: Vec<SseEvent>) -> Result<Value> {
+    let mut saw_semantic_event = false;
+
+    for event in events {
+        let value: Value = serde_json::from_str(&event.data).context(JsonSnafu)?;
+        match sse_event_type(&event, &value) {
+            Some("response.completed") => {
+                return value.get("response").cloned().ok_or_else(|| {
+                    Error::SchemaValidationFailed {
+                        message: "openai response.completed missing response".to_owned(),
+                    }
+                });
+            }
+            Some("response.failed" | "response.incomplete") => {
+                return Err(Error::ProviderUnavailable {
+                    provider: "openai".to_owned(),
+                    message: "SSE stream ended with terminal failure".to_owned(),
+                });
+            }
+            Some("error") => {
+                return Err(Error::ProviderUnavailable {
+                    provider: "openai".to_owned(),
+                    message: "SSE stream returned error event".to_owned(),
+                });
+            }
+            Some(_) => saw_semantic_event = true,
+            None => {}
+        }
+    }
+
+    if saw_semantic_event {
+        Err(Error::SchemaValidationFailed {
+            message: "openai SSE ended before terminal response event".to_owned(),
+        })
+    } else {
+        Err(Error::NetworkFailed {
+            message: "openai SSE stream ended without semantic events".to_owned(),
+        })
+    }
+}
+
+fn sse_event_type<'a>(event: &'a SseEvent, data: &'a Value) -> Option<&'a str> {
+    if !event.event.is_empty() && event.event != "message" {
+        Some(event.event.as_str())
+    } else {
+        data.get("type").and_then(Value::as_str)
     }
 }
 

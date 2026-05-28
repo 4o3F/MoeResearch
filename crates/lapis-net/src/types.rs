@@ -23,3 +23,16 @@ pub struct NetworkResponse {
     pub headers: Vec<Header>,
     pub body: Value,
 }
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+pub struct SseEvent {
+    pub event: String,
+    pub data: String,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+pub struct SseNetworkResponse {
+    pub status: u16,
+    pub headers: Vec<Header>,
+    pub events: Vec<SseEvent>,
+}

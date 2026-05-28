@@ -31,6 +31,21 @@ pub fn bearer_json_post(
     }
 }
 
+pub fn bearer_json_sse_post(
+    base_url: &str,
+    path: &str,
+    api_key: &str,
+    body: Value,
+    timeout_ms: Option<u64>,
+) -> NetworkRequest {
+    let mut request = bearer_json_post(base_url, path, api_key, body, timeout_ms);
+    request.headers.push(Header {
+        name: "accept".to_owned(),
+        value: "text/event-stream".to_owned(),
+    });
+    request
+}
+
 pub fn provider_status_retryable(status: u16) -> bool {
     status == 429 || status >= 500
 }

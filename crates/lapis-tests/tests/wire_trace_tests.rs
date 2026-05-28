@@ -127,6 +127,7 @@ fn field_bool(event: &serde_json::Value, name: &str) -> Option<bool> {
 struct CannedResponse {
     status: u16,
     body: String,
+    content_type: &'static str,
     /// Advertised Content-Length, which may intentionally differ from `body`.
     content_length: usize,
 }
@@ -138,6 +139,18 @@ impl CannedResponse {
         Self {
             status,
             body,
+            content_type: "application/json",
+            content_length,
+        }
+    }
+
+    fn event_stream(status: u16, body: impl Into<String>) -> Self {
+        let body = body.into();
+        let content_length = body.len();
+        Self {
+            status,
+            body,
+            content_type: "text/event-stream",
             content_length,
         }
     }
@@ -147,6 +160,7 @@ impl CannedResponse {
         Self {
             status,
             body: body.into(),
+            content_type: "application/json",
             content_length,
         }
     }
@@ -220,8 +234,9 @@ impl MockServer {
                     //    succeeds on text bodies because lapis only parses
                     //    the body string after read.
                     let response = format!(
-                        "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
+                        "HTTP/1.1 {status} OK\r\nContent-Type: {content_type}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
                         status = canned.status,
+                        content_type = canned.content_type,
                         len = canned.content_length,
                         body = canned.body
                     );
@@ -521,6 +536,57 @@ async fn wire_trace_truncates_oversized_inbound_body() {
         serde_json::from_str(body).expect("truncation marker is valid JSON");
     assert_eq!(parsed["__truncated"], serde_json::Value::Bool(true));
     assert_eq!(parsed["original_bytes"], serde_json::json!(original_size));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sse_response_collects_events_until_done_marker() {
+    let body = concat!(
+        "event: response.created\n",
+        "data: {\"type\":\"response.created\"}\n\n",
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n",
+        "data: [DONE]\n\n",
+    );
+    let server = MockServer::start(vec![CannedResponse::event_stream(200, body)]).await;
+
+    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
+    let client = build_client();
+    let response = client
+        .send_sse(request_to(server.url("/responses")))
+        .await
+        .expect("SSE request succeeds");
+
+    assert_eq!(response.status, 200);
+    assert_eq!(response.events.len(), 2);
+    assert_eq!(response.events[0].event, "response.created");
+    assert_eq!(response.events[1].event, "response.completed");
+    assert!(
+        response.events.iter().all(|event| event.data != "[DONE]"),
+        "DONE marker is a transport terminator, not a provider event"
+    );
+
+    let events = parse_events(&buffer);
+    assert!(events.iter().any(|event| {
+        message_of(event) == "inbound SSE event metadata" && field_str(event, "body").is_none()
+    }));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sse_response_rejects_oversized_event_data() {
+    let body = format!(
+        "event: response.output_text.delta\ndata: {{\"blob\":\"{}\"}}\n\n",
+        "x".repeat(70 * 1024)
+    );
+    let server = MockServer::start(vec![CannedResponse::event_stream(200, body)]).await;
+
+    let client = build_client();
+    let error = client
+        .send_sse(request_to(server.url("/responses")))
+        .await
+        .expect_err("oversized SSE event should fail");
+
+    assert!(error.to_string().contains("SSE event exceeded data limit"));
+    assert!(!error.retryable());
 }
 
 /// Non-2xx responses must drop the full body from the debug event and

@@ -10,12 +10,11 @@ use lapis_model::{
     ModelResponseFormat, ModelTool, ModelToolCall,
 };
 use lapis_model::{ModelProvider, OpenAiProvider};
-use lapis_net::NetworkResponse;
 use lapis_workflow::AspectResearchResult;
 use lapis_workflow::ModelPolicy;
 use schemars::schema_for;
 use serde_json::{Value, json};
-use support::network::MockNetworkClient;
+use support::network::{MockNetworkClient, completed_sse_response, sse_json_event, sse_response};
 
 struct StaticProvider(&'static str);
 
@@ -294,10 +293,8 @@ fn provider_names_returns_registered_names() {
 
 #[tokio::test]
 async fn maps_text_response_and_usage() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "id": "resp_1",
             "model": "gpt-test",
             "output": [{
@@ -313,7 +310,7 @@ async fn maps_text_response_and_usage() {
                 "total_tokens": 8
             }
         }),
-    }]));
+    )]));
     let provider = provider(network);
 
     let response = provider
@@ -333,10 +330,8 @@ async fn maps_text_response_and_usage() {
 
 #[tokio::test]
 async fn unstored_response_id_maps_to_none_for_stateless_replay() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "id": "resp_1",
             "store": false,
             "output": [{
@@ -347,7 +342,7 @@ async fn unstored_response_id_maps_to_none_for_stateless_replay() {
                 }]
             }]
         }),
-    }]));
+    )]));
     let provider = provider(network);
 
     let response = provider
@@ -361,10 +356,8 @@ async fn unstored_response_id_maps_to_none_for_stateless_replay() {
 
 #[tokio::test]
 async fn maps_tool_call_only_response_with_parsed_arguments() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "function_call",
                 "call_id": "call_1",
@@ -372,7 +365,7 @@ async fn maps_tool_call_only_response_with_parsed_arguments() {
                 "arguments": "{\"query\":\"lapis\"}"
             }]
         }),
-    }]));
+    )]));
     let provider = provider(network);
 
     let response = provider
@@ -396,10 +389,8 @@ async fn maps_tool_call_only_response_with_parsed_arguments() {
 
 #[tokio::test]
 async fn maps_mixed_message_and_tool_call_output_items_in_order() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [
                 {
                     "type": "message",
@@ -416,7 +407,7 @@ async fn maps_mixed_message_and_tool_call_output_items_in_order() {
                 }
             ]
         }),
-    }]));
+    )]));
     let provider = provider(network);
 
     let response = provider
@@ -440,10 +431,8 @@ async fn maps_mixed_message_and_tool_call_output_items_in_order() {
 
 #[tokio::test]
 async fn missing_usage_maps_to_none() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "message",
                 "content": [{
@@ -452,7 +441,7 @@ async fn missing_usage_maps_to_none() {
                 }]
             }]
         }),
-    }]));
+    )]));
     let provider = provider(network);
 
     let response = provider
@@ -465,10 +454,8 @@ async fn missing_usage_maps_to_none() {
 
 #[tokio::test]
 async fn ignores_reasoning_output_items() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [
                 {
                     "type": "reasoning",
@@ -484,7 +471,7 @@ async fn ignores_reasoning_output_items() {
                 }
             ]
         }),
-    }]));
+    )]));
     let provider = provider(network);
 
     let response = provider
@@ -498,10 +485,8 @@ async fn ignores_reasoning_output_items() {
 
 #[tokio::test]
 async fn structured_output_refusal_returns_schema_validation_error() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "message",
                 "content": [{
@@ -510,7 +495,7 @@ async fn structured_output_refusal_returns_schema_validation_error() {
                 }]
             }]
         }),
-    }]));
+    )]));
     let provider = provider(network);
 
     let error = provider
@@ -527,10 +512,8 @@ async fn structured_output_refusal_returns_schema_validation_error() {
 
 #[tokio::test]
 async fn malformed_tool_call_arguments_returns_error() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "function_call",
                 "call_id": "call_1",
@@ -538,7 +521,7 @@ async fn malformed_tool_call_arguments_returns_error() {
                 "arguments": "{bad"
             }]
         }),
-    }]));
+    )]));
     let provider = provider(network);
 
     let error = provider
@@ -549,11 +532,82 @@ async fn malformed_tool_call_arguments_returns_error() {
 }
 
 #[tokio::test]
+async fn openai_sse_terminal_failure_returns_provider_error() {
+    let network = Arc::new(MockNetworkClient::new_sse([sse_response(
+        200,
+        vec![sse_json_event(
+            "response.failed",
+            json!({ "type": "response.failed" }),
+        )],
+    )]));
+    let provider = provider(network);
+
+    let error = provider
+        .complete(request_with_input(vec![user_message("hi")]))
+        .await
+        .expect_err("terminal failure errors");
+
+    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "openai"));
+}
+
+#[tokio::test]
+async fn openai_sse_error_event_returns_provider_error() {
+    let network = Arc::new(MockNetworkClient::new_sse([sse_response(
+        200,
+        vec![sse_json_event("error", json!({ "type": "error" }))],
+    )]));
+    let provider = provider(network);
+
+    let error = provider
+        .complete(request_with_input(vec![user_message("hi")]))
+        .await
+        .expect_err("error event errors");
+
+    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "openai"));
+}
+
+#[tokio::test]
+async fn openai_sse_missing_terminal_event_errors() {
+    let network = Arc::new(MockNetworkClient::new_sse([sse_response(
+        200,
+        vec![sse_json_event(
+            "response.created",
+            json!({ "type": "response.created" }),
+        )],
+    )]));
+    let provider = provider(network);
+
+    let error = provider
+        .complete(request_with_input(vec![user_message("hi")]))
+        .await
+        .expect_err("missing terminal errors");
+
+    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+}
+
+#[tokio::test]
+async fn openai_sse_completed_missing_response_errors() {
+    let network = Arc::new(MockNetworkClient::new_sse([sse_response(
+        200,
+        vec![sse_json_event(
+            "response.completed",
+            json!({ "type": "response.completed" }),
+        )],
+    )]));
+    let provider = provider(network);
+
+    let error = provider
+        .complete(request_with_input(vec![user_message("hi")]))
+        .await
+        .expect_err("missing response errors");
+
+    assert!(matches!(error, Error::SchemaValidationFailed { .. }));
+}
+
+#[tokio::test]
 async fn request_uses_responses_endpoint_and_openai_tool_schema() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "message",
                 "content": [{
@@ -562,7 +616,7 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
                 }]
             }]
         }),
-    }]));
+    )]));
     let provider = OpenAiProvider::new(
         network.clone(),
         "https://api.example.com/".to_owned(),
@@ -606,10 +660,16 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
             .iter()
             .any(|header| { header.name == "content-type" && header.value == "application/json" })
     );
+    assert!(
+        request
+            .headers
+            .iter()
+            .any(|header| { header.name == "accept" && header.value == "text/event-stream" })
+    );
 
     let body = request.body.as_ref().expect("request body");
     assert_eq!(body["model"], "configured-model");
-    assert_eq!(body["stream"], false);
+    assert_eq!(body["stream"], true);
     assert_eq!(body["parallel_tool_calls"], false);
     assert_eq!(body["input"][0]["role"], "user");
     assert_eq!(body["input"][0]["content"], "hi");
@@ -693,10 +753,8 @@ async fn openai_structured_output_schema_requires_nullable_evidence_fields() {
 }
 
 async fn captured_openai_request_body() -> Value {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "message",
                 "content": [{
@@ -705,7 +763,7 @@ async fn captured_openai_request_body() -> Value {
                 }]
             }]
         }),
-    }]));
+    )]));
     let provider = provider(network.clone());
 
     provider
@@ -751,10 +809,8 @@ fn schema_type_allows_null(schema: &Value) -> bool {
 
 #[tokio::test]
 async fn request_serializes_function_call_output_items() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [{
                 "type": "message",
                 "content": [{
@@ -763,7 +819,7 @@ async fn request_serializes_function_call_output_items() {
                 }]
             }]
         }),
-    }]));
+    )]));
     let provider = provider(network.clone());
     let tool_call = ModelToolCall {
         id: "call_1".to_owned(),
@@ -802,10 +858,8 @@ async fn request_serializes_function_call_output_items() {
 /// fail the whole response.
 #[tokio::test]
 async fn openai_provider_tolerates_unknown_response_output() {
-    let network = Arc::new(MockNetworkClient::new([NetworkResponse {
-        status: 200,
-        headers: vec![],
-        body: json!({
+    let network = Arc::new(MockNetworkClient::new_sse([completed_sse_response(
+        json!({
             "output": [
                 {
                     "type": "some_future_kind",
@@ -820,7 +874,7 @@ async fn openai_provider_tolerates_unknown_response_output() {
                 }
             ]
         }),
-    }]));
+    )]));
     let provider = provider(network);
 
     let response = provider
