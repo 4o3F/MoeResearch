@@ -29,6 +29,9 @@ jobs:
           rustup toolchain install stable --profile minimal --component clippy,rustfmt
           rustup default stable
 
+      - name: Configure Rust build cache
+        uses: kunobi-ninja/kache-action@v1
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
