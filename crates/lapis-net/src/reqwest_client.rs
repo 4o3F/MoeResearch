@@ -28,7 +28,7 @@ pub(crate) const MAX_WIRE_BODY_BYTES: usize = 64 * 1024;
 /// full provider body still appears in the trace-level wire event when
 /// the operator opts in.
 const MAX_DEBUG_EXCERPT_BYTES: usize = 256;
-const MAX_SSE_EVENTS: usize = 4096;
+const MAX_SSE_EVENTS: usize = usize::MAX / 2;
 const MAX_SSE_DATA_BYTES: usize = MAX_WIRE_BODY_BYTES;
 const MAX_SSE_TOTAL_DATA_BYTES: usize = 8 * 1024 * 1024;
 const SSE_EVENT_CHANNEL_CAPACITY: usize = 32;
