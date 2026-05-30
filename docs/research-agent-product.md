@@ -462,12 +462,18 @@ SearchRequest
   - provider                      # 由 Layer 1 选定，恰好一个
   - query
   - max_results
-  - freshness: Freshness | null
+  - freshness: Freshness | null   # publish-date filter
+  - depth: SearchDepth | null     # low_latency / balanced / high_recall
+  - content_level: SearchContentLevel | null # compact / standard / detailed
+  - recency: SearchRecency | null # default / live / fresh / recent / cached
+  - category: SearchCategory | null # organizations / people / academic / news / personal_sites / financial_filings / code
   - language: string | null
   - region: string | null
   - include_domains: string[]
   - exclude_domains: string[]
 ```
+
+`freshness` filters by publication date. `recency` is a provider-neutral source freshness preference and may map internally to provider cache/livecrawl controls. Exa request fields such as `type`, `contents`, `maxAgeHours`, `highlights`, `text`, and deep/agentic search modes stay private to the Exa provider adapter and are not part of the public `SearchRequest` contract.
 
 实际标准响应：
 

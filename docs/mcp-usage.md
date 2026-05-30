@@ -228,6 +228,10 @@ Fields:
   "allowed_providers": ["grok"],
   "max_results_per_query": 5,
   "freshness": null,
+  "depth": "balanced",
+  "content_level": "standard",
+  "recency": "default",
+  "category": null,
   "language": "en",
   "region": null,
   "include_domains": [],
@@ -241,11 +245,17 @@ Fields:
 | --- | --- | --- | --- |
 | `allowed_providers` | string[] | Yes | Authorization allowlist. It is not fallback order. |
 | `max_results_per_query` | integer | Yes | Must be greater than zero. |
-| `freshness` | object or null | Yes | Optional freshness constraint. Use null when absent. |
+| `freshness` | object or null | Yes | Optional publish-date constraint. Use null when absent. |
+| `depth` | `low_latency`, `balanced`, `high_recall`, or null | Yes | Provider-neutral speed/coverage preference. Policy value is a default and ceiling. |
+| `content_level` | `compact`, `standard`, `detailed`, or null | Yes | Provider-neutral result detail preference. Policy value is a default and ceiling. |
+| `recency` | `default`, `live`, `fresh`, `recent`, `cached`, or null | Yes | Provider-neutral source freshness preference, distinct from publish-date `freshness`. |
+| `category` | `organizations`, `people`, `academic`, `news`, `personal_sites`, `financial_filings`, `code`, or null | Yes | Provider-neutral source/content focus. Policy value is a default and constraint. |
 | `language` | string or null | Yes | Optional language hint. |
 | `region` | string or null | Yes | Optional region hint. |
 | `include_domains` | string[] | Yes | Domain allow filter. |
 | `exclude_domains` | string[] | Yes | Domain deny filter. A domain must not appear in both include and exclude lists. |
+
+The model-facing internal `search` tool accepts the same provider-neutral call-time fields. It rejects provider-specific fields such as provider overrides, Exa request `type`, `contents`, `maxAgeHours`, or deep search mode names.
 
 ### 5.7 `EvidencePolicy`
 

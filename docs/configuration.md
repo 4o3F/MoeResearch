@@ -104,6 +104,10 @@ export XAI_API_KEY="..."
 
 Only enabled providers require their environment variables to be set.
 
+Search provider configuration is infrastructure-only: endpoint URL, credentials, timeout, model where required, and provider-specific response caps. Per-query search tuning belongs in MCP request policy or the model-facing search tool call, not in `lapis.toml`.
+
+Do not configure search `depth`, `content_level`, `recency`, `category`, or Exa-native request fields such as `type`, `contents`, `highlights`, `text`, or `maxAgeHours` under `[search.providers.*]`; unknown fields fail configuration validation.
+
 ## 5. Network settings
 
 ```toml

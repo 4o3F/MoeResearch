@@ -7,7 +7,10 @@ use lapis_search::Freshness;
 use lapis_search::SearchProvider;
 use lapis_search::SearchService;
 use lapis_search::{ExaSearchProvider, GrokSearchProvider};
-use lapis_search::{SearchRequest, SearchResponse, SearchResult};
+use lapis_search::{
+    SearchCategory, SearchContentLevel, SearchDepth, SearchRecency, SearchRequest, SearchResponse,
+    SearchResult,
+};
 use lapis_workflow::SearchPolicy;
 use serde_json::json;
 use std::sync::Arc;
@@ -80,6 +83,10 @@ fn search_policy(allowed_providers: &[&str]) -> SearchPolicy {
             .collect(),
         max_results_per_query: 5,
         freshness: None,
+        depth: None,
+        content_level: None,
+        recency: None,
+        category: None,
         language: None,
         region: None,
         include_domains: Vec::new(),
@@ -243,6 +250,76 @@ async fn rejects_invalid_search_policy_before_provider_dispatch() {
     assert!(matches!(error, Error::InvalidInput { .. }));
 }
 
+#[test]
+fn search_request_defaults_call_time_params_to_none() {
+    let request = SearchRequest::new("exa", "lapis", 1);
+
+    assert_eq!(request.depth, None);
+    assert_eq!(request.content_level, None);
+    assert_eq!(request.recency, None);
+    assert_eq!(request.category, None);
+}
+
+#[tokio::test]
+async fn search_policy_applies_call_time_defaults() {
+    let mut policy = search_policy(&["exa"]);
+    policy.depth = Some(SearchDepth::Balanced);
+    policy.content_level = Some(SearchContentLevel::Standard);
+    policy.recency = Some(SearchRecency::Recent);
+    policy.category = Some(SearchCategory::News);
+
+    let request = policy
+        .apply_to(SearchRequest::new("exa", "lapis", 1))
+        .expect("policy applies");
+
+    assert_eq!(request.depth, Some(SearchDepth::Balanced));
+    assert_eq!(request.content_level, Some(SearchContentLevel::Standard));
+    assert_eq!(request.recency, Some(SearchRecency::Recent));
+    assert_eq!(request.category, Some(SearchCategory::News));
+}
+
+#[tokio::test]
+async fn search_policy_rejects_call_time_params_above_policy() {
+    let mut policy = search_policy(&["exa"]);
+    policy.depth = Some(SearchDepth::Balanced);
+    policy.content_level = Some(SearchContentLevel::Standard);
+    policy.recency = Some(SearchRecency::Recent);
+
+    let mut depth_request = SearchRequest::new("exa", "lapis", 1);
+    depth_request.depth = Some(SearchDepth::HighRecall);
+    assert!(matches!(
+        policy.apply_to(depth_request),
+        Err(Error::InvalidInput { .. })
+    ));
+
+    let mut content_request = SearchRequest::new("exa", "lapis", 1);
+    content_request.content_level = Some(SearchContentLevel::Detailed);
+    assert!(matches!(
+        policy.apply_to(content_request),
+        Err(Error::InvalidInput { .. })
+    ));
+
+    let mut recency_request = SearchRequest::new("exa", "lapis", 1);
+    recency_request.recency = Some(SearchRecency::Live);
+    assert!(matches!(
+        policy.apply_to(recency_request),
+        Err(Error::InvalidInput { .. })
+    ));
+}
+
+#[tokio::test]
+async fn search_policy_rejects_category_conflict() {
+    let mut policy = search_policy(&["exa"]);
+    policy.category = Some(SearchCategory::News);
+    let mut request = SearchRequest::new("exa", "lapis", 1);
+    request.category = Some(SearchCategory::Academic);
+
+    assert!(matches!(
+        policy.apply_to(request),
+        Err(Error::InvalidInput { .. })
+    ));
+}
+
 #[tokio::test]
 async fn forwards_policy_domain_filters_to_exa_provider() {
     let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
@@ -266,8 +343,8 @@ async fn forwards_policy_domain_filters_to_exa_provider() {
         .expect("search response");
 
     let request_body = network.requests()[0].body.clone().expect("request body");
-    assert_eq!(request_body["include_domains"], json!(["example.com"]));
-    assert_eq!(request_body["exclude_domains"], json!(["blocked.com"]));
+    assert_eq!(request_body["includeDomains"], json!(["example.com"]));
+    assert_eq!(request_body["excludeDomains"], json!(["blocked.com"]));
 }
 
 #[tokio::test]
@@ -737,7 +814,7 @@ async fn grok_search_rejects_non_success_status() {
 }
 
 /// When `freshness.since` and `freshness.until` are both supplied, the Exa
-/// request body MUST include `start_published_date` and `end_published_date`
+/// request body MUST include `startPublishedDate` and `endPublishedDate`
 /// so Exa applies the date window server-side.
 #[tokio::test]
 async fn grok_sse_terminal_failure_returns_provider_error() {
@@ -834,12 +911,12 @@ async fn exa_request_includes_start_and_end_published_date_from_freshness_since_
     provider.search(request).await.expect("exa response");
 
     let body = network.requests()[0].body.clone().expect("request body");
-    assert_eq!(body["start_published_date"], json!("2024-01-01"));
-    assert_eq!(body["end_published_date"], json!("2024-12-31"));
+    assert_eq!(body["startPublishedDate"], json!("2024-01-01"));
+    assert_eq!(body["endPublishedDate"], json!("2024-12-31"));
 }
 
 /// When no freshness is supplied, the Exa request body MUST omit
-/// `start_published_date` and `end_published_date` entirely (not send
+/// `startPublishedDate` and `endPublishedDate` entirely (not send
 /// `null`), so Exa applies its default unbounded window.
 #[tokio::test]
 async fn exa_request_omits_dates_when_freshness_is_none() {
@@ -861,8 +938,8 @@ async fn exa_request_omits_dates_when_freshness_is_none() {
         .expect("exa response");
 
     let body = network.requests()[0].body.clone().expect("request body");
-    assert!(body.get("start_published_date").is_none());
-    assert!(body.get("end_published_date").is_none());
+    assert!(body.get("startPublishedDate").is_none());
+    assert!(body.get("endPublishedDate").is_none());
 }
 
 /// Half-open freshness windows (since-only) must still be forwarded to Exa,
@@ -889,8 +966,135 @@ async fn exa_request_forwards_since_only_freshness_window() {
     provider.search(request).await.expect("exa response");
 
     let body = network.requests()[0].body.clone().expect("request body");
-    assert_eq!(body["start_published_date"], json!("2025-06-01"));
-    assert!(body.get("end_published_date").is_none());
+    assert_eq!(body["startPublishedDate"], json!("2025-06-01"));
+    assert!(body.get("endPublishedDate").is_none());
+}
+
+#[tokio::test]
+async fn exa_request_maps_call_time_params_to_private_fields() {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }]));
+    let provider = ExaSearchProvider::new(
+        network.clone(),
+        "https://api.exa.ai".to_owned(),
+        "key".to_owned(),
+        None,
+    );
+    let mut request = SearchRequest::new("exa", "lapis", 1);
+    request.depth = Some(SearchDepth::LowLatency);
+    request.content_level = Some(SearchContentLevel::Detailed);
+    request.recency = Some(SearchRecency::Live);
+    request.category = Some(SearchCategory::News);
+
+    provider.search(request).await.expect("exa response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert_eq!(body["type"], json!("instant"));
+    assert_eq!(body["contents"]["highlights"], json!(true));
+    assert_eq!(body["contents"]["text"]["maxCharacters"], json!(4000));
+    assert_eq!(body["contents"]["maxAgeHours"], json!(0));
+    assert_eq!(body["category"], json!("news"));
+}
+
+#[tokio::test]
+async fn exa_request_maps_code_category_to_private_hint() {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }]));
+    let provider = ExaSearchProvider::new(
+        network.clone(),
+        "https://api.exa.ai".to_owned(),
+        "key".to_owned(),
+        None,
+    );
+    let mut request = SearchRequest::new("exa", "lapis", 1);
+    request.category = Some(SearchCategory::Code);
+
+    provider.search(request).await.expect("exa response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert_eq!(body["category"], json!("code"));
+}
+
+#[tokio::test]
+async fn exa_people_category_rejects_non_linkedin_include_domains() {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }]));
+    let provider = ExaSearchProvider::new(
+        network,
+        "https://api.exa.ai".to_owned(),
+        "key".to_owned(),
+        None,
+    );
+    let mut request = SearchRequest::new("exa", "lapis", 1);
+    request.category = Some(SearchCategory::People);
+    request.include_domains = vec!["notlinkedin.com".to_owned()];
+
+    assert!(matches!(
+        provider.search(request).await,
+        Err(Error::InvalidInput { .. })
+    ));
+}
+
+#[tokio::test]
+async fn exa_request_maps_high_recall_to_normal_search_type() {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }]));
+    let provider = ExaSearchProvider::new(
+        network.clone(),
+        "https://api.exa.ai".to_owned(),
+        "key".to_owned(),
+        None,
+    );
+    let mut request = SearchRequest::new("exa", "lapis", 1);
+    request.depth = Some(SearchDepth::HighRecall);
+
+    provider.search(request).await.expect("exa response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert_eq!(body["type"], json!("auto"));
+    assert_ne!(body["type"], json!("deep"));
+    assert_ne!(body["type"], json!("deep-lite"));
+    assert_ne!(body["type"], json!("deep-reasoning"));
+}
+
+#[tokio::test]
+async fn exa_request_keeps_recency_distinct_from_freshness_dates() {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }]));
+    let provider = ExaSearchProvider::new(
+        network.clone(),
+        "https://api.exa.ai".to_owned(),
+        "key".to_owned(),
+        None,
+    );
+    let mut request = SearchRequest::new("exa", "lapis", 1);
+    request.recency = Some(SearchRecency::Fresh);
+    request.freshness = Some(Freshness {
+        since: Some("2026-01-01".to_owned()),
+        until: Some("2026-01-31".to_owned()),
+    });
+
+    provider.search(request).await.expect("exa response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert_eq!(body["contents"]["maxAgeHours"], json!(24));
+    assert_eq!(body["startPublishedDate"], json!("2026-01-01"));
+    assert_eq!(body["endPublishedDate"], json!("2026-01-31"));
 }
 
 /// Grok's prompt-based search MUST include a freshness window phrase when
@@ -988,4 +1192,34 @@ async fn grok_search_request_omits_max_output_tokens_when_unconfigured() {
     let body = network.requests()[0].body.clone().expect("request body");
     assert!(body.get("max_output_tokens").is_none());
     assert!(body["tools"][0].get("search_context_size").is_none());
+    assert!(body["tools"][0].get("contents").is_none());
+    assert!(body["tools"][0].get("maxAgeHours").is_none());
+    assert_eq!(body["tools"][0]["type"], json!("web_search"));
+}
+
+#[tokio::test]
+async fn grok_search_prompt_uses_neutral_call_time_hints() {
+    let network = mock_completed_sse(json!({ "output": [] }));
+    let provider = GrokSearchProvider::new(
+        network.clone(),
+        "https://api.x.ai/v1".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+    let mut request = SearchRequest::new("grok", "lapis", 1);
+    request.depth = Some(SearchDepth::Balanced);
+    request.content_level = Some(SearchContentLevel::Compact);
+    request.recency = Some(SearchRecency::Recent);
+    request.category = Some(SearchCategory::News);
+
+    provider.search(request).await.expect("grok response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    let prompt = body["input"][0]["content"].as_str().expect("prompt");
+    assert!(prompt.contains("Search depth preference:"));
+    assert!(prompt.contains("Content detail preference:"));
+    assert!(prompt.contains("Source recency preference:"));
+    assert!(prompt.contains("Category focus: news and current-events sources"));
+    assert!(!prompt.contains("maxAgeHours"));
 }

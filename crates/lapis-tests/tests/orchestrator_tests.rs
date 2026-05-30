@@ -22,7 +22,8 @@ use lapis_workflow::{
 };
 use lapis_workflow::{AspectResearchRequest, AspectResearchTask, AspectSpec, ResearchContext};
 use lapis_workflow::{
-    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
+    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchCategory, SearchContentLevel,
+    SearchDepth, SearchPolicy, SearchRecency, ToolName,
 };
 use serde_json::json;
 
@@ -47,6 +48,10 @@ fn search_policy() -> SearchPolicy {
         allowed_providers: vec!["searcher".to_owned()],
         max_results_per_query: 2,
         freshness: None,
+        depth: None,
+        content_level: None,
+        recency: None,
+        category: None,
         language: None,
         region: None,
         include_domains: Vec::new(),
@@ -149,6 +154,10 @@ struct SequenceSearchProvider {
     responses: Mutex<VecDeque<Result<SearchResponse>>>,
 }
 
+struct CapturingSearchProvider {
+    requests: Arc<Mutex<Vec<SearchRequest>>>,
+}
+
 #[async_trait]
 impl SearchProvider for CountingSearchProvider {
     fn name(&self) -> &'static str {
@@ -176,6 +185,21 @@ impl SearchProvider for SequenceSearchProvider {
             .ok_or_else(|| Error::Internal {
                 message: "missing fake search response".to_owned(),
             })?
+    }
+}
+
+#[async_trait]
+impl SearchProvider for CapturingSearchProvider {
+    fn name(&self) -> &'static str {
+        "searcher"
+    }
+
+    async fn search(&self, request: SearchRequest) -> Result<SearchResponse> {
+        self.requests
+            .lock()
+            .expect("captured search requests")
+            .push(request);
+        Ok(search_response())
     }
 }
 
@@ -1558,6 +1582,62 @@ async fn duplicate_tool_call_ids_are_rejected_before_dispatch() {
 
     assert!(matches!(error.error, Error::ToolPolicyDenied { .. }));
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn agent_loop_forwards_search_tool_call_time_params() {
+    let request = aspect_request();
+    let tool_call = ModelToolCall {
+        id: "call-1".to_owned(),
+        name: "search".to_owned(),
+        arguments: json!({
+            "query": "private query",
+            "max_results": 1,
+            "depth": "balanced",
+            "content_level": "standard",
+            "recency": "fresh",
+            "category": "news"
+        }),
+    };
+    let model_response = ModelResponse {
+        provider: "model".to_owned(),
+        model: None,
+        response_id: None,
+        content: None,
+        tool_calls: vec![tool_call.clone()],
+        output_items: vec![ModelInputItem::tool_call(tool_call)],
+        usage: None,
+    };
+    let mut model_service = ModelService::new();
+    model_service.register(SequenceModelProvider {
+        calls: Arc::new(AtomicUsize::new(0)),
+        responses: Mutex::new(vec![model_response, final_response(valid_report_json())].into()),
+        delay: None,
+    });
+    let captured_requests = Arc::new(Mutex::new(Vec::new()));
+    let mut search_service = SearchService::new();
+    search_service.register(CapturingSearchProvider {
+        requests: captured_requests.clone(),
+    });
+
+    AgentRuntime::new(
+        &model_service,
+        &search_service,
+        &request,
+        ResearchBudgetGuard::unlimited(),
+    )
+    .run()
+    .await
+    .expect("agent output");
+
+    let requests = captured_requests.lock().expect("requests lock");
+    assert_eq!(requests[0].depth, Some(SearchDepth::Balanced));
+    assert_eq!(
+        requests[0].content_level,
+        Some(SearchContentLevel::Standard)
+    );
+    assert_eq!(requests[0].recency, Some(SearchRecency::Fresh));
+    assert_eq!(requests[0].category, Some(SearchCategory::News));
 }
 
 /// When an aspect's `allowed_tools` is empty the tool guard MUST advertise no

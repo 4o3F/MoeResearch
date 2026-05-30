@@ -404,3 +404,42 @@ fn accepts_grok_with_no_max_output_tokens() {
     let config = load_config_from_test_str(VALID_CONFIG).expect("default config must validate");
     assert!(config.search.providers["grok"].max_output_tokens.is_none());
 }
+
+#[test]
+fn rejects_exa_search_tuning_in_config() {
+    for field in [
+        "depth = \"balanced\"",
+        "content_level = \"standard\"",
+        "recency = \"fresh\"",
+        "category = \"news\"",
+        "type = \"auto\"",
+        "contents = {}",
+        "maxAgeHours = 24",
+    ] {
+        let input = VALID_CONFIG.replace(
+            "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
+            &format!(
+                "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000\n{field}"
+            ),
+        );
+        let err = load_config_from_test_str(&input).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field"),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn rejects_grok_search_tuning_in_config() {
+    let input = VALID_CONFIG.replace(
+        "model = \"grok-4.3\"",
+        "model = \"grok-4.3\"\ndepth = \"balanced\"",
+    );
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(
+        err.to_string().contains("unknown field"),
+        "unexpected error: {err}"
+    );
+}

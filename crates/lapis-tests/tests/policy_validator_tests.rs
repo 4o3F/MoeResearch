@@ -7,7 +7,10 @@ use lapis_workflow::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
     SourceType,
 };
-use lapis_workflow::{EvidencePolicy, OutputPolicy, ToolName};
+use lapis_workflow::{
+    EvidencePolicy, OutputPolicy, SearchCategory, SearchContentLevel, SearchDepth, SearchRecency,
+    ToolName,
+};
 use lapis_workflow::{SEARCH_TOOL_NAME, ToolPolicyGuard, search_model_tool};
 use serde_json::json;
 
@@ -153,6 +156,32 @@ fn accepts_valid_search_call() {
 }
 
 #[test]
+fn accepts_valid_search_call_with_provider_neutral_params() {
+    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
+        SEARCH_TOOL_NAME.to_owned(),
+    )]));
+
+    let args = guard
+        .validate_search_call(&call(
+            SEARCH_TOOL_NAME,
+            json!({
+                "query": "rust async runtime",
+                "max_results": 3,
+                "depth": "balanced",
+                "content_level": "standard",
+                "recency": "fresh",
+                "category": "news"
+            }),
+        ))
+        .expect("valid search call");
+
+    assert_eq!(args.depth, Some(SearchDepth::Balanced));
+    assert_eq!(args.content_level, Some(SearchContentLevel::Standard));
+    assert_eq!(args.recency, Some(SearchRecency::Fresh));
+    assert_eq!(args.category, Some(SearchCategory::News));
+}
+
+#[test]
 fn rejects_unknown_tool_and_disallowed_search() {
     let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
         SEARCH_TOOL_NAME.to_owned(),
@@ -210,12 +239,42 @@ fn rejects_provider_field_in_search_tool_args() {
 }
 
 #[test]
+fn rejects_provider_specific_fields_in_search_tool_args() {
+    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
+        SEARCH_TOOL_NAME.to_owned(),
+    )]));
+
+    for arguments in [
+        json!({ "query": "test", "type": "auto" }),
+        json!({ "query": "test", "contents": { "highlights": true } }),
+        json!({ "query": "test", "maxAgeHours": 24 }),
+        json!({ "query": "test", "provider_overrides": {} }),
+    ] {
+        assert!(matches!(
+            guard.validate_search_call(&call(SEARCH_TOOL_NAME, arguments)),
+            Err(Error::ToolPolicyDenied { .. })
+        ));
+    }
+}
+
+#[test]
 fn search_model_tool_uses_provider_neutral_schema() {
     let tool = search_model_tool();
 
     assert_eq!(tool.name, SEARCH_TOOL_NAME);
     assert!(tool.input_schema.get("title").is_some());
-    assert!(tool.input_schema.to_string().contains("query"));
+    let schema = tool.input_schema.to_string();
+    assert!(schema.contains("query"));
+    assert!(schema.contains("depth"));
+    assert!(schema.contains("content_level"));
+    assert!(schema.contains("recency"));
+    assert!(schema.contains("category"));
+    assert!(schema.contains("low_latency"));
+    assert!(schema.contains("high_recall"));
+    assert!(!schema.contains("maxAgeHours"));
+    assert!(!schema.contains("deep-lite"));
+    assert!(!schema.contains("deep\""));
+    assert!(!schema.contains("deep-reasoning"));
 }
 
 #[test]

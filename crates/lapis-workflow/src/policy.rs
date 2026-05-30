@@ -41,13 +41,17 @@ pub struct ModelPolicy {
     pub require_tool_call_support: bool,
 }
 
-pub use lapis_search::Freshness;
+pub use lapis_search::{Freshness, SearchCategory, SearchContentLevel, SearchDepth, SearchRecency};
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct SearchPolicy {
     pub allowed_providers: Vec<String>,
     pub max_results_per_query: usize,
     pub freshness: Option<Freshness>,
+    pub depth: Option<SearchDepth>,
+    pub content_level: Option<SearchContentLevel>,
+    pub recency: Option<SearchRecency>,
+    pub category: Option<SearchCategory>,
     pub language: Option<String>,
     pub region: Option<String>,
     pub include_domains: Vec<String>,
@@ -133,7 +137,44 @@ impl SearchPolicy {
             });
         }
 
+        if let (Some(request_depth), Some(policy_depth)) = (request.depth, self.depth)
+            && request_depth.rank() > policy_depth.rank()
+        {
+            return Err(Error::InvalidInput {
+                message: "search request depth exceeds policy depth".to_owned(),
+            });
+        }
+
+        if let (Some(request_level), Some(policy_level)) =
+            (request.content_level, self.content_level)
+            && request_level.rank() > policy_level.rank()
+        {
+            return Err(Error::InvalidInput {
+                message: "search request content_level exceeds policy content_level".to_owned(),
+            });
+        }
+
+        if let (Some(request_recency), Some(policy_recency)) = (request.recency, self.recency)
+            && request_recency.rank() > policy_recency.rank()
+        {
+            return Err(Error::InvalidInput {
+                message: "search request recency exceeds policy recency".to_owned(),
+            });
+        }
+
+        if let (Some(request_category), Some(policy_category)) = (request.category, self.category)
+            && request_category != policy_category
+        {
+            return Err(Error::InvalidInput {
+                message: "search request category conflicts with policy category".to_owned(),
+            });
+        }
+
         request.freshness = request.freshness.or_else(|| self.freshness.clone());
+        request.depth = request.depth.or(self.depth);
+        request.content_level = request.content_level.or(self.content_level);
+        request.recency = request.recency.or(self.recency);
+        request.category = request.category.or(self.category);
         request.language = request.language.or_else(|| self.language.clone());
         request.region = request.region.or_else(|| self.region.clone());
         request.include_domains.clone_from(&self.include_domains);

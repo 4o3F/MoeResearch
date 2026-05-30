@@ -12,7 +12,7 @@ use crate::report::{
 };
 use crate::research::{ASPECT_PROMPT_MAX_BYTES, AspectResearchRequest};
 use crate::runtime_budget::{AgentBudgetGuard, ResearchBudgetGuard};
-use crate::tool_policy::ToolPolicyGuard;
+use crate::tool_policy::{SearchToolArgs, ToolPolicyGuard};
 use crate::validator::OutputValidator;
 use lapis_error::{Error, Result};
 use lapis_model::ModelService;
@@ -413,7 +413,7 @@ impl<'a> AgentRuntime<'a> {
             "search tool call accepted"
         );
         let search_started = Instant::now();
-        let search_request = self.search_request(search_provider, &args.query, max_results);
+        let search_request = self.search_request(search_provider, &args, max_results);
         let response = match self
             .search_service
             .search(search_policy.apply_to(search_request)?)
@@ -566,13 +566,23 @@ impl<'a> AgentRuntime<'a> {
             .filter(|provider| !provider.trim().is_empty())
     }
 
-    fn search_request(&self, provider: &str, query: &str, max_results: usize) -> SearchRequest {
+    fn search_request(
+        &self,
+        provider: &str,
+        args: &SearchToolArgs,
+        max_results: usize,
+    ) -> SearchRequest {
         let policy = &self.request.search_policy;
-        SearchRequest::new(
+        let mut request = SearchRequest::new(
             provider,
-            query,
+            &args.query,
             max_results.min(policy.max_results_per_query),
-        )
+        );
+        request.depth = args.depth;
+        request.content_level = args.content_level;
+        request.recency = args.recency;
+        request.category = args.category;
+        request
     }
 
     fn evidence_from_search(

@@ -9,7 +9,8 @@ use lapis_workflow::{
 };
 use lapis_workflow::{CountLimit, DurationLimitMs, Limit};
 use lapis_workflow::{
-    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
+    EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchContentLevel, SearchDepth,
+    SearchPolicy, SearchRecency, ToolName,
 };
 use schemars::schema_for;
 use serde_json::json;
@@ -67,6 +68,10 @@ fn search_policy(allowed_providers: &[&str]) -> SearchPolicy {
             .collect(),
         max_results_per_query: 5,
         freshness: None,
+        depth: None,
+        content_level: None,
+        recency: None,
+        category: None,
         language: None,
         region: None,
         include_domains: Vec::new(),
@@ -384,6 +389,44 @@ fn limit_deserializes_schema_advertised_values() {
     assert!(serde_json::from_value::<CountLimit>(json!(-2)).is_err());
 }
 
+#[test]
+fn search_policy_schema_contains_provider_neutral_search_params_only() {
+    let schema =
+        serde_json::to_value(schema_for!(SearchPolicy)).expect("search policy schema json");
+    let schema_text = schema.to_string();
+
+    for expected in [
+        "depth",
+        "content_level",
+        "recency",
+        "category",
+        "low_latency",
+        "balanced",
+        "high_recall",
+        "compact",
+        "standard",
+        "detailed",
+        "default",
+        "live",
+        "fresh",
+        "recent",
+        "cached",
+        "organizations",
+        "people",
+        "academic",
+        "news",
+        "personal_sites",
+        "financial_filings",
+        "code",
+    ] {
+        assert!(schema_text.contains(expected), "missing {expected}");
+    }
+
+    for forbidden in ["maxAgeHours", "highlights", "deep-lite", "deep-reasoning"] {
+        assert!(!schema_text.contains(forbidden), "leaked {forbidden}");
+    }
+}
+
 /// The Layer 1 task-decomposition example MUST deserialize cleanly into a
 /// `DeepResearchRequest`, including the inline aspect prompt, snake_case
 /// `allowed_tools`, structured per-aspect budget, and the `max_tokens`
@@ -393,6 +436,13 @@ fn layer1_task_decomposition_fixture_deserializes_to_deep_research_request() {
     let fixture = include_str!("../fixtures/prompts/task_decomposition_valid.json");
     let request: DeepResearchRequest =
         serde_json::from_str(fixture).expect("task-decomposition fixture must deserialize");
+
+    assert_eq!(request.search_policy.depth, Some(SearchDepth::Balanced));
+    assert_eq!(
+        request.search_policy.content_level,
+        Some(SearchContentLevel::Standard)
+    );
+    assert_eq!(request.search_policy.recency, Some(SearchRecency::Default));
 
     let aspect = &request.aspect_tasks[0].aspect;
     assert_eq!(aspect.allowed_tools[0].as_str(), "search");

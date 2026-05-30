@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use lapis_error::{Error, Result};
 use lapis_model::{ModelTool, ModelToolCall};
 
+use crate::policy::{SearchCategory, SearchContentLevel, SearchDepth, SearchRecency};
 use crate::research::AspectSpec;
 
 pub const SEARCH_TOOL_NAME: &str = "search";
@@ -13,6 +14,10 @@ pub const SEARCH_TOOL_NAME: &str = "search";
 pub struct SearchToolArgs {
     pub query: String,
     pub max_results: Option<usize>,
+    pub depth: Option<SearchDepth>,
+    pub content_level: Option<SearchContentLevel>,
+    pub recency: Option<SearchRecency>,
+    pub category: Option<SearchCategory>,
 }
 
 #[derive(Clone, Debug)]

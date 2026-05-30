@@ -190,6 +190,26 @@ fn search_prompt(request: &SearchRequest) -> String {
         prompt.push_str(&window);
     }
 
+    if let Some(depth) = request.depth {
+        prompt.push_str("\nSearch depth preference: ");
+        prompt.push_str(depth.prompt_hint());
+    }
+
+    if let Some(content_level) = request.content_level {
+        prompt.push_str("\nContent detail preference: ");
+        prompt.push_str(content_level.prompt_hint());
+    }
+
+    if let Some(recency) = request.recency {
+        prompt.push_str("\nSource recency preference: ");
+        prompt.push_str(recency.prompt_hint());
+    }
+
+    if let Some(category) = request.category {
+        prompt.push_str("\nCategory focus: ");
+        prompt.push_str(category.prompt_hint());
+    }
+
     prompt
 }
 

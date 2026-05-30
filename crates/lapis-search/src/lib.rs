@@ -6,4 +6,7 @@ pub mod types;
 
 pub use provider::{ExaSearchProvider, GrokSearchProvider, SearchProvider};
 pub use service::SearchService;
-pub use types::{Freshness, SearchRequest, SearchResponse, SearchResult};
+pub use types::{
+    Freshness, SearchCategory, SearchContentLevel, SearchDepth, SearchRecency, SearchRequest,
+    SearchResponse, SearchResult,
+};

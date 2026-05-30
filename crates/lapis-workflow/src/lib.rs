@@ -15,7 +15,8 @@ pub use agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
 pub use budget::{AgentBudget, BudgetConfig, ResearchBudget};
 pub use limit::{CountLimit, DurationLimitMs, Limit, TokenLimit};
 pub use policy::{
-    EvidencePolicy, ExecutionPolicy, Freshness, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
+    EvidencePolicy, ExecutionPolicy, Freshness, ModelPolicy, OutputPolicy, SearchCategory,
+    SearchContentLevel, SearchDepth, SearchPolicy, SearchRecency, ToolName,
 };
 pub use report::{
     AgentBudgetUsage, AspectFailure, AspectReport, AspectResearchResult, Confidence,
