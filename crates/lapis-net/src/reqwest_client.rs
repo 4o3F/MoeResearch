@@ -282,6 +282,16 @@ impl ReqwestNetworkClient {
                 });
             }
         };
+        tracing::trace!(
+            target: "lapis_core::net::reqwest_client",
+            correlation_id = %correlation_id,
+            attempt,
+            host = %host,
+            path = %path,
+            event = %first_event.event,
+            data_bytes = first_event.data.len(),
+            "inbound SSE event metadata"
+        );
         enforce_sse_caps(
             first_event.data.len(),
             &mut event_count,
