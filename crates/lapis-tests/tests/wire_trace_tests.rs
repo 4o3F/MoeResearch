@@ -734,10 +734,33 @@ async fn sse_stream_delivers_done_as_regular_event() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn sse_response_rejects_oversized_event_data() {
+async fn sse_response_accepts_large_event_data_under_default_cap() {
     let body = format!(
         "event: response.output_text.delta\ndata: {{\"blob\":\"{}\"}}\n\n",
         "x".repeat(70 * 1024)
+    );
+    let server = MockServer::start(vec![CannedResponse::event_stream(200, body)]).await;
+
+    let client = build_client();
+    let mut stream = client
+        .send_sse(sse_request_to(server.url("/responses")))
+        .await
+        .expect("large SSE event under default cap should start");
+    let event = stream
+        .next_event()
+        .await
+        .expect("large SSE event should read")
+        .expect("large SSE event should be present");
+
+    assert_eq!(event.event, "response.output_text.delta");
+    assert_eq!(event.data.len(), 70 * 1024 + 11);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sse_response_rejects_event_data_over_default_cap() {
+    let body = format!(
+        "event: response.output_text.delta\ndata: {}\n\n",
+        "x".repeat(4 * 1024 * 1024 + 1)
     );
     let server = MockServer::start(vec![CannedResponse::event_stream(200, body)]).await;
 
@@ -746,7 +769,7 @@ async fn sse_response_rejects_oversized_event_data() {
         .send_sse(sse_request_to(server.url("/responses")))
         .await
     {
-        Ok(_) => panic!("oversized SSE event should fail"),
+        Ok(_) => panic!("SSE event over default cap should fail"),
         Err(error) => error,
     };
 
