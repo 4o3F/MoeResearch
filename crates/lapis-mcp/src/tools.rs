@@ -54,7 +54,7 @@ impl LapisMcpServer {
                         aspect_id = %aspect_id,
                         tool = "aspect_research",
                         error_code = failure.error.code().as_str(),
-                        error_detail = %failure.error,
+                        error_detail = %failure.error.public_message(),
                         retryable = failure.error.retryable(),
                         status = "failed",
                         "MCP tool failed"
@@ -110,7 +110,7 @@ impl LapisMcpServer {
                         request_id = %request_id,
                         tool = "deep_research",
                         error_code = failure.error.code().as_str(),
-                        error_detail = %failure.error,
+                        error_detail = %failure.error.public_message(),
                         retryable = failure.error.retryable(),
                         failed_aspects = failure.failed_aspects.len(),
                         status = "failed",

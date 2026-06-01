@@ -1,6 +1,6 @@
 use lapis_error::Error;
 use lapis_model::ModelToolCall;
-use lapis_net::policy::RedactionPolicy;
+use lapis_net::Header;
 use lapis_workflow::AspectSpec;
 use lapis_workflow::validate_output;
 use lapis_workflow::{
@@ -383,15 +383,32 @@ fn rejects_too_many_findings() {
 }
 
 #[test]
-fn redacts_sensitive_headers() {
-    let policy = RedactionPolicy;
-    let authorization = policy.redact_header("Authorization", "Bearer secret");
-    let api_key = policy.redact_header("x-api-key", "secret");
-
-    assert_ne!(authorization, "Bearer secret");
-    assert_ne!(api_key, "secret");
-    assert_eq!(
-        policy.redact_header("content-type", "application/json"),
-        "application/json"
+fn safe_header_debug_redacts_sensitive_headers() {
+    let authorization = format!(
+        "{:?}",
+        Header {
+            name: "Authorization".to_owned(),
+            value: "Bearer secret".to_owned(),
+        }
     );
+    let api_key = format!(
+        "{:?}",
+        Header {
+            name: "x-api-key".to_owned(),
+            value: "secret".to_owned(),
+        }
+    );
+    let content_type = format!(
+        "{:?}",
+        Header {
+            name: "content-type".to_owned(),
+            value: "application/json".to_owned(),
+        }
+    );
+
+    assert!(authorization.contains("[REDACTED]"));
+    assert!(!authorization.contains("Bearer secret"));
+    assert!(api_key.contains("[REDACTED]"));
+    assert!(!api_key.contains("secret"));
+    assert!(content_type.contains("application/json"));
 }

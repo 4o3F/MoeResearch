@@ -1,7 +1,7 @@
 //! Network boundary for Lapis.
 
 pub mod client;
-pub mod policy;
+pub(crate) mod log_safe;
 pub mod provider_http;
 pub mod reqwest_client;
 pub mod types;

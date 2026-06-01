@@ -1,3 +1,5 @@
+use std::fmt;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -6,13 +8,15 @@ use tokio::task::JoinHandle;
 
 use lapis_error::Result;
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+use crate::log_safe::{SafeHeaderValue, SafeJson, SafeText, SafeUrl};
+
+#[derive(Clone, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct Header {
     pub name: String,
     pub value: String,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct NetworkRequest {
     pub method: String,
     pub url: String,
@@ -21,17 +25,63 @@ pub struct NetworkRequest {
     pub timeout_ms: Option<u64>,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct JsonNetworkResponse {
     pub status: u16,
     pub headers: Vec<Header>,
     pub body: Value,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[derive(Clone, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct SseEvent {
     pub event: String,
     pub data: String,
+}
+
+impl fmt::Debug for Header {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Header")
+            .field("name", &self.name)
+            .field("value", &SafeHeaderValue::new(&self.name, &self.value))
+            .finish()
+    }
+}
+
+impl fmt::Debug for NetworkRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug = f.debug_struct("NetworkRequest");
+        debug
+            .field("method", &self.method)
+            .field("url", &SafeUrl::new(&self.url))
+            .field("headers", &self.headers);
+
+        if let Some(body) = self.body.as_ref() {
+            debug.field("body", &SafeJson::new(body));
+        } else {
+            debug.field("body", &None::<()>);
+        }
+
+        debug.field("timeout_ms", &self.timeout_ms).finish()
+    }
+}
+
+impl fmt::Debug for JsonNetworkResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JsonNetworkResponse")
+            .field("status", &self.status)
+            .field("headers", &self.headers)
+            .field("body", &SafeJson::new(&self.body))
+            .finish()
+    }
+}
+
+impl fmt::Debug for SseEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SseEvent")
+            .field("event", &SafeText::new(&self.event))
+            .field("data", &SafeText::new(&self.data))
+            .finish()
+    }
 }
 
 pub struct SseNetworkStream {

@@ -7,7 +7,7 @@ use lapis_error::{Error, Result};
 use tokio::sync::mpsc;
 
 use crate::client::NetworkClient;
-use crate::policy::RedactionPolicy;
+use crate::log_safe::{SafeText, SafeUrl, SafeWireBody};
 use crate::{Header, JsonNetworkResponse, NetworkRequest, SseEvent, SseNetworkStream};
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Method, RequestBuilder, Response, Url};
@@ -25,8 +25,8 @@ pub(crate) const MAX_WIRE_BODY_BYTES: usize = 64 * 1024;
 /// Maximum byte length captured in a non-2xx debug `body_excerpt` field.
 ///
 /// Debug-level events are intended for high-level error signal only; the
-/// full provider body still appears in the trace-level wire event when
-/// the operator opts in.
+/// redacted provider body still appears in the trace-level wire event
+/// when the operator opts in.
 const MAX_DEBUG_EXCERPT_BYTES: usize = 256;
 const MAX_SSE_EVENTS: usize = usize::MAX / 2;
 const MAX_SSE_DATA_BYTES: usize = 4 * 1024 * 1024;
@@ -100,14 +100,13 @@ impl ReqwestNetworkClient {
         let host = url.host_str().unwrap_or("unknown").to_owned();
         let path = url.path().to_owned();
         let correlation_id = Uuid::new_v4();
-        let redaction = RedactionPolicy;
 
         tracing::debug!(
             target: "lapis_core::net::reqwest_client",
             method = %method,
             host = %host,
             path = %path,
-            headers = ?redaction.redact_headers(&request.headers),
+            headers = ?request.headers,
             timeout_ms,
             "sending outbound request"
         );
@@ -365,7 +364,7 @@ struct TransportErrorLogContext<'a> {
     timeout_ms: u64,
 }
 
-/// Applies already-redacted logical headers to a reqwest request builder.
+/// Applies logical headers to a reqwest request builder.
 fn apply_headers(mut builder: RequestBuilder, headers: &[Header]) -> Result<RequestBuilder> {
     for header in headers {
         let name = HeaderName::from_bytes(header.name.as_bytes()).map_err(|source| {
@@ -453,16 +452,13 @@ async fn handle_non_success_response(
         duration_ms,
         &text,
     );
-    let redaction = RedactionPolicy;
-    let redacted = redaction.redact_body_text(&text);
-    let excerpt = excerpt_for_debug(&redacted, MAX_DEBUG_EXCERPT_BYTES);
     tracing::debug!(
         target: "lapis_core::net::reqwest_client",
         status,
         host = %context.host,
         path = %context.path,
-        headers = ?redaction.redact_headers(&headers),
-        body_excerpt = %excerpt,
+        headers = ?headers,
+        body_excerpt = %SafeText::new(&text).excerpt(MAX_DEBUG_EXCERPT_BYTES),
         "outbound response returned non-success status"
     );
     Err(Error::HttpStatus {
@@ -629,7 +625,8 @@ fn is_retryable_transport_error(source: &reqwest::Error) -> bool {
 
 /// Converts SSE parser failures into public-safe retry-aware transport errors.
 fn sse_stream_error(source: &impl Display, retryable: bool) -> Error {
-    let detail = redact_sensitive_fragments(&source.to_string());
+    let detail = source.to_string();
+    let detail = SafeText::new(&detail).to_string();
     Error::HttpTransport {
         message: format!("SSE stream handling failed: {detail}"),
         retryable,
@@ -642,6 +639,7 @@ fn emit_transport_error_detail(
     error: &Error,
     context: &TransportErrorLogContext<'_>,
 ) {
+    let error_detail = transport_error_detail(source);
     tracing::warn!(
         target: "lapis_core::net::reqwest_client",
         phase = context.phase,
@@ -651,52 +649,17 @@ fn emit_transport_error_detail(
         path = %context.path,
         timeout_ms = context.timeout_ms,
         retryable = error.retryable(),
-        error_detail = %safe_transport_error_detail(source),
+        error_detail = %SafeText::new(&error_detail),
         "outbound request transport error"
     );
 }
 
-/// Renders reqwest's error text after stripping URL credentials and queries.
-fn safe_transport_error_detail(source: &reqwest::Error) -> String {
+fn transport_error_detail(source: &reqwest::Error) -> String {
     let mut detail = source.to_string();
     if let Some(url) = source.url() {
-        let mut redacted_url = url.clone();
-        let _ = redacted_url.set_username("");
-        let _ = redacted_url.set_password(None);
-        redacted_url.set_query(None);
-        redacted_url.set_fragment(None);
-        detail = detail.replace(url.as_str(), redacted_url.as_str());
+        detail = detail.replace(url.as_str(), &SafeUrl::new(url.as_str()).to_string());
     }
-    redact_sensitive_fragments(&detail)
-}
-
-/// Redacts common key-value secret fragments from diagnostic strings.
-fn redact_sensitive_fragments(input: &str) -> String {
-    let mut output = input.to_owned();
-    for key in ["api_key=", "token=", "key=", "Authorization="] {
-        output = redact_value_after_key(&output, key);
-    }
-    output
-}
-
-/// Replaces one key's value with `[REDACTED]` until a safe delimiter.
-fn redact_value_after_key(input: &str, key: &str) -> String {
-    let mut output = String::with_capacity(input.len());
-    let mut remaining = input;
-    while let Some(index) = remaining.find(key) {
-        let (before, after_before) = remaining.split_at(index);
-        output.push_str(before);
-        output.push_str(key);
-        output.push_str("[REDACTED]");
-
-        let after_key = &after_before[key.len()..];
-        let value_end = after_key
-            .find(|ch: char| ch.is_whitespace() || matches!(ch, '&' | '"' | '\'' | ')' | ','))
-            .unwrap_or(after_key.len());
-        remaining = &after_key[value_end..];
-    }
-    output.push_str(remaining);
-    output
+    detail
 }
 
 /// Emits the trace-level wire event capturing an outbound request body.
@@ -717,7 +680,8 @@ fn emit_outbound_wire_trace(
         return;
     }
     let body_str = body.to_string();
-    let (rendered, truncated, body_bytes) = render_body_for_trace(&body_str, MAX_WIRE_BODY_BYTES);
+    let body_bytes = body_str.len();
+    let truncated = body_bytes > MAX_WIRE_BODY_BYTES;
     tracing::trace!(
         target: "lapis_core::net::reqwest_client",
         direction = "outbound",
@@ -728,7 +692,7 @@ fn emit_outbound_wire_trace(
         path = %path,
         body_bytes,
         body_truncated = truncated,
-        body = %rendered,
+        body = %SafeWireBody::new(&body_str, MAX_WIRE_BODY_BYTES),
         "outbound request body"
     );
 }
@@ -736,8 +700,8 @@ fn emit_outbound_wire_trace(
 /// Emits the trace-level wire event capturing an inbound response body.
 ///
 /// Fires for both success and non-success HTTP statuses so a single
-/// trace stream contains the complete plaintext payload of every round
-/// trip; gated identically to the outbound helper.
+/// trace stream contains the redacted payload of every round trip;
+/// gated identically to the outbound helper.
 fn emit_inbound_wire_trace(
     correlation_id: Uuid,
     attempt: u32,
@@ -750,7 +714,8 @@ fn emit_inbound_wire_trace(
     if !tracing::enabled!(target: "lapis_core::net::reqwest_client", tracing::Level::TRACE) {
         return;
     }
-    let (rendered, truncated, body_bytes) = render_body_for_trace(text, MAX_WIRE_BODY_BYTES);
+    let body_bytes = text.len();
+    let truncated = body_bytes > MAX_WIRE_BODY_BYTES;
     tracing::trace!(
         target: "lapis_core::net::reqwest_client",
         direction = "inbound",
@@ -762,7 +727,7 @@ fn emit_inbound_wire_trace(
         duration_ms,
         body_bytes,
         body_truncated = truncated,
-        body = %rendered,
+        body = %SafeWireBody::new(text, MAX_WIRE_BODY_BYTES),
         "inbound response body"
     );
 }
@@ -778,62 +743,6 @@ fn validate_timeout(field: &str, timeout_ms: u64) -> Result<()> {
         });
     }
     Ok(())
-}
-
-/// Renders a wire body for inclusion in a trace event.
-///
-/// Returns a tuple of `(rendered, truncated, original_bytes)`:
-/// - `rendered` is the string to emit in the `body` trace field. When the
-///   raw payload fits inside `cap` it is returned verbatim; otherwise the
-///   function emits a compact JSON marker of the form
-///   `{"__truncated":true,"original_bytes":N,"head":"<utf8-safe prefix>"}`
-///   so downstream log consumers can detect and recover from the cut.
-/// - `truncated` mirrors the `body_truncated` field on the trace event.
-/// - `original_bytes` is always the raw byte length of the input.
-///
-/// `cap` is the maximum number of bytes from `raw` that may appear in the
-/// rendered output. The cut point is rounded down to the nearest UTF-8
-/// char boundary so the prefix remains valid UTF-8 and the embedded
-/// JSON marker is always parseable.
-pub(crate) fn render_body_for_trace(raw: &str, cap: usize) -> (String, bool, usize) {
-    let body_bytes = raw.len();
-    if body_bytes <= cap {
-        return (raw.to_owned(), false, body_bytes);
-    }
-
-    let mut cut = cap;
-    while cut > 0 && !raw.is_char_boundary(cut) {
-        cut -= 1;
-    }
-
-    let marker = serde_json::json!({
-        "__truncated": true,
-        "original_bytes": body_bytes,
-        "head": &raw[..cut],
-    });
-    (marker.to_string(), true, body_bytes)
-}
-
-/// Trims a redacted body to at most `cap` bytes for inclusion in a
-/// debug-level error event. Adds an ellipsis + byte-count suffix when
-/// truncation occurs so operators can tell that the full payload is
-/// available at trace level.
-fn excerpt_for_debug(raw: &str, cap: usize) -> String {
-    let body_bytes = raw.len();
-    if body_bytes <= cap {
-        return raw.to_owned();
-    }
-
-    let mut cut = cap;
-    while cut > 0 && !raw.is_char_boundary(cut) {
-        cut -= 1;
-    }
-    format!(
-        "{}… ({} of {} bytes; enable reqwest_client=trace for full body)",
-        &raw[..cut],
-        cut,
-        body_bytes
-    )
 }
 
 #[async_trait::async_trait]

@@ -388,15 +388,20 @@ async fn wire_trace_disabled_emits_no_body_events() {
 /// `attempt` index of 0.
 #[tokio::test(flavor = "current_thread")]
 async fn wire_trace_enabled_emits_paired_outbound_and_inbound() {
-    let server =
-        MockServer::start(vec![CannedResponse::new(200, r#"{"ok":true}"#.to_owned())]).await;
+    let server = MockServer::start(vec![CannedResponse::new(
+        200,
+        r#"{"ok":true,"api_key":"sk-response-secret"}"#.to_owned(),
+    )])
+    .await;
 
     let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
     let client = build_client();
-    let _ = client
-        .send_json(request_to(server.url("/responses")))
-        .await
-        .expect("request succeeds");
+    let mut request = request_to(server.url("/responses"));
+    request.body = Some(serde_json::json!({
+        "input": "hello",
+        "api_key": "sk-request-secret",
+    }));
+    let _ = client.send_json(request).await.expect("request succeeds");
 
     let events = parse_events(&buffer);
     let outbound: Vec<_> = events
@@ -422,13 +427,25 @@ async fn wire_trace_enabled_emits_paired_outbound_and_inbound() {
     assert_eq!(field_u64(inbound[0], "attempt"), Some(0));
     assert_eq!(field_u64(inbound[0], "status"), Some(200));
 
+    let outbound_body = field_str(outbound[0], "body").expect("outbound body");
+    assert!(
+        outbound_body.contains("[REDACTED]"),
+        "outbound body must redact secrets, got `{outbound_body}`"
+    );
+    assert!(
+        !outbound_body.contains("sk-request-secret"),
+        "outbound body leaked request secret: `{outbound_body}`"
+    );
+
     // Body field round-trips through the trace formatter as a string;
-    // the inbound event must carry the literal response payload.
+    // the inbound event must carry the redacted response payload.
     let inbound_body = field_str(inbound[0], "body").expect("inbound body");
     assert!(
         inbound_body.contains("\"ok\":true"),
         "inbound body must carry the upstream response, got `{inbound_body}`"
     );
+    assert!(inbound_body.contains("[REDACTED]"));
+    assert!(!inbound_body.contains("sk-response-secret"));
 }
 
 /// Each `send_once` attempt generates a fresh `correlation_id` and a
@@ -552,7 +569,7 @@ async fn transport_error_detail_log_redacts_request_secrets() {
         .iter()
         .find(|event| message_of(event) == "outbound request transport error")
         .expect("transport detail event present");
-    let event_text = serde_json::to_string(transport_error).expect("event serializes");
+    let event_text = buffer.snapshot();
     for forbidden in [
         "sk-query-secret",
         "api_key=sk-query-secret",
@@ -578,7 +595,10 @@ async fn transport_error_detail_log_redacts_request_secrets() {
 #[tokio::test(flavor = "current_thread")]
 async fn wire_trace_truncates_oversized_inbound_body() {
     // 70 KiB payload — comfortably above the 64 KiB cap.
-    let huge_body = format!("{{\"blob\":\"{}\"}}", "x".repeat(70 * 1024));
+    let huge_body = format!(
+        "{{\"api_key\":\"sk-huge-secret\",\"blob\":\"{}\"}}",
+        "x".repeat(70 * 1024)
+    );
     let original_size = huge_body.len();
     let server = MockServer::start(vec![CannedResponse::new(200, huge_body)]).await;
 
@@ -605,6 +625,12 @@ async fn wire_trace_truncates_oversized_inbound_body() {
         serde_json::from_str(body).expect("truncation marker is valid JSON");
     assert_eq!(parsed["__truncated"], serde_json::Value::Bool(true));
     assert_eq!(parsed["original_bytes"], serde_json::json!(original_size));
+    let head = parsed["head"].as_str().expect("truncation head is string");
+    assert!(
+        !head.contains("sk-huge-secret"),
+        "truncated wire body leaked secret: {head}"
+    );
+    assert!(head.contains("[REDACTED]"));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -817,7 +843,10 @@ async fn sse_response_rejects_total_data_overflow() {
 #[tokio::test(flavor = "current_thread")]
 async fn wire_non_success_debug_event_uses_excerpt_not_full_body() {
     // Make the body large enough to trigger excerpt truncation.
-    let big_error = format!("{{\"err\":\"{}\"}}", "z".repeat(400));
+    let big_error = format!(
+        "{{\"api_key\":\"sk-error-secret\",\"err\":\"{}\"}}",
+        "z".repeat(400)
+    );
     let server = MockServer::start(vec![CannedResponse::new(400, big_error.clone())]).await;
 
     let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
@@ -849,8 +878,10 @@ async fn wire_non_success_debug_event_uses_excerpt_not_full_body() {
         excerpt.len() < big_error.len(),
         "excerpt must be shorter than the original body"
     );
+    assert!(excerpt.contains("[REDACTED]"));
+    assert!(!excerpt.contains("sk-error-secret"));
 
-    // The full body is still captured at trace level.
+    // The redacted body is still captured at trace level.
     let inbound = events
         .iter()
         .find(|e| field_str(e, "direction") == Some("inbound"))
@@ -859,6 +890,8 @@ async fn wire_non_success_debug_event_uses_excerpt_not_full_body() {
     let inbound_body = field_str(inbound, "body").expect("inbound body");
     assert!(
         inbound_body.contains("zzzz"),
-        "trace inbound event must carry the full upstream body"
+        "trace inbound event must carry the upstream body"
     );
+    assert!(inbound_body.contains("[REDACTED]"));
+    assert!(!inbound_body.contains("sk-error-secret"));
 }
