@@ -19,7 +19,7 @@
 //! for the entire test body.
 
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 use lapis_net::reqwest_client::ReqwestNetworkClient;
@@ -57,6 +57,13 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedBuffer {
 
 struct BufferWriter(Arc<Mutex<Vec<u8>>>);
 
+static TRACING_CAPTURE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+struct TracingCaptureGuard {
+    _default: tracing::subscriber::DefaultGuard,
+    _lock: MutexGuard<'static, ()>,
+}
+
 impl Write for BufferWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.0
@@ -73,9 +80,17 @@ impl Write for BufferWriter {
 /// Builds a tracing subscriber that writes every event matching `filter`
 /// as one JSON object per line into the returned shared buffer.
 ///
-/// The returned `DefaultGuard` keeps the subscriber active until it is
-/// dropped; in single-threaded tests this covers the entire test body.
-fn capture_tracing(filter: &str) -> (SharedBuffer, tracing::subscriber::DefaultGuard) {
+/// The returned guard keeps the subscriber active until it is dropped;
+/// in single-threaded tests this covers the entire test body.
+fn lock_tracing_capture() -> MutexGuard<'static, ()> {
+    TRACING_CAPTURE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn capture_tracing(filter: &str) -> (SharedBuffer, TracingCaptureGuard) {
+    let lock = lock_tracing_capture();
     let buffer = SharedBuffer::new();
     let layer = tracing_subscriber::fmt::layer()
         .json()
@@ -85,8 +100,14 @@ fn capture_tracing(filter: &str) -> (SharedBuffer, tracing::subscriber::DefaultG
     let subscriber = tracing_subscriber::Registry::default()
         .with(env_filter)
         .with(layer);
-    let guard = tracing::subscriber::set_default(subscriber);
-    (buffer, guard)
+    let default = tracing::subscriber::set_default(subscriber);
+    (
+        buffer,
+        TracingCaptureGuard {
+            _default: default,
+            _lock: lock,
+        },
+    )
 }
 
 fn parse_events(buffer: &SharedBuffer) -> Vec<serde_json::Value> {
@@ -635,6 +656,7 @@ async fn wire_trace_truncates_oversized_inbound_body() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_stream_allows_provider_to_stop_without_done_or_eof() {
+    let _trace_lock = lock_tracing_capture();
     let body = concat!(
         "event: response.completed\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n",
@@ -659,6 +681,7 @@ async fn sse_stream_allows_provider_to_stop_without_done_or_eof() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_failure_before_first_event_retries() {
+    let _trace_lock = lock_tracing_capture();
     let incomplete = "event: response.created\n";
     let completed = concat!(
         "event: response.completed\n",
@@ -686,6 +709,7 @@ async fn sse_failure_before_first_event_retries() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_failure_after_first_event_is_not_retryable() {
+    let _trace_lock = lock_tracing_capture();
     let body = concat!(
         "event: response.created\n",
         "data: {\"type\":\"response.created\"}\n\n",
@@ -775,6 +799,7 @@ async fn sse_stream_delivers_done_as_regular_event() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_response_accepts_large_event_data_under_default_cap() {
+    let _trace_lock = lock_tracing_capture();
     let body = format!(
         "event: response.output_text.delta\ndata: {{\"blob\":\"{}\"}}\n\n",
         "x".repeat(70 * 1024)
@@ -798,6 +823,7 @@ async fn sse_response_accepts_large_event_data_under_default_cap() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_response_rejects_event_data_over_default_cap() {
+    let _trace_lock = lock_tracing_capture();
     let body = format!(
         "event: response.output_text.delta\ndata: {}\n\n",
         "x".repeat(4 * 1024 * 1024 + 1)
@@ -819,6 +845,7 @@ async fn sse_response_rejects_event_data_over_default_cap() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_response_rejects_total_data_overflow() {
+    let _trace_lock = lock_tracing_capture();
     let chunk = "x".repeat(3 * 1024);
     let mut body = String::new();
     for _ in 0..3000 {
