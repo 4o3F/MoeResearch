@@ -1,6 +1,6 @@
-# M6 Golden Report · 海外运动/健身 AI Coach + 长流程自适应训练计划赛道：未来 12-36 月下注方向
+# Golden Report · 海外运动/健身 AI Coach + 长流程自适应训练计划赛道：未来 12-36 月下注方向
 
-> Profile: **innovation-direction** (v2.2) · 13-章 family A 变体 · do_not_drop = Ch 1/2/8/9/10/12/13
+> Profile: **innovation-direction** · 13-章 narrative report · do_not_drop = Ch 1/2/8/9/10/12/13
 > Subject domain：海外运动/健身 app AI Coach + 长流程自适应训练计划赛道
 > Time window：12-36 月（2026-2028）
 > Target actor（incumbent baseline）：Strava+Runna（2025-04 收购后实体，作现状承载力观察基线；非单产品评测）

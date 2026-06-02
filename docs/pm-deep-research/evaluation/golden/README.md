@@ -1,13 +1,13 @@
 # PM DeepResearch 黄金报告索引（4 能力）
 
-> 4 个 capability 各 1 个端到端真引擎产出 + 1 个 rubric 自评。引擎：Lapis `9db7464`（除 v2.1 M5 baseline `02ec7d9` + 本地 SSE 补丁）。
+> 4 个 capability 各 1 个端到端真引擎产出 + 1 个 rubric 自评。引擎：Lapis `9db7464`。
 
-| 能力 | 课题 | 黄金报告 | Rubric 自评 | 分数 | canonical 配置 |
+| 能力 | 课题 | 黄金报告 | Rubric 自评 | 分数 | 已验证配置 |
 |---|---|---|---|---|---|
-| **competitive** (v2.0) | Strava AI-coach 升级方向 | [competitive-strava-coach-upgrade.md](competitive-strava-coach-upgrade.md) | [competitive-rubric-score.md](competitive-rubric-score.md) | **23/24** | R4-c canonical：`recency=fresh` + `max_results=5` + per-aspect cap=4；A4 1→2 |
-| **product-capability** (v2.1) | Runna 训练计划自适应能力深度 | [product-capability-runna-training-plan.md](product-capability-runna-training-plan.md) | [product-capability-rubric-score.md](product-capability-rubric-score.md) | **23/24** | R4-c canonical：`recency=fresh` + `max_results=5` + per-aspect cap=3；锚点 23 持平 + enrichment |
-| **innovation-direction** (v2.2) | 海外运动/健身 AI Coach 未来 12-36 月下注 | [innovation-direction-ai-coach-bets.md](innovation-direction-ai-coach-bets.md) | [innovation-direction-rubric-score.md](innovation-direction-rubric-score.md) | **24/24** | R4-c canonical（cap=6 必须）：`recency=fresh` + `max_results=5` + per-aspect cap=6（recommended-bets 综合 aspect 在 recency=fresh 下 search appetite ~6） |
-| **product-requirements** (v2.3) | Endurance-athlete Explainable Biometric Coach PR-FAQ | [product-requirements-prfaq.md](product-requirements-prfaq.md) | [product-requirements-rubric-score.md](product-requirements-rubric-score.md) | **24/24** | R4-e + #9 rerun9 锚点；R4-c **NOT canonical**（requirements-fn-nfn-nongoals 在 recency=fresh 下结构性 synthesis-time fragile，4 retry 模式齐失败；等引擎支持 per-aspect search_policy override 或 per-aspect execution_policy.timeout_ms 后回头） |
+| **competitive** | Strava AI-coach 升级方向 | [competitive-strava-coach-upgrade.md](competitive-strava-coach-upgrade.md) | [competitive-rubric-score.md](competitive-rubric-score.md) | **23/24** | `recency=fresh` + `max_results=5` + per-aspect `max_search_calls=4` |
+| **product-capability** | Runna 训练计划自适应能力深度 | [product-capability-runna-training-plan.md](product-capability-runna-training-plan.md) | [product-capability-rubric-score.md](product-capability-rubric-score.md) | **23/24** | `recency=fresh` + `max_results=5` + per-aspect `max_search_calls=3` |
+| **innovation-direction** | 海外运动/健身 AI Coach 未来 12-36 月下注 | [innovation-direction-ai-coach-bets.md](innovation-direction-ai-coach-bets.md) | [innovation-direction-rubric-score.md](innovation-direction-rubric-score.md) | **24/24** | `recency=fresh` + `max_results=5` + per-aspect `max_search_calls=6`（recommended-bets aspect 在 recency=fresh 下 search appetite ~6；max_search_calls=5 持续触发执行中止） |
+| **product-requirements** | Endurance-athlete Explainable Biometric Coach PR-FAQ | [product-requirements-prfaq.md](product-requirements-prfaq.md) | [product-requirements-rubric-score.md](product-requirements-rubric-score.md) | **24/24** | 段3 cagan 拆 4 single-class micro-aspect（每 max_search_calls=4）；`recency=fresh` **不推荐**（requirements-fn-nfn-nongoals aspect 在 recency=fresh 下结构性 synthesis-time fragile，多次 retry 均失败；等引擎支持 per-aspect search_policy override 后回头） |
 
 ---
 
@@ -18,14 +18,14 @@
 
 ## 评分锚点解释
 
-- v2.0 `competitive` 22/24（手写黄金）→ M4 引擎实跑 22/24 → **R4-c canonical 23/24**（A4 1→2，build-cost 经 `recency=fresh` 路径产 4 条 dated 版本史证据；C1 持平 1，deep_research 无 Layer-2 抓图结构限制）。
-- v2.1 `product-capability` M5 23/24 → **R4-c canonical 23/24 持平**（无回归 + 53 evidence/15 domains/6 source_types/0 dangling，enrichment +5 ev/+2 domain）。
-- v2.2 `innovation-direction` M6 24/24（首次 C1 满分；7 战略图 trend/canvas/capability map）→ **R4-c canonical (cap=6) 24/24 持平**（74 evidence/23 domains/5 source_types）；**key finding**：recommended-bets aspect 在 recency=fresh prompt-hint 下 search appetite ~6，cap=5 持续 hard-kill，cap=6 为强制门槛。
-- v2.3 `product-requirements` M7 21/24（baseline）→ R4-g family B 视觉 C1 1→2 = 22 → **R4-e 段3 cagan 拆 4 micro-aspect + #9 引擎复跑 24/24**（B1 1→2 + B3 1→2）。R4-c **NOT adopted**：family B PR-FAQ 合成强度比 v2.2 recommended-bets 高一档，requirements-fn-nfn-nongoals aspect 在 recency=fresh 下结构性 synthesis-time fragile（4 retry 模式齐：cap=8 search hard-kill / cap=9 runtime / cap=9 + budget.timeout_ms=900s 撞 execution_policy=600s 复校 / cap=9 + 双侧 900s 撞 CPA SSE flake）。
+- `competitive` 23/24：build-cost aspect 经 `recency=fresh` 路径产 4 条 dated official 版本史证据（默认 2 条）；A4=2；C1=1（deep_research 无 Layer-2 抓图，结构限制）。
+- `product-capability` 23/24：`recency=fresh` 无回归；53 evidence/15 domains/6 source_types/0 dangling；A4=2；C1=1。
+- `innovation-direction` 24/24：C1 首次满分（7 战略图，视觉类型偏 trend/canvas/capability map，不依赖 Layer-2 in-app capture）；key finding：recommended-bets aspect 在 recency=fresh 下 search appetite ~6，`max_search_calls=5` 持续触发执行中止，`max_search_calls=6` 为强制门槛。
+- `product-requirements` 24/24：段3 cagan 拆 4 single-class micro-aspect，解决 multi-class 任务 search-saturation 问题（B1=2 + B3=2）；C1=2（6 张语义 table ≥5）；8-section PR-FAQ template 首落地证明实测可承载。`recency=fresh` 不推荐（requirements-fn-nfn-nongoals synthesis-time fragile，多次 retry 均失败）。
 
-## R1 引擎漂移闸门
+## 引擎漂移闸门
 
-4 黄金 #9 引擎全量复跑全 PASS、零回归（v2.0 22 / v2.1 23 / v2.2 24 / v2.3 24）。
+4 黄金引擎（Lapis `9db7464`）全量复跑全 PASS、零回归（competitive 22 / product-capability 23 / innovation-direction 24 / product-requirements 24）。
 
 ## 参见
 

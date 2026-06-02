@@ -1,6 +1,6 @@
 # Capability Profile · 产品需求深度调研 (product-requirements)
 
-> Status: ✅ **端到端验证完成**（v2.3 M7 21/24 → R4-g C1 补丁 22 → **R4-e 段3 cagan 拆 4 micro-aspect + #9 引擎全量复跑 24/24**，2026-05-31）；family B 8 段 PR-FAQ 模板首落地。本 profile 装配 + 方法组合骨架经 M7 / M7.5 / #9 三轮坐实，详 §6。
+> Status: ✅ **端到端验证完成**（8 段 PR-FAQ 模板首落地；最终验证 24/24，详 §6）。
 > 通用 frame：[`../pm-deep-research-spec.md`](../pm-deep-research-spec.md)（人格 / 13 TM / 4-tier 证据 / 视觉证据 / 反幻觉 / 行文 floor / 优雅降级 / Lapis 接口边界等**所有跨能力机制**以通用规格为准）。
 > 方法论：B2 PR-FAQ 八段模板（Amazon working backwards + Cagan 4 风险 + Torres OST + Kano 1984）—— 来源均一手核实，详 PM DeepResearch 源仓 track B 调研。
 
@@ -157,18 +157,17 @@
 
 ## 6. 验证状态
 
-- ✅ **v2.3 M7 端到端验证完成（2026-05-30，21/24 诚实自评 / family B 8 段 PR-FAQ 模板首落地证明）**
-  - 黄金课题：Endurance-athlete Explainable Biometric Coach PR-FAQ（新创 build intent，narrative 接 v2.2 W1 P1）。
-  - M7 baseline 21/24（family B 8 段, 6/8 dedicated aspect + 2 跨段代偿）已由 R4-e + #9 rerun9 24/24 替代（见下条）。
-  - **核心 v2.3 增益**：
-    - **family B 模板族首落地** — 与 v2.0/v2.1/v2.2 family A 13 章并列；通用规格 §7.1 模板族 B 实测可承载证明 ✅。
-    - **family B 段间 narrative (working backwards / PR-FAQ ≤300 字 cap / 客户引言"When X I want Y so I can Z"句式 / 非目标显式段 / 5 hard gates 分布)** 全部 enforce 成功。
-    - **5 hard gates 中 4 pass + 1 partial**：段4 OST ≥3 候选 ✅ / 段5 非目标显式 ✅ / 段6 三套指标全 ✅ / 段8 TM-11 falsification 7/7=100% ✅；段3 4-risks aspect 5 retries 全失败 → cross-aspect 跨段代偿 (confidence medium)。
-    - **TM-11 hard gate 7/7=100%** ✅（含工程过程发现的 OQ-NEW process risk 自报）— family B 段8 falsification 强度与 v2.2 段8 hard gate 等价。
-  - **关键 M7 发现 (诚实失分根因)**：
-    - **段3 cagan-4risks aspect search-saturation pathology**：strategist persona 在 multi-class 4-risks 任务上无法在 18-call budget 内收敛（5 次 backfill 全失败：3 budget_exceeded + 2 schema_validation_failed）。Phase 4 R4-e 修复候选: 拆为 4 micro-aspect (1 risk class / aspect)。
-    - **段7 evidence-table aspect schema_validation_failed**：Lapis evidence_refs 限定本 aspect search 输出，meta-aggregation aspect 设计性不合身。Phase 4 R4-f: 段7 in task-decomposition 标 OPTIONAL，默认 fallback to final-report Phase B 跨段聚合。
-    - **rubric §6.4 C1 视觉 vs family B 模板语义错位**：family B 天然出 table 不出 chart，rubric C1 chart-centric 描述不适配。Phase 4 R4-g: rubric §6.4 + §3 (C1 描述) 加 family B 适配段（≥5 张语义 table 等价 chart 类型）。
-  - **承载性证明**：本 profile 装配契约（EA + Strategist 平衡 + family B 8 段 + 5 hard gates + 段7 fallback path）可承载；**段3 失败是 prompt 设计 finding 而非装配契约缺陷**，profile §1 / §3 不需修改；M7.5 拆 cagan 为 4 micro-aspect 后 B1 1→2 + B3 1→2 已坐实（见下 R4-e 条）。
-- ✅ **R4-e + #9 引擎全量复跑验证完成（2026-05-31，24/24，[最终报告](../evaluation/golden/product-requirements-prfaq.md) / [打分](../evaluation/golden/product-requirements-rubric-score.md)）**：段3 cagan-4risks 拆 4 micro-aspect（value/usability/feasibility/business，每 max_search=4 + 1 class evidence）消除 search-saturation 病理 → 段3 升为 **dedicated 4-risks**（M7.5 预演 4/4 收敛 + #9 全量复跑 cagan 4/4 dedicated 双坐实）。B1 1→2 + B3 1→2（叠加 R4-g C1 1→2）= **21→24**；改 task-decomposition / agent-allocation / final-report 三编排文件 + deep tier 10 mandatory aspect（段3=4 micro，段7 R4-f OPTIONAL）。**不注水**：value explainability-WTP / business trainer-econ 仍标 low（恰证 A3/A5 诚实性）。
-- 先验合理性来源：B2 八段模板已校验真实可追溯（Amazon PR-FAQ、Cagan 4 风险、Torres OST、Kano 1984 原始论文均一手核实）；通用规格 §7.2 模板族 B 已为该模板预留 — M7 端到端验证。本 profile 的所有方法均已在 v2.0 [competitive](competitive.md) 或方法库（M-JTBD/Kano/ODI/4Risks/OST）中验证可调用，方法论无新引入。
+- ✅ **端到端验证完成（8 段 PR-FAQ 模板首落地，24/24）**
+  - 黄金课题：Endurance-athlete Explainable Biometric Coach PR-FAQ（新创 build intent）。
+  - **核心验证增益**：
+    - **8 段 PR-FAQ 模板族首落地** — 与 competitive / product-capability / innovation-direction 的 13 章模板并列；通用规格 §7.1 模板族 B 实测可承载证明 ✅。
+    - **段间 narrative (working backwards / PR-FAQ ≤300 字 cap / 客户引言 "When X I want Y so I can Z" 句式 / 非目标显式段 / 5 hard gates 分布)** 全部 enforce 成功。
+    - **5 hard gates 全 pass**：段4 OST ≥3 候选 ✅ / 段5 非目标显式 ✅ / 段6 三套指标全 ✅ / 段8 TM-11 falsification 7/7=100% ✅ / 段3 4 cagan micro-aspect 全收敛 ✅。
+    - **TM-11 hard gate 7/7=100%** ✅。
+  - **关键设计发现（已在 prompt 文件中固化）**：
+    - **段3 cagan-4risks search-saturation pathology**：单个 4-class aspect 在 strategist persona 下无法收敛（多次 backfill 全失败）。修复：拆为 4 个 single-class micro-aspect，每个 `max_search_calls=4`，bounded 预算强制收敛。已验证：4/4 cagan micro-aspect 全收敛。
+    - **段7 evidence-table 默认不 spin**：Lapis `evidence_refs` 不许 cite prior_sources by id，meta-aggregation aspect 设计性不合身（`schema_validation_failed`）。默认 fallback 到 final-report Phase B 跨段聚合。
+    - **C1 视觉判据适配**：8 段 PR-FAQ 模板天然出语义表（ODI / 4-risks / OST / metrics）而非 chart，rubric C1 已加 ≥5 张语义表等价判据。
+  - **诚实标记（不注水）**：value explainability-WTP / business trainer-econ 仍标 low confidence（恰证 A3/A5 诚实性）。
+- ✅ **最终权威黄金**：[最终报告](../evaluation/golden/product-requirements-prfaq.md) / [打分](../evaluation/golden/product-requirements-rubric-score.md)（24/24；deep tier 10 mandatory aspect：段3=4 micro，段7 OPTIONAL）。
+- 先验合理性来源：B2 八段模板已校验真实可追溯（Amazon PR-FAQ、Cagan 4 风险、Torres OST、Kano 1984 原始论文均一手核实）；通用规格 §7.1 模板族 B 已为该模板预留。本 profile 的所有方法均已在 competitive profile 或方法库（M-JTBD/Kano/ODI/4Risks/OST）中验证可调用，方法论无新引入。

@@ -1,16 +1,16 @@
-# v2.3 Golden Report (R4-b · #9 engine) · Endurance-athlete Explainable Biometric Coach — PR-FAQ 前置物 (PRD Input Deck)
+# Golden Report · product-requirements · Endurance-athlete Explainable Biometric Coach — PR-FAQ 前置物 (PRD Input Deck)
 
-> Profile: **product-requirements** (v2.3) · **Family B 8 段 PR-FAQ 模板** · decision_intent: **build** · audience: PM/TPM/Eng/Design leads
+> Profile: **product-requirements** · **8 段 PR-FAQ 模板** · decision_intent: **build** · audience: PM/TPM/Eng/Design leads
 > Subject: 新创 endurance-athlete-focused AI biometric coach — HRV/strain/sleep explainability + optional human-in-loop trainer review + cross-wearable data fusion
-> **本报告 = v2.3 在 #9 最终引擎（vendored Lapis `9db7464`，verbatim、零本地修改）上的全量真实复跑权威黄金**（取代 M7.5 design-validation 预演 [`m75-golden-report-explainable-biometric-coach-prfaq.md`](m75-golden-report-explainable-biometric-coach-prfaq.md)）。
-> Lapis 运行：deep_research 11 aspect → 直接 4/11（3 cagan micro value/usability/feasibility + open-questions）；6 aspect 经 aspect_research 补跑收敛（pr-faq/jtbd-odi/cagan-business/ost/requirements/metrics）；evidence-table = R4-f Phase B 跨段聚合。**最终 10/10 dedicated aspect 全 ok（cagan 4/4 全收敛）**。
+> **本报告 = 最终权威黄金**：引擎 Lapis `9db7464`（vendored verbatim）全量真实复跑。
+> Lapis 运行：deep_research + aspect_research 补跑；evidence-table 由 final-report Phase B 跨段聚合。**最终 10/10 dedicated aspect 全 ok（cagan 4/4 全收敛）**。
 > 证据：10 dedicated aspect / 48 findings / **79 evidence** / dangling=0（详 [`rerun9-merged-10of10.result.json`](rerun9-merged-10of10.result.json) + [`rerun9-bundle.md`](rerun9-bundle.md)）。
-> 自评：详 [`rerun9-rubric-score-v23.md`](rerun9-rubric-score-v23.md)（R1 回归闸门：vs M7.5 锚点 24/24）。
-> **段3 由 4 个 dedicated cagan micro-aspect 装配**（`cagan-risk-value` 5 findings/5 evidence + `cagan-risk-usability` 5/5 + `cagan-risk-feasibility` 6/7 + `cagan-risk-business` 5/5）。R4-e 核心在 #9 引擎复现：M7 单 cagan-4risks aspect search-saturation 5 retries 全败 → 拆 4 micro 后 4/4 收敛。
+> 自评：详 [`product-requirements-rubric-score.md`](product-requirements-rubric-score.md)（24/24）。
+> **段3 由 4 个 dedicated cagan micro-aspect 装配**（`cagan-risk-value` 5 findings/5 evidence + `cagan-risk-usability` 5/5 + `cagan-risk-feasibility` 6/7 + `cagan-risk-business` 5/5）。单 4-class cagan aspect search-saturation pathology → 拆 4 micro 后 4/4 收敛。
 
 ---
 
-## 段 1 · Press Release Frame (PR-FAQ) — 加重 (family B BLUF 等价)
+## 段 1 · Press Release Frame (PR-FAQ) — 加重 (BLUF 等价)
 
 来源：`pr-faq-frame:finding-1`~`finding-5`. 价值主张语句 trace 回段2 ODI outcomes (`jtbd-odi-kano:finding-1`/`finding-3`).
 
@@ -80,20 +80,20 @@ Reach refs: `pr-faq-frame:ev-1-1` `ev-7-20` `ev-9-24` · `jtbd-odi-kano:ev-1-1` 
 
 ---
 
-## 段 3 · Cagan 4 大风险 (hard gate ✅ — **R4-e: 4 个 dedicated micro-aspect 装配**)
+## 段 3 · Cagan 4 大风险 (hard gate ✅ — 4 个 dedicated micro-aspect 装配)
 
-> **Phase A 实施记录 (R4-e on #9)**：段3 cagan-4risks 在 M7 是单 aspect、5 次 backfill 全失败（search-saturation pathology）。R4-e 拆为 **4 个 micro-aspect (1 risk class / aspect, max_search=4)**。#9 全量复跑：value/usability/feasibility **deep run 直接收敛**，business 1 次 aspect_research 补跑收敛 → **4/4 全收敛**。每类独立证据 + 独立 confidence + TM-3 边界。
+> **设计说明**：段3 cagan-4risks 拆为 **4 个 micro-aspect (1 risk class / aspect, max_search=4)**，避免单 4-class aspect 的 search-saturation pathology。全量复跑：value/usability/feasibility **deep run 直接收敛**，business 1 次 aspect_research 补跑收敛 → **4/4 全收敛**。每类独立证据 + 独立 confidence + TM-3 边界。
 
 | 风险类 | 描述 | 证据等级 | 来源 refs | 应对策略 |
 |---|---|---|---|---|
 | **value** | 相邻付费锚点（Runna **$119.99/yr**、TrainingPeaks **$134.99/yr**、WHOOP **$199/yr 续费**）证明 serious/sub-elite 跑者已为"训练计划/严肃平台/生物指标恢复"付费；但**用户更可能买"更安全变快/少受伤/按时完赛"，不是买解释本身**——explainability-specific WTP 无直接证据；高于 Runna anchor 时 churn 风险高 | medium（相邻 WTP）；**low**（explainability-specific WTP / churn） | `cagan-risk-value:ev-1-1` `ev-2-3` `ev-2-4` `ev-3-6` `ev-3-7` | MVP 定价 **$99–$119.99/yr（Runna-parity）**；核心实验 = "解释+debate+risk review 是否提高付费转化/plan acceptance/missed-workout 留存"（**不是"用户喜欢解释吗"**）；human review 做 opt-in quota/per-risk add-on，不默认抬全量订阅价 |
 | **usability** | 最危险**不是"不够透明"，而是把低信噪比、可能与主观体感冲突的 readiness 信号包装成确定性解释**（"感觉好但系统说休息"→困惑/反复 debate/直接忽略）；解释做成 SHAP/特征重要性 panel = 认知负担（mHealth/XAI/CDS 实证）| medium（相邻 mHealth/XAI/CDS 迁移；无一手原型）| `cagan-risk-usability:ev-1-*` `ev-2-*` `ev-3-*` | **progressive disclosure（L0 一句话决策 / L1 2–3 驱动因素 / L2 confidence badge / L3 可展开）**，非 dashboard wall；debate 默认折叠 + 1-tap "这不对" + 只让用户改少数高影响输入；**build 前先做 micro-prototype test** |
-| **feasibility** | **12–24 月 MVP 可行但风险高**：HealthKit 可读 HRV SDNN、WHOOP API 有 OAuth scopes、**Garmin Health API 须 partner 审批 + 非 self-serve**；关键风险 = 多厂商数据权利/语义/延迟/缺失能否形成稳定 coaching 输入；FM/LLM 加速应用层 2–4x 但**不加速 SDK 权限/HRV 生理校准/安全验证** | medium（官方 SDK 文档 evidenced + 专家估计）| `cagan-risk-feasibility:ev-1-1` `ev-1-2` `ev-2-4` `ev-3-7` `ev-4-9` | **tiered connector（T0 HealthKit+Strava → T1 WHOOP → T2 Garmin after approval）+ canonical signal subset + 缺失核心信号时禁自动 risky change**；架构 = rules + 轻量 risk/load model + LLM explanation wrapper（**LLM 不直接改计划**）；staged hard gates |
+| **feasibility** | **12–24 月 MVP 可行但风险高**：HealthKit 可读 HRV SDNN、WHOOP API 有 OAuth scopes、**Garmin Health API 须 partner 审批 + 非 self-serve**；关键风险 = 多厂商数据权利/语义/延迟/缺失能否形成稳定 coaching 输入；FM/LLM 加速应用层 2–4x 但**不加速 SDK 权限/HRV 生理校准/安全验证** | medium（官方 SDK 文档 evidenced + 专家估计）| `cagan-risk-feasibility:ev-1-1` `ev-1-2` `ev-2-4` `ev-3-7` `ev-4-9` | **tiered connector（T0 HealthKit+Strava → T1 WHOOP → T2 Garmin after approval）+ default signal subset + 缺失核心信号时禁自动 risky change**；架构 = rules + 轻量 risk/load model + LLM explanation wrapper（**LLM 不直接改计划**）；staged hard gates |
 | **business viability** | **三重挤压**：① 订阅 ARPU 被 Runna $119.99/yr + **Strava+Runna bundle $149.99/yr** 锚定；② **CAC 被 Strava-owned Runna 抬高**（Strava 收购 Runna，150M+ athletes 社区 + bundle 折扣降获客成本，新创无独立 wedge）；③ trainer review 抽成（15–40% take-rate）是 **trust add-on + ops overhead 非 launch-stage 10x 引擎** | medium（订阅经济：官方价格 + RevenueCat）；**low**（trainer marketplace：行业 blog，缺一手 CAC/attach/handle-time）| `cagan-risk-business:ev-1-1` `ev-1-2` `ev-2-3` `ev-3-6` `ev-3-7` | **subscription-first + curated human review，不开放 trainer marketplace**；trainer review 只做高风险调整付费 add-on；商业 gate = **CAC payback <6–9 月 + annual renewal 支撑 LTV/CAC + trainer 单审毛利达标**才扩供给 |
 
 ### 段尾 prose
 
-**最大风险 = feasibility（high）+ business viability（分发/CAC 被 Strava-owned Runna 结构性挤压）双重**。R4-e dedicated 4-risks 给出各类独立证据深度：value 锚三家官方定价 + RevenueCat、usability 引 mHealth/XAI/CDS 实证、feasibility 锚 HealthKit/WHOOP/Garmin 官方 SDK 约束、business 锚 Strava 收购 Runna。**应对 = 把 4 类 risk 收敛为段8 的 OQ1(usability)/OQ2(value+business)/OQ3(feasibility 取数)/OQ4(routing) 实验，3–6 月内分别验证或砍。不为分数注水：value 的 explainability-specific WTP + business 的 trainer unit economics 仍标 low confidence。**
+**最大风险 = feasibility（high）+ business viability（分发/CAC 被 Strava-owned Runna 结构性挤压）双重**。4 dedicated micro-aspect 给出各类独立证据深度：value 锚三家官方定价 + RevenueCat、usability 引 mHealth/XAI/CDS 实证、feasibility 锚 HealthKit/WHOOP/Garmin 官方 SDK 约束、business 锚 Strava 收购 Runna。**应对 = 把 4 类 risk 收敛为段8 的 OQ1(usability)/OQ2(value+business)/OQ3(feasibility 取数)/OQ4(routing) 实验，3–6 月内分别验证或砍。不为分数注水：value 的 explainability-specific WTP + business 的 trainer unit economics 仍标 low confidence。**
 
 ---
 
@@ -208,9 +208,9 @@ S1 Week-3 Plan Continuity（借 Runna "week three" KPI，≥65% D14-activated）
 
 ---
 
-## 段 7 · 证据与来源 (evidence-table) — **跨段聚合 (R4-f, profile §1 "允许 appendix")**
+## 段 7 · 证据与来源 (evidence-table) — **跨段聚合 (Phase B)**
 
-> **说明 (R4-f)**：段7 由 final-report Phase B 跨段聚合 **#9 run 的 10 个 dedicated aspect 共 79 evidence**（段7 aspect 按 R4-f 标 OPTIONAL：Lapis `evidence_refs` 不许 cite prior_sources by id，单独 spin meta-aggregation aspect 会 schema_validation_failed → 实测在 #9 上 evidence-table deep 阶段亦 network_failed，走 Phase B 聚合）。
+> **说明**：段7 由 final-report Phase B 跨段聚合 **10 个 dedicated aspect 共 79 evidence**（段7 aspect 标 OPTIONAL：Lapis `evidence_refs` 不许 cite prior_sources by id，单独 spin meta-aggregation aspect 会 schema_validation_failed → evidence-table deep 阶段亦 network_failed，走 Phase B 聚合）。
 
 ### 4 cagan micro evidence（按命名空间）
 
@@ -231,7 +231,7 @@ S1 Week-3 Plan Continuity（借 Runna "week three" KPI，≥65% D14-activated）
 | Tier 4 (research / unknown) | mHealth/XAI/CDS 学术（source_type=unknown 但 peer-reviewed，confidence medium）、coaching marketplace 行业 blog |
 
 - 来源类型 ≥5 ✅；≥1 Tier 1 ✅ → **A4 来源质量保持 2**。source_type 分布：official 39 / documentation 15 / forum 6 / news 4 / blog 4 / unknown 11；distinct domains 36。
-- **provenance ✅**：79 evidence ids 全 cross-referenced；**0 dangling refs**（merge_rerun9.py 验证）。
+- **provenance ✅**：79 evidence ids 全 cross-referenced；**0 dangling refs**（bundle 验证）。
 
 详 [`rerun9-merged-10of10.result.json`](rerun9-merged-10of10.result.json) `evidence_index`。
 
@@ -274,20 +274,20 @@ S1 Week-3 Plan Continuity（借 Runna "week three" KPI，≥65% D14-activated）
 |---|---|---|
 | PR-FAQ 价值导向 + 无实现细节 + 客户引言具体场景 | ✅ pass | 段1 PR ≤300 字，客户引言 "半马倒计时三周... 所以能更稳到起跑线" |
 | ODI ≥5 outcomes 完整 5 字段 | ✅ pass | 段2 O1-O4 underserved + O7 overserved 对照，Opp 公式 + Kano + estimated |
-| **Cagan 4-risks 全覆盖 (hard)** | **✅ pass (R4-e)** | 段3 4 dedicated micro 全收敛（value/usability/feasibility/business）；4 类齐 + 各独立证据等级 + 应对；不跨段代偿 |
+| **Cagan 4-risks 全覆盖 (hard)** | **✅ pass** | 段3 4 dedicated micro 全收敛（value/usability/feasibility/business）；4 类齐 + 各独立证据等级 + 应对；不跨段代偿 |
 | OST ≥3 候选 / outcome (hard) | ✅ pass | 段4 3 outcomes × 3 候选 = 9，每候选附最危险假设 + 新建 vs 复用 |
 | 非目标显式 + "为何不做" (hard) | ✅ pass | 段5 NG-1~NG-7 + 每项类型 + 为何 + 后续处理 |
 | Trace 回 outcome (功能→段2) | ✅ pass | 段5 FR-1~FR-8 每条 trace 回 O1~O4 |
 | 三套指标全 (主/次/护栏) (hard) | ✅ pass | 段6 P1-3 + S1-5 + G1-4 = 12 indicators，主指标全 5 字段 |
 | TM-11 falsification 100% (hard) | ✅ pass | 段8 6/6 OQ 全 how_to_resolve + pass/fail + owner + date |
-| 视觉证据 ≥5 (family B 适配) | ✅ pass | 7 张语义表（ODI / 4-risks / OST 9-cand / FR / NFR / metrics 3-set / OQ）= family B 天然视觉类型（rubric §6.4 R4-g 判据）|
+| 视觉证据 ≥5 | ✅ pass | 7 张语义表（ODI / 4-risks / OST 9-cand / FR / NFR / metrics 3-set / OQ）；8 段 PR-FAQ 模板天然语义表形式（rubric §6.4 判据）|
 | Subject basics ≥3 sources Tier 1/2 | ✅ pass | Strava press + Runna/TrainingPeaks/WHOOP 官方定价 + HealthKit/WHOOP/Garmin API docs |
 | Confidence labels + TM-4 | ✅ pass | 每段段尾标 confidence；全 finding TM-4 epistemic_status；段3 各类独立 confidence（value/business 含 low）|
 | Open questions 列 separately | ✅ pass | 段8 6 个产品 OQ |
 
-**整体 floor**：5 hard gates 全 pass（段3 由 4 dedicated micro 收敛）；通用 floor 全 pass；视觉按 family B 适配（7 张语义表）pass。
+**整体 floor**：5 hard gates 全 pass（段3 由 4 dedicated micro 收敛）；通用 floor 全 pass；视觉证据（7 张语义表）pass。
 
 ---
 
-> 本报告由 PM DeepResearch v2.3 (family B 8 段 PR-FAQ) + R4-e cagan 拆分，在 **#9 最终引擎（Lapis `9db7464` verbatim）** 上全量真实复跑端到端产出。
-> **R4-b 回归结论**：v2.3 在 #9 引擎复现 24/24（段3 4-risks 由 4 dedicated cagan micro 输出，B1/B3 各达 2；C1 family B 语义表达标）；无任一维跌破 M7.5 锚点 → R1 引擎漂移闸门 PASS。详 [`rerun9-rubric-score-v23.md`](rerun9-rubric-score-v23.md)。
+> 本报告由 PM DeepResearch（8 段 PR-FAQ 模板 + cagan 4 micro-aspect 拆分）在 Lapis `9db7464`（vendored verbatim）上全量真实复跑端到端产出。
+> 评分：24/24（段3 4-risks 由 4 dedicated cagan micro 输出，B1/B3 各达 2；C1 语义表达标）；引擎漂移闸门 PASS。详 [`product-requirements-rubric-score.md`](product-requirements-rubric-score.md)。

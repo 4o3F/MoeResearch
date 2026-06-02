@@ -1,6 +1,5 @@
 # Capability Profile · 竞品深度研究 (competitive)
 
-> Status: ✅ **v2.0 端到端已验证**（黄金样例 [Strava AI 升级 23/24, R4-c 2026-06-01](../evaluation/golden/competitive-strava-coach-upgrade.md)；6-aspect 引擎实跑 22→23、A4 1→2）。
 > 通用 frame：[`../pm-deep-research-spec.md`](../pm-deep-research-spec.md)（人格 / 13 TM / 4-tier 证据 / 视觉证据 / 反幻觉 / 行文 floor / 优雅降级 / Lapis 接口边界等**所有跨能力机制**以通用规格为准；本 profile 仅落 competitive-specific 装配）。
 
 ---
@@ -168,5 +167,5 @@
 
 ## 6. 验证状态与历史
 
-- ✅ **v2.0 端到端**：[黄金样例 Strava AI 升级 23/24, R4-c 2026-06-01](../evaluation/golden/competitive-strava-coach-upgrade.md)（[评分](../evaluation/golden/competitive-rubric-score.md)）。
-- ✅ **R4-c canonical 升级**：`recency=fresh` + `max_results=5` + per-aspect cap=4，A4 1→2（build-cost aspect 通过 fresh 路径产 4 条 dated App-Store 版本史证据）。手写黄金 22/24 与引擎实跑 23/24 同方法论同 narrative。
+- ✅ **端到端 golden 验证通过**：[黄金样例 Strava AI 升级](../evaluation/golden/competitive-strava-coach-upgrade.md)（[评分](../evaluation/golden/competitive-rubric-score.md)）——6/6 aspect 收敛，23/24 分。
+- ✅ **Search-tuning 验证**：`recency=fresh` + `max_results=5` + per-aspect cap=4，build-cost aspect 通过 fresh 路径产 4 条 dated App-Store 版本史证据，提升来源多样性评分。手写 golden 与引擎实跑同方法论同 narrative。
