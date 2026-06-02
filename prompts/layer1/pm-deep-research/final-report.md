@@ -1,6 +1,6 @@
 # Layer 1 Prompt: Final Report (Competitive 13-chapter — PM DeepResearch)
 
-> Competitive specialization of the Lapis report-synthesis step. Turns a validated `DeepResearchResult` into the **13-chapter competitive report**, then self-verifies against the quality floor. This is the Skill-layer assembly step (interface §1 steps 6–9). Authority: universal frame [spec §7 (template family A + §7.5 prose floor) / §9 (universal gap + floor) / §6 (evidence)](../../../docs/pm-deep-research/pm-deep-research-spec.md) + competitive profile [§2 (13-章 mapping) / §3 (competitive-specific gap & floor)](../../../docs/pm-deep-research/capabilities/competitive.md). Personas/aspects: [`agent-allocation.md`](agent-allocation.md).
+> Competitive specialization of the Lapis report-synthesis step. Turns a validated `DeepResearchResult` into the **13-chapter competitive report** (13-section narrative report template), then self-verifies against the quality floor. This is the Skill-layer assembly step (interface §1 steps 6–9). Authority: universal frame [spec §7 (narrative report template + §7.5 prose floor) / §9 (universal gap + floor) / §6 (evidence)](../../../docs/pm-deep-research/pm-deep-research-spec.md) + competitive profile [§2 (13-章 mapping) / §3 (competitive-specific gap & floor)](../../../docs/pm-deep-research/capabilities/competitive.md). Personas/aspects: [`agent-allocation.md`](agent-allocation.md).
 
 ## Role
 

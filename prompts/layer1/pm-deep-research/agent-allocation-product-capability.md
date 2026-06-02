@@ -11,7 +11,7 @@ Same two persona prompts as competitive (Lapis has no persona concept; persona =
 | `experience-analyst` | [`../layer2/persona-experience-analyst.md`](../layer2/persona-experience-analyst.md) | user / experience / evidence | **段1-4** (capability domain JTBD / single-domain teardown / experience paths / Kano in-domain) | **重** — TM-1 / TM-2 / TM-6 / TM-10 / TM-12 |
 | `strategist` | [`../layer2/persona-strategist.md`](../layer2/persona-strategist.md) | strategy / trade-off / foresight | **段5-6** (ODI in-domain / benchmark + build-cost + upgrade) | **轻** — TM-9 (杠杆点) + TM-13 (前瞻) |
 
-> EA-heavy 是本 profile 的关键差异 (vs. competitive 的均衡分配)：product-capability 关心"某能力域的成熟度与体验" — 4 段 (域定义 / teardown / 体验路径 / Kano) 全是 EA 的本职. Strategist 只在 ODI 评分 + benchmark 选择 + 升级方向出场. **不写 EA-deep variant** — v2.1 先复用通用 EA, M5 验证后视需要再起 (v2.1 plan §1).
+> EA-heavy 是本 profile 的关键差异 (vs. competitive 的均衡分配)：product-capability 关心"某能力域的成熟度与体验" — 4 段 (域定义 / teardown / 体验路径 / Kano) 全是 EA 的本职. Strategist 只在 ODI 评分 + benchmark 选择 + 升级方向出场. **不写 EA-deep variant** — 复用通用 EA 已验证产出充分。
 
 ## 六段 skeleton → aspect → persona
 
@@ -44,7 +44,7 @@ One Lapis aspect = one persona, 所以 profile §5 标段5 "Strategist + EA"（S
 
 ## Budget per aspect (hand off to `task-decomposition-product-capability.md` Step 4)
 
-每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `budget` 同 v2.1 plan §5: deep `max_total_model_calls=80` / `max_total_search_calls=60` (适度上调 from competitive deep 70/56, 因 6 段比 5 段多 1 aspect).
+每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `budget` (deep): `max_total_model_calls=80` / `max_total_search_calls=60` (适度上调 from competitive deep 70/56, 因 6 段比 5 段多 1 aspect).
 
 ## Provider selection per aspect
 
@@ -54,7 +54,7 @@ One Lapis aspect = one persona, 所以 profile §5 标段5 "Strategist + EA"（S
 - **Synthesis** (`capability-teardown-deep`, `odi-in-domain`) → synthesis provider (e.g. `grok`).
 - 只配一个 search provider 时全用之.
 
-> **M6+ search tuning 红利** (Phase 4 WS-F R4-c 启用, [interface §6.1 触发场景表](../../../docs/pm-deep-research/orchestration-interface.md#61-上游已实装变更2026-05-30本地-vendored-待-phase-4-同步)): `capability-domain-jtbd` + `benchmark-buildcost-upgrade` 可挂 `category=organizations`; `benchmark-buildcost-upgrade` (看 changelog) 可挂 `recency=fresh`. v2.1 prompts 不引入, 保 vendored 同步前兼容.
+> **Search-tuning note**: `capability-domain-jtbd` + `benchmark-buildcost-upgrade` 可挂 `category=organizations`; `benchmark-buildcost-upgrade` (看 changelog) 可挂 `recency=fresh`. 全局 `search_policy` 已设 `recency=fresh` + `max_results_per_query=5`（见 task-decomposition Step 4），per-aspect 不再重复设置。
 
 ## Invariants
 
