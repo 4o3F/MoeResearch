@@ -754,9 +754,23 @@ async fn sse_stream_delivers_done_as_regular_event() {
     assert_eq!(done.data, "[DONE]");
 
     let events = parse_events(&buffer);
-    assert!(events.iter().any(|event| {
-        message_of(event) == "inbound SSE event metadata" && field_str(event, "body").is_none()
-    }));
+    let metadata = events
+        .iter()
+        .find(|event| {
+            message_of(event) == "inbound SSE event metadata"
+                && field_str(event, "event") == Some("response.created")
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "missing inbound SSE metadata for response.created; captured events: {}",
+                buffer.snapshot()
+            )
+        });
+    assert_eq!(
+        field_str(metadata, "body"),
+        None,
+        "SSE metadata must not capture body; captured event: {metadata}"
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
