@@ -19,14 +19,14 @@
 //! for the entire test body.
 
 use std::io::Write;
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use lapis_net::reqwest_client::ReqwestNetworkClient;
 use lapis_net::{Header, NetworkClient, NetworkRequest};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::oneshot;
+use tokio::sync::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard, oneshot};
 use tracing_subscriber::layer::SubscriberExt;
 
 // ---------------------------------------------------------------------------
@@ -57,11 +57,11 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedBuffer {
 
 struct BufferWriter(Arc<Mutex<Vec<u8>>>);
 
-static TRACING_CAPTURE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static TRACING_CAPTURE_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
 
 struct TracingCaptureGuard {
     _default: tracing::subscriber::DefaultGuard,
-    _lock: MutexGuard<'static, ()>,
+    _lock: AsyncMutexGuard<'static, ()>,
 }
 
 impl Write for BufferWriter {
@@ -82,15 +82,15 @@ impl Write for BufferWriter {
 ///
 /// The returned guard keeps the subscriber active until it is dropped;
 /// in single-threaded tests this covers the entire test body.
-fn lock_tracing_capture() -> MutexGuard<'static, ()> {
+async fn lock_tracing_capture() -> AsyncMutexGuard<'static, ()> {
     TRACING_CAPTURE_LOCK
-        .get_or_init(|| Mutex::new(()))
+        .get_or_init(|| AsyncMutex::new(()))
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .await
 }
 
-fn capture_tracing(filter: &str) -> (SharedBuffer, TracingCaptureGuard) {
-    let lock = lock_tracing_capture();
+async fn capture_tracing(filter: &str) -> (SharedBuffer, TracingCaptureGuard) {
+    let lock = lock_tracing_capture().await;
     let buffer = SharedBuffer::new();
     let layer = tracing_subscriber::fmt::layer()
         .json()
@@ -379,7 +379,7 @@ async fn wire_trace_disabled_emits_no_body_events() {
     let server =
         MockServer::start(vec![CannedResponse::new(200, r#"{"ok":true}"#.to_owned())]).await;
 
-    let (buffer, _guard) = capture_tracing("lapis_core=debug");
+    let (buffer, _guard) = capture_tracing("lapis_core=debug").await;
     let client = build_client();
     let _ = client
         .send_json(request_to(server.url("/responses")))
@@ -415,7 +415,7 @@ async fn wire_trace_enabled_emits_paired_outbound_and_inbound() {
     )])
     .await;
 
-    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
+    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace").await;
     let client = build_client();
     let mut request = request_to(server.url("/responses"));
     request.body = Some(serde_json::json!({
@@ -480,7 +480,7 @@ async fn wire_trace_retry_emits_new_correlation_per_attempt() {
     ])
     .await;
 
-    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
+    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace").await;
     let client = build_client_with_retries(1);
     let _ = client
         .send_json(request_to(server.url("/responses")))
@@ -524,7 +524,7 @@ async fn response_body_read_failure_is_retryable() {
     ])
     .await;
 
-    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=debug");
+    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=debug").await;
     let client = build_client_with_retries(1);
     let response = client
         .send_json(request_to(server.url("/responses")))
@@ -565,7 +565,7 @@ async fn transport_error_detail_log_redacts_request_secrets() {
     )])
     .await;
 
-    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=debug");
+    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=debug").await;
     let client = build_client();
     let secret_url = server
         .url("/responses?api_key=sk-query-secret&token=hidden")
@@ -623,7 +623,7 @@ async fn wire_trace_truncates_oversized_inbound_body() {
     let original_size = huge_body.len();
     let server = MockServer::start(vec![CannedResponse::new(200, huge_body)]).await;
 
-    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
+    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace").await;
     let client = build_client();
     let _ = client
         .send_json(request_to(server.url("/responses")))
@@ -656,7 +656,7 @@ async fn wire_trace_truncates_oversized_inbound_body() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_stream_allows_provider_to_stop_without_done_or_eof() {
-    let _trace_lock = lock_tracing_capture();
+    let _trace_lock = lock_tracing_capture().await;
     let body = concat!(
         "event: response.completed\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n",
@@ -681,7 +681,7 @@ async fn sse_stream_allows_provider_to_stop_without_done_or_eof() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_failure_before_first_event_retries() {
-    let _trace_lock = lock_tracing_capture();
+    let _trace_lock = lock_tracing_capture().await;
     let incomplete = "event: response.created\n";
     let completed = concat!(
         "event: response.completed\n",
@@ -709,7 +709,7 @@ async fn sse_failure_before_first_event_retries() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_failure_after_first_event_is_not_retryable() {
-    let _trace_lock = lock_tracing_capture();
+    let _trace_lock = lock_tracing_capture().await;
     let body = concat!(
         "event: response.created\n",
         "data: {\"type\":\"response.created\"}\n\n",
@@ -750,7 +750,7 @@ async fn sse_stream_delivers_done_as_regular_event() {
     );
     let server = MockServer::start(vec![CannedResponse::event_stream(200, body)]).await;
 
-    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
+    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace").await;
     let client = build_client();
     let mut stream = client
         .send_sse(sse_request_to(server.url("/responses")))
@@ -799,7 +799,7 @@ async fn sse_stream_delivers_done_as_regular_event() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_response_accepts_large_event_data_under_default_cap() {
-    let _trace_lock = lock_tracing_capture();
+    let _trace_lock = lock_tracing_capture().await;
     let body = format!(
         "event: response.output_text.delta\ndata: {{\"blob\":\"{}\"}}\n\n",
         "x".repeat(70 * 1024)
@@ -823,7 +823,7 @@ async fn sse_response_accepts_large_event_data_under_default_cap() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_response_rejects_event_data_over_default_cap() {
-    let _trace_lock = lock_tracing_capture();
+    let _trace_lock = lock_tracing_capture().await;
     let body = format!(
         "event: response.output_text.delta\ndata: {}\n\n",
         "x".repeat(4 * 1024 * 1024 + 1)
@@ -845,7 +845,7 @@ async fn sse_response_rejects_event_data_over_default_cap() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sse_response_rejects_total_data_overflow() {
-    let _trace_lock = lock_tracing_capture();
+    let _trace_lock = lock_tracing_capture().await;
     let chunk = "x".repeat(3 * 1024);
     let mut body = String::new();
     for _ in 0..3000 {
@@ -890,7 +890,7 @@ async fn wire_non_success_debug_event_uses_excerpt_not_full_body() {
     );
     let server = MockServer::start(vec![CannedResponse::new(400, big_error.clone())]).await;
 
-    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace");
+    let (buffer, _guard) = capture_tracing("lapis_core::net::reqwest_client=trace").await;
     let client = build_client();
     let _ = client
         .send_json(request_to(server.url("/responses")))
