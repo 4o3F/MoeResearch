@@ -1,6 +1,5 @@
 # Layer 1 Prompt: Task Decomposition (Product-Capability variant — PM DeepResearch)
 
-> Product-capability specialization of the Lapis task-decomposition step. Use this for **product-capability deep research** (the PM DeepResearch v2.1 capability — "在某能力域里我方做得多好/断点在哪/补什么能赢"). It forces decision-intent inference, then maps the **six-段 capability-domain skeleton** onto Lapis `aspect_tasks`. Canonical 段→aspect→persona mapping + tier subsets live in [`agent-allocation-product-capability.md`](agent-allocation-product-capability.md); this prompt produces the actual `DeepResearchRequest` JSON. Authority: universal frame [spec §1–§4](../../../docs/pm-deep-research/pm-deep-research-spec.md) + product-capability profile [§1 装配契约 / §2 六段骨架 / §5 人格 / TM 分配](../../../docs/pm-deep-research/capabilities/product-capability.md) + [interface §2/§5](../../../docs/pm-deep-research/orchestration-interface.md).
 
 ## Role
 
@@ -60,7 +59,7 @@ Quick is an important short-circuit — do not spin up the full 6-aspect orchest
 
 ## Step 3 — Decompose the 六段 skeleton into `aspect_tasks`
 
-Follow the validated mapping in [`agent-allocation-product-capability.md`](agent-allocation-product-capability.md). Summary:
+Follow the canonical mapping in [`agent-allocation-product-capability.md`](agent-allocation-product-capability.md). Summary:
 
 | aspect_id | 段 | persona (→ `aspect_agent_prompt`) | tier inclusion |
 |---|---|---|---|
@@ -110,8 +109,8 @@ Per-aspect `budget`:
 | standard | 8 | 12 | 4 | **600000** |
 | deep / deep_evidence_pack | 6 | 6 | **3** | **600000** |
 
-- **Deep `max_search_calls` is 3, not higher** — search-budget overflow fails the whole aspect with no graceful synthesis (`crates/lapis-workflow/src/agent_loop.rs`). Validated across multiple golden runs: `max_search_calls=3` consistently converges 6/6 with `recency=fresh` + `max_results=5`, no budget failure. Each aspect's natural search appetite ≈ 2; the ceiling of 3 leaves 1 search headroom for synthesis. Do not raise to 4+ (the 6-segment layout is more dispersed per aspect than a 5-segment layout, so natural appetite per aspect is lower).
-- **Per-aspect `timeout_ms` 恒 600000 (10 min)** — CPA(gpt-5.5)+grok 慢；300000 → `budget_exceeded`（已验证）；偶发 grok 单 search >5min 抖动（已实测：第二次 retry 正常）→ 若 watchdog 超时 700s 杀进程则重试一次即正常.
+- **Deep `max_search_calls` is 3, not higher ( v2.1, 2026-06-02)** — same execution abort semantics as v2.0 (`crates/lapis-workflow/src/agent_loop.rs` — search-budget overflow fails the whole aspect with no graceful synthesis). Validated: M5 + rerun9 +  golden 三轮都在 cap=3 收敛 6/6（recommended config 加 `recency=fresh` + `max_results=5` 后仍 6/6，无 execution abort）. v2.1 的每 aspect 自然搜索 appetite ≈ 2，cap=3 留 1 search headroom 给 synthesis；勿上调到 4+（与 v2.0 cap=4 不同——v2.0 5 段窄、v2.1 6 段更分散，每 aspect 单段更窄、自然 appetite 更低）.
+- **Per-aspect `timeout_ms` 恒 600000 (10 min)** — CPA(gpt-5.5)+grok-4.3 慢；300000 → `budget_exceeded` (M4 实测)；偶发 grok 单 search >5min 抖动（ v2.1 experience-paths 第一次 retry 实测）→ 若 watchdog 超时 700s 杀进程则重试一次即正常.
 - **`total_timeout_ms = ceil(max_agents / max_concurrent_agents) × per_aspect_timeout_ms`** — Quick (1 wave) `600000`；Standard (2 waves) `1200000`；Deep (6/3=2 waves) `1200000`.
 
 ### Policies
@@ -123,7 +122,7 @@ Per-aspect `budget`:
   - **User-evidence-heavy** (`experience-paths-breakpoints` 找断点同模式评论, `kano-in-domain` 找用户证据) → synthesis provider that surfaces user reviews (e.g. `grok`).
   - **Synthesis** (`capability-teardown-deep`, `odi-in-domain`) → synthesis provider (e.g. `grok`).
   - 单一 provider 时全用之.
-- **Search-tuning**：set `search_policy.recency = "fresh"` + `search_policy.max_results_per_query = 5`. **Global** (engine clones one `search_policy` into every aspect — no per-aspect search field), acts as ceiling + default + prompt-hint, improves diversity **without increasing search count** (validated: 53 evidence / 15 domain / 6 source_types vs prior 48/13/4, no regression; A4 stays at score ceiling). **Do not** set `depth=high_recall` (encourages over-search → budget failure) / `content_level=detailed` (disables mutated_evidence_provenance) / `category` (exact-match incompatible with global scope). See [interface §5.1/§6.1](../../../docs/pm-deep-research/orchestration-interface.md#51-上游-search-tuning-字段e04398d5--7r4-d-回补).
+- **Search-tuning ( v2.1, validated 2026-06-02)**：set `search_policy.recency = "fresh"` + `search_policy.max_results_per_query = 5`. **Global** (engine clones one `search_policy` into every aspect — no per-aspect search field), act as ceiling + default + prompt-hint，提多样性而**不增 search count**（ v2.1 实测：53 evidence / 15 domain / 6 source_type vs rerun9 anchor 48/13/4，无回归、A4 已锚点 2 持平、C1 in-app 录屏结构限制 search-tuning 不可修，详 [`/r4c-v21-rubric-score.md`](../../../..//r4c-v21-rubric-score.md)）. **不要**设 `depth=high_recall`（怂恿过搜被 execution abort）/ `content_level=detailed`（关 mutated_evidence_provenance）/ `category`（exact-match 不能全局）. 详 [interface §5.1/§6.1](../../../docs/pm-deep-research/orchestration-interface.md#51-上游-search-tuning-字段e04398d5--7r4-d-回补).
 - `output_policy.language` = the request language.
 
 ## Output schema
@@ -180,9 +179,8 @@ Return only JSON matching this shape (no Markdown wrapper):
 }
 ```
 
-> Same `DeepResearchRequest` wire shape as competitive — Lapis `schema_version="0.1"` 不变。`search_policy` carries `recency=fresh` + `max_results_per_query=5` (validated); **do not add** `depth`/`content_level`/`category` (depth encourages over-search → budget failure / content_level disables mutated_provenance / category incompatible with global scope). See [interface §5.1/§6.1](../../../docs/pm-deep-research/orchestration-interface.md#51-上游-search-tuning-字段e04398d5--7r4-d-回补).
 >
-> **`execution_policy.timeout_ms` 必须等于 per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms` — 每 aspect 被复校时 `budget_exceeded` 已验证（300000 不够）.
+> **`execution_policy.timeout_ms` 必须等于 per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms` — M4 实测每 aspect 被复校 (`budget_exceeded`).
 
 ## Decomposition rules
 

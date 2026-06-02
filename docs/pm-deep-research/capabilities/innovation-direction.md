@@ -1,6 +1,7 @@
 # Capability Profile · 创新方向研究 (innovation-direction)
 
 > 通用 frame：[`../pm-deep-research-spec.md`](../pm-deep-research-spec.md)（人格 / 13 TM / 4-tier 证据 / 视觉证据 / 反幻觉 / 行文 floor / 优雅降级 / Lapis 接口边界等**所有跨能力机制**以通用规格为准）。
+> 上游： plan §3.3、ROADMAP §1（4 项能力之 ③）。
 
 ---
 
@@ -147,18 +148,15 @@
 
 ---
 
-## 6. 验证状态
+## 7. De-AI Voice Pass 哨兵（innovation-direction-specific）
 
-- ✅ **端到端 golden 验证通过**（2026-05-30）—— 8/8 aspect 收敛，最终评分满分。
-- **核心验证结果**：
-  - **TM-11 hard gate 100% 通过**（3/3 推荐下注全有 leading indicator + 阈值 + 副 indicator + 触发响应）——profile §3.2 "可证伪性覆盖率 = 100%" 达成。
-  - **视觉证据（C1）达标**：innovation-direction 报告类型偏战略图（trend chart / canvas / capability map / press / docs），Tier 1 official 来源天然 ≥7 张达标——**本 capability 报告类型自身不依赖 Layer-2 in-app capture**。
-- **装配契约实测可行**（profile §0 表 5 + §1/§3 全过）：
-  - **Strategist 重 / EA 轻 7:1 配比** ✅（段2 sole-EA；段4/段7 通过 prior_sources 引用 EA 数据）；
-  - **段6 pre-mortem 三死因强制 floor** ✅（Tiger / Elephant / Paper Tiger Christensen 类型 + 机制 + 触发条件 + 早期信号 + 止损动作）；
-  - **段8 TM-11 hard gate** ✅（3/3 bets 全过）；
-  - **13-section narrative report template** ✅（Ch 8/9/10/12 加重 + Ch 5 裁为白地图 + Ch 6 裁为承载力评估 + Ch 11 加重 TM-11 验证实验 + do_not_drop Ch 1/2/8/9/10/12/13）；
-- 黄金课题：海外运动/健身 AI Coach + 长流程自适应训练计划赛道未来 12-36 月下注方向。incumbent baseline = Strava+Runna (2025-04 收购后实体)。
-- **Strategist-futurist 加重变体不必要**：通用 strategist persona 在 7 个 aspect 上承载充分。
-- 8 段实跑成本：8 aspect + 62 evidence + ~50 min wall time（含 sequential retry）+ deep tier max_total_model_calls=50 / max_total_search_calls=42。
-- 详 [golden report](../evaluation/golden/innovation-direction-ai-coach-bets.md) + [evaluation score](../evaluation/golden/innovation-direction-rubric-score.md)。
+通用 voice pass 见 [`skills/pm-deep-research/prompts/layer1/phase-d-voice-pass.md`](../../../skills/pm-deep-research/prompts/layer1/phase-d-voice-pass.md)。本 profile 追加 innovation-direction-specific 加权项：
+
+| 哨兵 | 触发条件 | 不达标动作 |
+|---|---|---|
+| TM-11 falsifiable | 推荐下注无 falsifiable test | 补 "若 metric < X by date, hypothesis fails" |
+| build-cost 显式区间 | "应建 X" 推荐无 build-cost | 补区间 + changelog 时间线证据 |
+| 4 风险 pre-mortem | Cagan 4 风险段缺一类 | 补 value/usability/feasibility/viability 全员 |
+| 12-36 月时间窗 | 任一趋势 / 下注无时间窗 | 补显式时间窗 |
+
+voice pass **不准**洗去：12-36 月时间窗 / Cagan 4 风险段 / 每下注的 falsifiable test / changelog 时间线 / pre-mortem 三死因 / low-confidence area 显式标注 / Ch 11 验证实验段 / Ch 12 风险与开放问题段。

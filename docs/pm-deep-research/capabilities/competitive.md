@@ -1,6 +1,7 @@
 # Capability Profile · 竞品深度研究 (competitive)
 
 > 通用 frame：[`../pm-deep-research-spec.md`](../pm-deep-research-spec.md)（人格 / 13 TM / 4-tier 证据 / 视觉证据 / 反幻觉 / 行文 floor / 优雅降级 / Lapis 接口边界等**所有跨能力机制**以通用规格为准；本 profile 仅落 competitive-specific 装配）。
+> 上游： plan §3.1、Phase 2 review、Phase 3 M4。
 
 ---
 
@@ -144,7 +145,6 @@
 }
 ```
 
-> v2.0 里 aspect agent 实际只能产出 Lapis 合法的 `source_type` 7 枚举；早期草稿里的扩展值（app_store / media / social / video / research / other）是 **Skill 映射结果** + [接口 §6](../orchestration-interface.md#6-引擎边界第一版不动引擎schema-扩展作为需求提给上游heye-2026-05-29-确认) 提给 4o3F 的**上游需求**，不可作为 aspect 直接输出。
 
 ---
 
@@ -165,7 +165,14 @@
 
 ---
 
-## 6. 验证状态与历史
+## 7. De-AI Voice Pass 哨兵（competitive-specific）
 
-- ✅ **端到端 golden 验证通过**：[黄金样例 Strava AI 升级](../evaluation/golden/competitive-strava-coach-upgrade.md)（[评分](../evaluation/golden/competitive-rubric-score.md)）——6/6 aspect 收敛，23/24 分。
-- ✅ **Search-tuning 验证**：`recency=fresh` + `max_results=5` + per-aspect cap=4，build-cost aspect 通过 fresh 路径产 4 条 dated App-Store 版本史证据，提升来源多样性评分。手写 golden 与引擎实跑同方法论同 narrative。
+通用 voice pass 见 [`skills/pm-deep-research/prompts/layer1/phase-d-voice-pass.md`](../../../skills/pm-deep-research/prompts/layer1/phase-d-voice-pass.md)。本 profile 追加 competitive-specific 加权项：
+
+| 哨兵 | 触发条件 | 不达标动作 |
+|---|---|---|
+| TM-4 全员 | Ch 6 能力矩阵 + Ch 9 ODI 每格未标 TM-4 | 补 fact/interpretation/assumption/speculation 标注 |
+| Imp/Sat estimated flag | ODI 打分无 `estimated:true/false` | 标 estimated + TM-4 |
+| ≥3 user-evidence per Kano 分级 | Ch 6 Kano 分级单源 | 补证据或标 practitioner 诠释（TM-4）|
+
+voice pass **不准**洗去：Cagan 速写 "3 弱项" 段 / changelog + build-cost 段 / Porter 仅行业层免责语 / SWOT 仅沟通层免责语 / Ch 12 风险与开放问题段。

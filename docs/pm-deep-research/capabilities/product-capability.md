@@ -1,7 +1,7 @@
 # Capability Profile · 产品能力研究 (product-capability)
 
-> Status: ✅ **端到端已验证**（黄金 [Runna 训练计划自适应能力 23/24](../evaluation/golden/product-capability-runna-training-plan.md)；[评分](../evaluation/golden/product-capability-rubric-score.md)）。
 > 通用 frame：[`../pm-deep-research-spec.md`](../pm-deep-research-spec.md)（人格 / 13 TM / 4-tier 证据 / 视觉证据 / 反幻觉 / 行文 floor / 优雅降级 / Lapis 接口边界等**所有跨能力机制**以通用规格为准）。
+> 上游： plan §3.2、ROADMAP §1（4 项能力之 ②）。
 
 ---
 
@@ -20,7 +20,7 @@
 | **1. decision_intent_affinity** | `improve` / `build` / `differentiate`（聚焦在某能力域）|
 | **2. mece6_emphasis** | primary = `M4` Product & Experience Capabilities（纵深）+ `M2` User & JTBD（该能力服务的 job 与 outcome）；supporting = `M3` Competitive Landscape（benchmark 段，**不必图谱**）+ `M6` Future Capability（升级方向）；contextual = `M1` Market Context + `M5` Business & Growth Model |
 | **3. skeleton** | 6 段：①能力域定义 + 服务的 user jobs 分解 → ②**单能力域** feature teardown（深度版）→ ③体验路径 + 断点地图（first-class）→ ④Kano 在该能力域内分级 → ⑤ODI 在能力 outcome 上打分 → ⑥竞品 benchmark + build-cost & 升级方向（详 §2）|
-| **4. report_template** | **13 章变体**；weighting = **Ch 6（功能架构与体验路径）+ Ch 7（视觉证据）+ Ch 4（JTBD）重点加重**；Ch 5（竞品图谱）裁为 benchmark 段；Ch 8 视升级方向决定是否展开；do_not_drop = Ch 4/6/7/9/11/12/13 |
+| **4. report_template** | family = **A（13 章变体）**；weighting = **Ch 6（功能架构与体验路径）+ Ch 7（视觉证据）+ Ch 4（JTBD）重点加重**；Ch 5（竞品图谱）裁为 benchmark 段；Ch 8 视升级方向决定是否展开；do_not_drop = Ch 4/6/7/9/11/12/13 |
 | **5. persona_tm_weighting** | EA = **重**（`[TM-1, TM-2, TM-6, TM-10, TM-12]` — Job→Feature→Gap + metrics-informed + 听弦外之音 + 5Qs + 言行分离）；Strategist = **轻**（`[TM-9, TM-13]` — 杠杆点 + 前瞻仅用于升级方向）；跨人格门 = `[TM-4, TM-11]` 全员 |
 | **6. capability_specific** | aspect_fields: `capability_domain` / `experience_path` / `breakpoint_map` / `kano_grades_in_domain` / `opportunity_scores_in_domain` / `benchmark_set` / `upgrade_directions`；gap_checks: §3.1；floor_items: §3.2 |
 
@@ -131,12 +131,15 @@
 
 ---
 
-## 6. 验证状态
+## 7. De-AI Voice Pass 哨兵（product-capability-specific）
 
-- ✅ **端到端实跑通过（[23/24](../evaluation/golden/product-capability-rubric-score.md)）**。黄金课题：Runna 训练计划自适应能力深度（海外运动 domain）。
-- **装配契约全实测可行**：6 段 EA-heavy（4:2 EA:Strategist）+ 段5 strategist persona ownership note（EA 数据通过 `prior_sources` 注入）+ 13 章变体 Ch6/7/4 加重 + Ch5 裁为 benchmark 段 + §3.2 capability-specific floor 全过。
-- **不需 EA-deep 变体**（实测决策成立）—— 通用 [`persona-experience-analyst.md`](../../../prompts/layer2/pm-deep-research/persona-experience-analyst.md) 在体验路径 first-class + 单产品纵深上产出充分。
-- **Prompt 实体**：[`task-decomposition-product-capability.md`](../../../prompts/layer1/pm-deep-research/task-decomposition-product-capability.md) / [`agent-allocation-product-capability.md`](../../../prompts/layer1/pm-deep-research/agent-allocation-product-capability.md) / [`final-report-product-capability.md`](../../../prompts/layer1/pm-deep-research/final-report-product-capability.md)；通用 [`evidence-postprocess.md`](../../../prompts/layer1/pm-deep-research/evidence-postprocess.md) + [`claude-only-degradation.md`](../../../prompts/layer1/pm-deep-research/claude-only-degradation.md) capability-agnostic 复用。
-- **关键发现**：
-  - A4 来源质量达到评分上限（装配契约更好引导 strategist 拉多源，不是预算翻倍）。
-  - C1 = 1（4 < 5 visual evidence）—— Skill 层 Layer-2 录屏待办，与 profile 装配无关。
+通用 voice pass 见 [`skills/pm-deep-research/prompts/layer1/phase-d-voice-pass.md`](../../../skills/pm-deep-research/prompts/layer1/phase-d-voice-pass.md)。本 profile 追加 product-capability-specific 加权项：
+
+| 哨兵 | 触发条件 | 不达标动作 |
+|---|---|---|
+| TM-4 全员 | ODI 公式 outcome 列未标 TM-4 | 补 fact/interpretation/assumption/speculation 标注 |
+| ODI underserved (>10) 公式 | finding 引 "underserved" 无公式回链 | 补 `(importance + max(0, importance - satisfaction)) = X` |
+| Kano 分级 user evidence | Kano grades 单源 | 补 ≥3 一手或标 practitioner 诠释（TM-4）|
+| 体验路径 + 断点 visual | 段3 断点描述无 visual_refs | 标缺口；不得给 "用户痛点" 强结论 |
+
+voice pass **不准**洗去：v2.1 13-section narrative report 的 "4-tier 来源标签 + estimated flag" 双轨 / 段6 build-cost overlay / 体验路径图标注 / Ch 12 风险与开放问题段。

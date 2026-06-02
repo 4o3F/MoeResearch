@@ -1,6 +1,5 @@
 # Layer 1 Prompt: Task Decomposition (Innovation-Direction variant — PM DeepResearch)
 
-> Innovation-direction specialization of the Lapis task-decomposition step. Use this for **innovation-direction deep research** (the PM DeepResearch v2.2 capability — "未来 / 白地机会在哪？押哪个新能力？这一注会不会死？"). It forces decision-intent inference, then maps the **eight-段 future-bet skeleton** onto Lapis `aspect_tasks`. Canonical 段→aspect→persona mapping + tier subsets live in [`agent-allocation-innovation-direction.md`](agent-allocation-innovation-direction.md); this prompt produces the actual `DeepResearchRequest` JSON. Authority: universal frame [spec §1–§4](../../../docs/pm-deep-research/pm-deep-research-spec.md) + innovation-direction profile [§1 装配契约 / §2 八段骨架 / §5 人格 / TM 分配](../../../docs/pm-deep-research/capabilities/innovation-direction.md) + [interface §2/§5](../../../docs/pm-deep-research/orchestration-interface.md).
 
 ## Role
 
@@ -60,7 +59,7 @@ Quick is an important short-circuit — do not spin up the full 8-aspect orchest
 
 ## Step 3 — Decompose the 八段 skeleton into `aspect_tasks`
 
-Follow the validated mapping in [`agent-allocation-innovation-direction.md`](agent-allocation-innovation-direction.md). Summary:
+Follow the canonical mapping in [`agent-allocation-innovation-direction.md`](agent-allocation-innovation-direction.md). Summary:
 
 | aspect_id | 段 | persona (→ `aspect_agent_prompt`) | tier inclusion |
 |---|---|---|---|
@@ -111,7 +110,7 @@ Top-level `budget`:
 | standard | 5 | 3 | 30 | 25 | null |
 | deep / deep_evidence_pack | **8** | 3 | **60** | **50** | null |
 
-- **Deep 8 段**: per-aspect 实测 max_search 6 × 8 aspect = 48，top 50 留 small headroom（详见 per-aspect 段）.
+- **Deep 8 段**: per-aspect 实测 max_search 6 × 8 aspect = 48，top 50 留 small headroom（ v2.2 验证 cap=6 必须，详见 per-aspect 段）.
 
 Per-aspect `budget`:
 
@@ -121,8 +120,8 @@ Per-aspect `budget`:
 | standard | 8 | 12 | 5 | **600000** |
 | deep / deep_evidence_pack | 8 | 8 | **6** | **600000** |
 
-- **Deep `max_search_calls` is 6** — the engine treats a search-budget overflow as a hard fail of the aspect (`crates/lapis-workflow/src/agent_loop.rs`). The `recommended-bets` aspect is a synthesis aspect that consumes prior output from all 7 earlier aspects; when `recency=fresh` is active its search appetite reaches ~6, so a cap of 5 causes execution abort (budget_exceeded). Cap=6 resolves this cleanly. **Do not lower below 6 or raise above 6** when using `recency=fresh` on the deep tier.
-- **Per-aspect `timeout_ms` 恒 600000 (10 min)** — slow model/search providers mean 300000 → `budget_exceeded` in practice; occasional transient search latency spikes resolve on retry within the 600000 window.
+- **Deep `max_search_calls` is 6 — strictly higher than v2.0 (cap=4) and v2.1 (cap=3) ( v2.2, 2026-06-02)** — 同 v2.0 execution abort 半语义（`crates/lapis-workflow/src/agent_loop.rs`），但 v2.2 的 `recommended-bets` 是综合下注 aspect（吃前 7 个 aspect 输出做最终下注合成），自然 search appetite ≈ 6；rerun9 anchor cap=5 历史上稳，但加 `recency=fresh` 后 prompt-hint 把 appetite 推到 6 → cap=5 execution abort 复现（ v2.2 验证：cap=5 retry 2 次均 budget_exceeded，cap=6 一次过）. **不要降到 5 以下、也不要拔到 7+**（cap=6 是验证过的稳态）.
+- **Per-aspect `timeout_ms` 恒 600000 (10 min)** — CPA(gpt-5.5)+grok-4.3 慢；300000 → `budget_exceeded` (M4 实测)；偶发 grok 单 search 慢抖动 → watchdog 700s 重试即正常（ v2.2 实测 trend-scan 第一次 transient timeout）.
 - **`total_timeout_ms = ceil(max_agents / max_concurrent_agents) × per_aspect_timeout_ms`** — Quick (1 wave) `600000`；Standard (5/3=2 waves) `1200000`；Deep (8/3=3 waves) `1800000`.
 
 ### Policies
@@ -134,7 +133,7 @@ Per-aspect `budget`:
   - **User-evidence-heavy** (`unmet-outcomes` 找 underserved outcome 用户证据) → synthesis provider that surfaces user reviews (e.g. `grok`).
   - **Synthesis** (`whitespace-canvas`, `pre-mortem-top3`, `build-cost-feasibility`, `recommended-bets`) → synthesis provider (e.g. `grok`).
   - 单一 provider 时全用之.
-- **Search-tuning (validated)**：set `search_policy.recency = "fresh"` + `search_policy.max_results_per_query = 5`. **Global** field; acts as ceiling + default + model prompt-hint. **When using these fields on the deep tier, `max_search_calls` must be 6** (see per-aspect budget note above — `recommended-bets` search appetite reaches ~6 with `recency=fresh`). **Do NOT set `depth=high_recall`** (encourages over-searching, causes execution abort) / `content_level=detailed` (correlated with mutated evidence provenance) / `category` globally (exact-match; cannot be set globally without forcing all aspects to one category). See [interface §5.1/§6.1](../../../docs/pm-deep-research/orchestration-interface.md#51-上游-search-tuning-字段e04398d5--7r4-d-回补).
+- **Search-tuning ( v2.2, validated 2026-06-02)**：set `search_policy.recency = "fresh"` + `search_policy.max_results_per_query = 5`. **Global** field; ceiling + default + prompt-hint. 与 v2.0/v2.1 的关键区别 = **必须同时把 deep per-aspect `max_search_calls` 抬到 6**——否则 recommended-bets 的 prompt-hint-推动 appetite 撞 cap=5 execution abort（详 per-aspect budget 段 + [`/r4c-v22-rubric-score.md`](../../../..//r4c-v22-rubric-score.md)）. **不要**设 `depth=high_recall`（怂恿过搜，与 cap=6 同时启用一起会再次撞墙）/ `content_level=detailed`（mutated_provenance）/ `category`（exact-match 不能全局——innovation 段4 `category=organizations` per-aspect 启用要等引擎支持 per-aspect search_policy，未来  后改进）. 详 [interface §5.1/§6.1](../../../docs/pm-deep-research/orchestration-interface.md#51-上游-search-tuning-字段e04398d5--7r4-d-回补).
 - `output_policy.language` = the request language.
 
 ## Output schema
@@ -191,9 +190,8 @@ Return only JSON matching this shape (no Markdown wrapper):
 }
 ```
 
-> Same `DeepResearchRequest` wire shape as competitive / product-capability — Lapis `schema_version="0.1"` 不变。`search_policy` uses `recency=fresh` + `max_results_per_query=5`; deep per-aspect `max_search_calls=6` (required when `recency=fresh` is active — see budget note above). `depth`/`content_level`/`category` are not set globally (execution abort / mutated provenance / exact-match limitations). Per-aspect `category=organizations` for future-capability-map requires per-aspect search policy support in the engine (future improvement).
 >
-> **`execution_policy.timeout_ms` must equal per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms` — the engine re-validates each aspect against its own budget timeout, so a higher value causes every aspect to fail with `budget_exceeded`.
+> **`execution_policy.timeout_ms` 必须等于 per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms` — M4 实测每 aspect 被复校 (`budget_exceeded`).
 
 ## Decomposition rules
 

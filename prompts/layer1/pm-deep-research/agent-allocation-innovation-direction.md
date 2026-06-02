@@ -11,7 +11,6 @@ Same two persona prompts as competitive / product-capability (Lapis has no perso
 | `experience-analyst` | [`../layer2/persona-experience-analyst.md`](../layer2/persona-experience-analyst.md) | user / experience / evidence | **段2 only** (unmet outcomes via ODI underserved) | **轻** — TM-1 / TM-6 only |
 | `strategist` | [`../layer2/persona-strategist.md`](../layer2/persona-strategist.md) | strategy / trade-off / foresight | **段1, 3, 4, 5, 6, 7, 8** (7 of 8) | **重** — TM-3 / TM-5 / TM-7 / TM-8 / TM-9 / TM-13；段8 强制 TM-11 |
 
-> Strategist-heavy 是本 profile 的关键差异 (compared to EA-heavy product-capability)：innovation-direction 关心"跨现状看未来 12-36 月" — 7 段全部需要 strategist 的 trade-off / foresight / falsifiability 思维. EA 仅在段2 unmet outcomes 出场 (用户视角找 underserved). **不写 Strategist-futurist variant** — 通用 strategist persona 在 7 个 aspect 上承载充分，视需要再起专用变体.
 
 ## 八段 skeleton → aspect → persona
 
@@ -63,13 +62,11 @@ One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 pro
 | `standard` | + `unmet-outcomes`, `whitespace-canvas`, `future-capability-map` (5 total) | 加 unmet + 白地 + 未来能力 (决策依据 + 押注根据) |
 | `deep` / `deep_evidence_pack` | + `disruption-defensibility`, `pre-mortem-top3`, `build-cost-feasibility` (**8 total**) | 加颠覆/可防御性 + pre-mortem (三死因强制) + build-cost; 段8 TM-11 hard gate 全 tier 启用 |
 
-> Per-tier 计数 vs. v2.0 competitive / v2.1 product-capability：quick 2 (vs 2 / 2), standard 5 (vs 3 / 4), deep **8 (vs 5 / 6)** — 8 段全展开. Deep `max_agents=8` / `max_concurrent_agents=3` / `total_timeout_ms=1800000` (3 waves), per-aspect `timeout_ms=600000` 不变. 详 [`task-decomposition-innovation-direction.md`](task-decomposition-innovation-direction.md) Step 4.
 >
-> Quick 段1+段8 跳过中间段 6 个看似激进, 但 quick 短路径本就是 "headline + bet收敛" 的最小可决策 (类比 v2.1 quick "domain + teardown"); 中间 6 段属 standard+ 的"为什么这么押"展开.
 
 ## Budget per aspect (hand off to `task-decomposition-innovation-direction.md` Step 4)
 
-每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `budget`: deep `max_total_model_calls=50` / `max_total_search_calls=40` (scaled up ~1.25× vs product-capability to accommodate 8 aspects). On budget overflow → sequential retry + prior_sources baseline.
+每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `budget` 同 v2.2 plan §3 : deep `max_total_model_calls=50` / `max_total_search_calls=40` (从 v2.1 实测 40/30 上调 1.25× 因 8 段比 6 段多). 实测撞 budget → 顺序重试 + prior_sources baseline (M5 段5 路径).
 
 ## Provider selection per aspect
 
@@ -79,7 +76,6 @@ One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 pro
 - **Synthesis** (`whitespace-canvas`, `pre-mortem-top3`, `build-cost-feasibility`, `recommended-bets`) → synthesis provider (e.g. `grok`).
 - 只配一个 search provider 时全用之.
 
-> **Search tuning** ([interface §6.1](../../../docs/pm-deep-research/orchestration-interface.md#61-上游已实装变更2026-05-30本地-vendored-待-phase-4-同步)): innovation-direction is the primary beneficiary of `recency=fresh` — `trend-scan` captures latest trends (within 12 months); `build-cost-feasibility` benefits from fresh changelog hits. `future-capability-map` + `disruption-defensibility` can use `category=organizations` per-aspect once the engine supports per-aspect search policy.
 
 ## Invariants
 

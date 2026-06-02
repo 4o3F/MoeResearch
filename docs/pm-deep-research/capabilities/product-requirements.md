@@ -1,14 +1,13 @@
 # Capability Profile · 产品需求深度调研 (product-requirements)
 
-> Status: ✅ **端到端验证完成**（8 段 PR-FAQ 模板首落地；最终验证 24/24，详 §6）。
 > 通用 frame：[`../pm-deep-research-spec.md`](../pm-deep-research-spec.md)（人格 / 13 TM / 4-tier 证据 / 视觉证据 / 反幻觉 / 行文 floor / 优雅降级 / Lapis 接口边界等**所有跨能力机制**以通用规格为准）。
-> 方法论：B2 PR-FAQ 八段模板（Amazon working backwards + Cagan 4 风险 + Torres OST + Kano 1984）—— 来源均一手核实，详 PM DeepResearch 源仓 track B 调研。
+> 上游： plan §3.4、Track B B2 八段模板、ROADMAP §1（4 项能力之 ④）。
 
 ---
 
 ## 0. 核心问题
 
-对已选定的机会 / 问题，产出**可验证、可落地的 requirement / PRD 前置物**。区别于其它 3 个 profile（都产 13 章报告）——本 profile 产 **8 段 PR-FAQ 模板**，验证通用规格能承载**不同报告族**（这是 Phase 2′ 通用化的关键证据之一）。
+对已选定的机会 / 问题，产出**可验证、可落地的 requirement / PRD 前置物**。区别于其它 3 个 profile（都产 13 章报告）——本 profile 产 **8 段 PR-FAQ 模板**，验证通用规格能承载**不同报告族**（这是  通用化的关键证据之一）。
 
 > 与 [competitive](competitive.md) / [product-capability](product-capability.md) / [innovation-direction](innovation-direction.md) 的区别：前 3 个回答"研究"问题（市场 / 能力 / 未来格局如何），本 profile 回答"决策已定，把需求写好"问题——下游接 PRD / 开发 / 实验，不是接战略讨论。
 
@@ -155,19 +154,16 @@
 
 ---
 
-## 6. 验证状态
+## 7. De-AI Voice Pass 哨兵（product-requirements-specific）
 
-- ✅ **端到端验证完成（8 段 PR-FAQ 模板首落地，24/24）**
-  - 黄金课题：Endurance-athlete Explainable Biometric Coach PR-FAQ（新创 build intent）。
-  - **核心验证增益**：
-    - **8 段 PR-FAQ 模板族首落地** — 与 competitive / product-capability / innovation-direction 的 13 章模板并列；通用规格 §7.1 模板族 B 实测可承载证明 ✅。
-    - **段间 narrative (working backwards / PR-FAQ ≤300 字 cap / 客户引言 "When X I want Y so I can Z" 句式 / 非目标显式段 / 5 hard gates 分布)** 全部 enforce 成功。
-    - **5 hard gates 全 pass**：段4 OST ≥3 候选 ✅ / 段5 非目标显式 ✅ / 段6 三套指标全 ✅ / 段8 TM-11 falsification 7/7=100% ✅ / 段3 4 cagan micro-aspect 全收敛 ✅。
-    - **TM-11 hard gate 7/7=100%** ✅。
-  - **关键设计发现（已在 prompt 文件中固化）**：
-    - **段3 cagan-4risks search-saturation pathology**：单个 4-class aspect 在 strategist persona 下无法收敛（多次 backfill 全失败）。修复：拆为 4 个 single-class micro-aspect，每个 `max_search_calls=4`，bounded 预算强制收敛。已验证：4/4 cagan micro-aspect 全收敛。
-    - **段7 evidence-table 默认不 spin**：Lapis `evidence_refs` 不许 cite prior_sources by id，meta-aggregation aspect 设计性不合身（`schema_validation_failed`）。默认 fallback 到 final-report Phase B 跨段聚合。
-    - **C1 视觉判据适配**：8 段 PR-FAQ 模板天然出语义表（ODI / 4-risks / OST / metrics）而非 chart，rubric C1 已加 ≥5 张语义表等价判据。
-  - **诚实标记（不注水）**：value explainability-WTP / business trainer-econ 仍标 low confidence（恰证 A3/A5 诚实性）。
-- ✅ **最终权威黄金**：[最终报告](../evaluation/golden/product-requirements-prfaq.md) / [打分](../evaluation/golden/product-requirements-rubric-score.md)（24/24；deep tier 10 mandatory aspect：段3=4 micro，段7 OPTIONAL）。
-- 先验合理性来源：B2 八段模板已校验真实可追溯（Amazon PR-FAQ、Cagan 4 风险、Torres OST、Kano 1984 原始论文均一手核实）；通用规格 §7.1 模板族 B 已为该模板预留。本 profile 的所有方法均已在 competitive profile 或方法库（M-JTBD/Kano/ODI/4Risks/OST）中验证可调用，方法论无新引入。
+通用 voice pass 见 [`skills/pm-deep-research/prompts/layer1/phase-d-voice-pass.md`](../../../skills/pm-deep-research/prompts/layer1/phase-d-voice-pass.md)。本 profile 追加 product-requirements-specific 加权项：
+
+| 哨兵 | 触发条件 | 不达标动作 |
+|---|---|---|
+| 4 风险完整性 | 段3 Cagan 4 风险段缺一类 | 补到 4/4（value/usability/feasibility/business viability）|
+| ≥3 候选 | 段4 OST 候选 < 3 | 补至 3 |
+| 非目标显式 | 段5 无 "不做什么" 段 | 补 No-gos 段 + 每项 "为何不做" |
+| 三套指标 | 段6 leading/secondary/guardrails 缺一套 | 补到 3/3 |
+| TM-11 | 段8 任一未决问题无 "靠什么会决" | 补 falsifiable test |
+
+voice pass **不准**洗去：段1 PR-FAQ 客户引言（"When X I want Y so I can Z" 原文） / 段3 Cagan 4 风险表（4 类全） / 段5 非目标段 / 段6 三套指标定义 / 段8 TM-11 falsification 100% 覆盖率。
