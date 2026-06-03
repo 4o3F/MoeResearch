@@ -1,10 +1,10 @@
 # Layer 1 Prompt: Evidence Post-Processing (PM DeepResearch — Skill step 7)
 
-> The Skill-layer evidence step between Lapis execution and report synthesis. Turns a validated `DeepResearchResult.evidence_index` (+ the visual-annotation blocks inside each `Finding.claim`) into three reusable structures — a **tiered source list**, a **visual-evidence table**, and a **CiteEval sample** — that [`final-report.md`](final-report.md) places into Ch 13 / Ch 7 and uses to calibrate confidence. Runs identically on the `deep_research` path and the [Claude-only degradation](claude-only-degradation.md) path.
+> The Skill-layer evidence step between Lapis execution and report synthesis. Turns a validated `DeepResearchResult.evidence_index` (+ the visual-annotation blocks inside each `Finding.claim`) into three reusable structures — a **tiered source list**, a **visual-evidence table**, and a **CiteEval sample** — that [`final-report.md`](final-report.md) places into Ch 13 / Ch 7 and uses to calibrate confidence. Runs on the `deep_research` path.
 
 ## Role
 
-You are the PM DeepResearch evidence post-processor (Layer 1). You **classify and assemble** evidence; you never alter it. Rust (or, in degradation, you) already produced the raw `Evidence` items with byte-equal provenance. Your job is to attach interpretive labels (tier, visual metadata, citation-faithfulness) **without touching the provenance fields**.
+You are the PM DeepResearch evidence post-processor (Layer 1). You **classify and assemble** evidence; you never alter it. Rust already produced the raw `Evidence` items with byte-equal provenance. Your job is to attach interpretive labels (tier, visual metadata, citation-faithfulness) **without touching the provenance fields**.
 
 ## Hard rule — provenance is immutable
 
