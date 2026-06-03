@@ -1,20 +1,20 @@
 # Layer 1 Prompt: Agent Allocation (Innovation-Direction — PM DeepResearch)
 
-> Canonical mapping reference consumed by [`task-decomposition-innovation-direction.md`](task-decomposition-innovation-direction.md). It defines, for innovation-direction deep research: 八段 skeleton → aspect → persona prompt, the per-tier aspect subset, segment-2 sole-EA ownership note, segment-6 pre-mortem-three-死因 hard rule, segment-8 TM-11 falsifiability hard gate, intent overlay, and the Strategist-heavy / EA-light TM rationale. Authority: innovation-direction profile [§1 装配契约 / §2 八段骨架 / §5 人格 / TM 分配](../../../docs/pm-deep-research/capabilities/innovation-direction.md) + universal frame [spec §3 (personas / 13 TM)](../../../docs/pm-deep-research/pm-deep-research-spec.md) + [interface §2](../../../docs/pm-deep-research/orchestration-interface.md).
+> Mapping reference consumed by [`task-decomposition-innovation-direction.md`](task-decomposition-innovation-direction.md). It defines, for innovation-direction deep research: 八段 skeleton → aspect → persona prompt, the per-tier aspect subset, segment-2 sole-EA ownership note, segment-6 pre-mortem-three-死因 hard rule, segment-8 TM-11 falsifiability hard gate, intent overlay, and the Strategist-heavy / EA-light TM rationale.
 
 ## Two personas (each = one inline `aspect_agent_prompt`)
 
 Same two persona prompts as competitive / product-capability (Lapis has no persona concept; persona = prompt). Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both; **TM-11 is the recommended-bets aspect's hard gate** under innovation-direction:
 
-| key | file | angle | owns (in this profile) | TM weighting (profile §1 表 5) |
+| key | file | angle | owns (in this profile) | TM weighting |
 |---|---|---|---|---|
-| `experience-analyst` | [`../layer2/persona-experience-analyst.md`](../layer2/persona-experience-analyst.md) | user / experience / evidence | **段2 only** (unmet outcomes via ODI underserved) | **轻** — TM-1 / TM-6 only |
-| `strategist` | [`../layer2/persona-strategist.md`](../layer2/persona-strategist.md) | strategy / trade-off / foresight | **段1, 3, 4, 5, 6, 7, 8** (7 of 8) | **重** — TM-3 / TM-5 / TM-7 / TM-8 / TM-9 / TM-13；段8 强制 TM-11 |
+| `experience-analyst` | [`./layer2/persona-experience-analyst.md`](./layer2/persona-experience-analyst.md) | user / experience / evidence | **段2 only** (unmet outcomes via ODI underserved) | **轻** — TM-1 / TM-6 only |
+| `strategist` | [`./layer2/persona-strategist.md`](./layer2/persona-strategist.md) | strategy / trade-off / foresight | **段1, 3, 4, 5, 6, 7, 8** (7 of 8) | **重** — TM-3 / TM-5 / TM-7 / TM-8 / TM-9 / TM-13；段8 强制 TM-11 |
 
 
 ## 八段 skeleton → aspect → persona
 
-| aspect_id | 段 | persona | research_question (template) | evidence standard → `success_criteria` (profile §2) |
+| aspect_id | 段 | persona | research_question (template) | evidence standard → `success_criteria` |
 |---|---|---|---|---|
 | `trend-scan` | 1 | strategist | {subject_domain} 在 {time_window_months} 月内市场/技术/竞争 3 类 ≥3 条核心趋势是什么? 每条 Tier 1/2 来源 + 时间窗? | ≥3 趋势 × {market/tech/competition}; 每条 Tier 1/2 + 时间窗 |
 | `unmet-outcomes` | 2 | **experience-analyst** (sole EA) | 该赛道 user jobs 拆 ≥3 desired outcomes 跑 ODI, underserved >10 的 outcome 有哪些? 为何 underserved? | ODI Imp/Sat 标 TM-4 practitioner; underserved ≥3; Opp 公式正确 |
@@ -27,7 +27,7 @@ Same two persona prompts as competitive / product-capability (Lapis has no perso
 
 ### 段2 sole-EA persona ownership note
 
-One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 profile 收敛到段2 一个 aspect. 段4 中 "对位" 维度 (能力候选 vs unmet) 由 `future-capability-map` (strategist) 通过 `shared_context.prior_sources` 引用段2 EA aspect 输出 fold-in. **不另起 dedicated EA aspect for 段4 对位** (避免 8→9 aspect 增预算 + 增 wave; 同 v2.1 段5 strategist 用 EA 数据同模式).
+One Lapis aspect = one persona, 所以 "EA 看 unmet" 在本 profile 收敛到段2 一个 aspect. 段4 中 "对位" 维度 (能力候选 vs unmet) 由 `future-capability-map` (strategist) 通过 `shared_context.prior_sources` 引用段2 EA aspect 输出 fold-in. **不另起 dedicated EA aspect for 段4 对位** (避免增预算 + 增 wave; strategist 段在借入 EA 数据时统一用此模式).
 
 ### 段6 pre-mortem 强制三死因 hard rule
 
@@ -37,20 +37,20 @@ One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 pro
 - 拒绝 hand-wave 风险 (如 "市场不接受" / "团队执行不力" / "竞争激烈" 这类无机制无触发的泛泛风险);
 - TM-8 强制 (Cagan 4 风险评级).
 
-未达标 → Phase A (final-report) 触发段6 backfill 一轮; 仍不达标 → 标缺口 + 降置信, 不为分数注水.
+未达标 → Phase A (final-report) 触发段6 backfill 一轮; 仍不达标 → 标缺口 + 降置信, 不为质量注水.
 
-### 段8 TM-11 hard gate (核心差异 vs v2.0/v2.1)
+### 段8 TM-11 hard gate 
 
 `recommended-bets` 的 `success_criteria` 必须显式列：
 - 每推荐下注 ≥1 "什么条件下错" (leading indicator + 阈值, 如 "AI 教练赛道 12 月内 Apple/OpenAI 未发 health agent 通用 SDK → 押 vertical Coach 不投空");
 - 每推荐下注 ≥1 显性权衡 (TM-5 "选 X = 放弃 Y");
 - 每推荐下注 4 风险 (value / usability / feasibility / business viability) 评级 (high/medium/low + 一句依据).
 
-缺 falsifiability 条件 → aspect 整段 0 分 (TM-11 是 floor 不是 soft preference). 这是 innovation-direction profile 与 v2.0 competitive / v2.1 product-capability 最大差异 — **未来下注的核心质量在"如何知道押错了"**.
+缺 falsifiability 条件 → aspect 整段 fail (TM-11 是 floor 不是 soft preference). 这是 innovation-direction profile 与 competitive / product-capability 最大差异 — **未来下注的核心质量在"如何知道押错了"**.
 
 ### Intent overlay
 
-- `ai-upgrade` (本期 default): 段1 / 段4 / 段8 每 aspect `max_search_calls` +1; 段4 强制 ≥1 AI capability candidate; 段1 强制 ≥1 trend 来自技术成熟度类来源.
+- `ai-upgrade` (default): 段1 / 段4 / 段8 每 aspect `max_search_calls` +1; 段4 强制 ≥1 AI capability candidate; 段1 强制 ≥1 trend 来自技术成熟度类来源.
 - `enter`: 段4 / 段5 / 段7 加重; `shared_context.summary` 强调 "新赛道, 现状承载力可能为零"; 段4 our_carry_capacity 字段允许显式标 "none / minimal".
 - `differentiate`: 段3 / 段5 / 段8 加重; 段8 强制显性权衡 (TM-5); 段3 canvas 必须含 buyer-validated 轴而非纯 emerging 轴.
 
@@ -62,11 +62,9 @@ One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 pro
 | `standard` | + `unmet-outcomes`, `whitespace-canvas`, `future-capability-map` (5 total) | 加 unmet + 白地 + 未来能力 (决策依据 + 押注根据) |
 | `deep` / `deep_evidence_pack` | + `disruption-defensibility`, `pre-mortem-top3`, `build-cost-feasibility` (**8 total**) | 加颠覆/可防御性 + pre-mortem (三死因强制) + build-cost; 段8 TM-11 hard gate 全 tier 启用 |
 
->
-
 ## Budget per aspect (hand off to `task-decomposition-innovation-direction.md` Step 4)
 
-每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `budget` 同 v2.2 plan §3 : deep `max_total_model_calls=50` / `max_total_search_calls=40` (从 v2.1 实测 40/30 上调 1.25× 因 8 段比 6 段多). 实测撞 budget → 顺序重试 + prior_sources baseline (M5 段5 路径).
+每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `budget`: deep `max_total_model_calls=50` / `max_total_search_calls=40` (按 8 段规模设定). 若撞 budget → 顺序重试 + 把已采证据通过 `prior_sources` 传入下一轮.
 
 ## Provider selection per aspect
 
@@ -81,9 +79,9 @@ One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 pro
 
 1. 每 aspect → exactly one persona prompt, inline (verbatim, non-empty, < 64 KiB).
 2. Aspects MECE across the 8 段 — 不重叠.
-3. `success_criteria` 携带段的 evidence 标准（profile §2 / §3.1 gap）→ 引擎据此 enforce 证据 bar.
+3. `success_criteria` 携带段的 evidence 标准 → 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `subject_domain` + `time_window_months` 写在 `shared_context.summary` (aspect agents 读 it).
-5. Downstream `Evidence.source_type` 用 Lapis 7-value 集; 4-tier credibility 是 Skill 后处理 (interface §4), never an engine enum.
+5. Downstream `Evidence.source_type` 用 Lapis 7-value 集; 4-tier credibility 是 Skill 后处理, never an engine enum.
 6. **Strategist-heavy invariant**: 8 aspects 中 7 个 (段1/3/4/5/6/7/8) 由 strategist 拥有; 1 个 (段2) 由 EA 拥有. 若某课题 strategist-load 不平衡 (如 subject_domain 已知不需 trend scan), 先合段 (如段1 折叠进段4), 不要切给 EA.
-7. **段6 + 段8 是 hard floor aspect** — 缺 (3 死因 / falsifiability) → 整段 0 分, 拒绝软化.
-8. 段7 build-cost-feasibility 的 changelog 证据可从段1 trend-scan / 段4 future-capability-map 的 prior evidence_index 借用, 减少独立 search 消耗 (与 v2.1 段5 ODI 借 EA prior 同模式).
+7. **段6 + 段8 是 hard floor aspect** — 缺 (3 死因 / falsifiability) → 整段 fail, 拒绝软化.
+8. 段7 build-cost-feasibility 的 changelog 证据可从段1 trend-scan / 段4 future-capability-map 的 prior evidence_index 借用, 减少独立 search 消耗 (与 strategist 借 EA prior 同模式).

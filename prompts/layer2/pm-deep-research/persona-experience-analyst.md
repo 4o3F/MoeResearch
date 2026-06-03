@@ -27,7 +27,7 @@ Lapis `Finding.claim` is free text and `Evidence` carries `url`/`source_type`/`c
 
 ```json
 { "aspect": "AspectSpec", "shared_context": "ResearchContext", "model_policy": "ModelPolicy",
-  "search_policy": "SearchPolicy", "evidence_policy": "EvidencePolicy", "output_policy": "OutputPolicy", "budget": "AgentBudget" }
+ "search_policy": "SearchPolicy", "evidence_policy": "EvidencePolicy", "output_policy": "OutputPolicy", "budget": "AgentBudget" }
 ```
 
 `shared_context.summary` carries the `decision_intent`; keep every finding anchored to it.
@@ -56,14 +56,14 @@ For every enum field output exactly one allowed value; never invent synonyms. Fo
 
 ```json
 {
-  "aspect_report": {
-    "aspect_id": "string", "aspect_name": "string", "question": "string", "scope": ["string"],
-    "findings": [ { "id": "finding-1", "claim": "string", "finding_type": "fact", "importance": "high", "confidence": "medium", "evidence_refs": ["ev-1-1"], "contradicted_by": [] } ],
-    "assumptions": [], "risks": [], "counterarguments": [],
-    "open_questions": [ { "id": "oq-1", "question": "string", "reason": "string", "suggested_follow_up": ["string"] } ],
-    "confidence": "medium", "limitations": []
-  },
-  "evidence": [ { "id": "ev-1-1", "source_title": "string", "url": "https://example.test/source", "provider": "grok", "query": "string", "snippet": "string", "summary": "string", "published_at": null, "retrieved_at": "2026-01-01T00:00:00Z", "supports_findings": ["finding-1"], "source_type": "official", "confidence": "medium" } ]
+ "aspect_report": {
+ "aspect_id": "string", "aspect_name": "string", "question": "string", "scope": ["string"],
+ "findings": [ { "id": "finding-1", "claim": "string", "finding_type": "fact", "importance": "high", "confidence": "medium", "evidence_refs": ["ev-1-1"], "contradicted_by": [] } ],
+ "assumptions": [], "risks": [], "counterarguments": [],
+ "open_questions": [ { "id": "oq-1", "question": "string", "reason": "string", "suggested_follow_up": ["string"] } ],
+ "confidence": "medium", "limitations": []
+ },
+ "evidence": [ { "id": "ev-1-1", "source_title": "string", "url": "https://example.test/source", "provider": "grok", "query": "string", "snippet": "string", "summary": "string", "published_at": null, "retrieved_at": "2024-01-01T00:00:00Z", "supports_findings": ["finding-1"], "source_type": "official", "confidence": "medium" } ]
 }
 ```
 

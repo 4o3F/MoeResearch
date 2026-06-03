@@ -1,6 +1,6 @@
 # Layer 1 Prompt: Claude-only Degradation (PM DeepResearch)
 
-> The fallback execution mode when the Lapis MCP core is unavailable. Claude itself plays **both** Layer 1 (orchestration) **and** the aspect agents, using the search MCP directly while preserving the full five-dimension methodology, the 13-chapter template, and evidence discipline. Authority: [universal spec §10 (degradation)](../../../docs/pm-deep-research/pm-deep-research-spec.md) · competitive profile [`competitive.md`](../../../docs/pm-deep-research/capabilities/competitive.md) · [interface §7](../../../docs/pm-deep-research/orchestration-interface.md). **Claude-only is not failure** — the methodology lift (five-dim spine, decision intent, gap audit, evidence completeness, prose floor) is pure prompt capability and does not need Rust.
+> The fallback execution mode when the Lapis MCP core is unavailable. Claude itself plays **both** Layer 1 (orchestration) **and** the aspect agents, using the search MCP directly while preserving the full five-dimension methodology, the 13-chapter template, and evidence discipline. **Claude-only is not failure** — the methodology lift (five-dim spine, decision intent, gap audit, evidence completeness, prose floor) is pure prompt capability and does not need Rust.
 
 ## When this mode triggers
 
@@ -25,14 +25,14 @@ The drop is *execution machinery*, never *methodology*. Do not lower the bar bec
 ## Procedure
 
 1. **Same Step 1–2 as full path**: infer `decision_intent`, route complexity tier, decompose into the five-dim aspects via [`task-decomposition.md`](task-decomposition.md) + [`agent-allocation.md`](agent-allocation.md). (Build/Not-Build intent → add the build-cost version-history aspect.)
-2. **Per aspect, act as that persona**: load the assigned persona's thinking moves from [`persona-strategist.md`](../layer2/persona-strategist.md) / [`persona-experience-analyst.md`](../layer2/persona-experience-analyst.md) and research the aspect with the search MCP. Build focused queries from the aspect `question` + `success_criteria`. Respect the tier's search budget (Quick ~3, Standard ~6, Deep ~8 searches per aspect) — stop when success criteria are met.
+2. **Per aspect, act as that persona**: load the assigned persona's thinking moves from [`persona-strategist.md`](./layer2/persona-strategist.md) / [`persona-experience-analyst.md`](./layer2/persona-experience-analyst.md) and research the aspect with the search MCP. Build focused queries from the aspect `question` + `success_criteria`. Respect the tier's search budget (Quick ~3, Standard ~6, Deep ~8 searches per aspect) — stop when success criteria are met.
 3. **Produce the same `AspectResearchResult` shape per aspect**: findings with `finding_type` / `importance` / `confidence` / `evidence_refs`, and the structured product blocks **inside `Finding.claim`** (capability matrix with per-cell evidence, numeric ODI `Opportunity = Importance + max(0, Importance − Satisfaction)` + estimated flag, positioning value curve, Christensen threat grading, build-cost version timeline, experience-path matrix + visual blocks). Tag epistemic status (TM-4) and put falsification / counter-arguments (TM-11) in `counterarguments` / `contradicted_by`.
 4. **Self-enforced evidence discipline** (this is the part the validator normally guards — now it is on you):
-   - Cite **only real URLs returned by the search MCP**. Never fabricate a URL, title, date, or statistic. Fabrication is the one-vote-veto failure (rubric §4).
-   - Copy provenance (title / url / snippet / date) **faithfully** from the search result; do not invent or embellish.
-   - **Bidirectional citation**: every finding's `evidence_refs` points to an evidence item you actually collected, and you can name which findings each evidence supports. No dangling refs.
-   - Every factual claim carries an evidence ref or is explicitly an assumption/open-question. "宁少但真" — fewer, true claims beat many unsupported ones.
-   - Filter weak / duplicate / irrelevant results; do not auto-include everything.
+ - Cite **only real URLs returned by the search MCP**. Never fabricate a URL, title, date, or statistic. Fabrication is a one-vote-veto failure.
+ - Copy provenance (title / url / snippet / date) **faithfully** from the search result; do not invent or embellish.
+ - **Bidirectional citation**: every finding's `evidence_refs` points to an evidence item you actually collected, and you can name which findings each evidence supports. No dangling refs.
+ - Every factual claim carries an evidence ref or is explicitly an assumption/open-question. "宁少但真" — fewer, true claims beat many unsupported ones.
+ - Filter weak / duplicate / irrelevant results; do not auto-include everything.
 5. **Same Step 7–10 as full path**: run [`evidence-postprocess.md`](evidence-postprocess.md) (4-tier + visual assembly + CiteEval), then synthesize the report via [`final-report.md`](final-report.md) (gap audit → 13 chapters → quality-floor self-verification).
 6. **Mark the limitation honestly**: in Ch 2 (边界) and Ch 12 (自验证记录), state that this report ran in Claude-only degraded mode (no Lapis parallel agents / no engine-side validation), and that evidence discipline was self-enforced. This is a transparency requirement, not an apology.
 
