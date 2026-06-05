@@ -398,11 +398,74 @@ fn rejects_grok_zero_max_output_tokens() {
     );
 }
 
+#[test]
+fn accepts_grok_reasoning_effort() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"\nreasoning_effort = \"high\"",
+    );
+
+    let config = load_config_from_test_str(&input).expect("config");
+    assert_eq!(
+        config.search.providers["grok"]
+            .reasoning_effort
+            .map(|effort| effort.as_str()),
+        Some("high")
+    );
+}
+
+#[test]
+fn rejects_grok_xhigh_reasoning_effort() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"\nreasoning_effort = \"xhigh\"",
+    );
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+    let message = err.to_string();
+    assert!(
+        message.contains("unknown variant"),
+        "unexpected error: {err}"
+    );
+    assert!(message.contains("xhigh"), "unexpected error: {err}");
+}
+
+#[test]
+fn rejects_exa_reasoning_effort() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000\nreasoning_effort = \"high\"",
+    );
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("search.providers.exa.reasoning_effort is only supported by grok"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn rejects_exa_max_output_tokens() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000\nmax_output_tokens = 1024",
+    );
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("search.providers.exa.max_output_tokens is only supported by grok"),
+        "unexpected error: {err}"
+    );
+}
+
 /// Omitting Grok's optional response-size cap must still validate cleanly.
 #[test]
 fn accepts_grok_with_no_max_output_tokens() {
     let config = load_config_from_test_str(VALID_CONFIG).expect("default config must validate");
     assert!(config.search.providers["grok"].max_output_tokens.is_none());
+    assert!(config.search.providers["grok"].reasoning_effort.is_none());
 }
 
 #[test]

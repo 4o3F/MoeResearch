@@ -6,7 +6,7 @@ use lapis_net::JsonNetworkResponse;
 use lapis_search::Freshness;
 use lapis_search::SearchProvider;
 use lapis_search::SearchService;
-use lapis_search::{ExaSearchProvider, GrokSearchProvider};
+use lapis_search::{ExaSearchProvider, GrokReasoningEffort, GrokSearchProvider};
 use lapis_search::{
     SearchCategory, SearchContentLevel, SearchDepth, SearchRecency, SearchRequest, SearchResponse,
     SearchResult,
@@ -1170,6 +1170,35 @@ async fn grok_search_request_uses_configured_max_output_tokens() {
     assert_eq!(body["max_output_tokens"], json!(2048));
 }
 
+#[tokio::test]
+async fn grok_search_request_uses_configured_reasoning_effort() {
+    for (effort, expected) in [
+        (GrokReasoningEffort::None, "none"),
+        (GrokReasoningEffort::Low, "low"),
+        (GrokReasoningEffort::Medium, "medium"),
+        (GrokReasoningEffort::High, "high"),
+    ] {
+        let network = mock_completed_sse(json!({ "output": [] }));
+        let provider = GrokSearchProvider::with_request_options(
+            network.clone(),
+            "https://api.x.ai/v1".to_owned(),
+            "key".to_owned(),
+            None,
+            "configured-grok-model".to_owned(),
+            None,
+            Some(effort),
+        );
+
+        provider
+            .search(SearchRequest::new("grok", "lapis", 1))
+            .await
+            .expect("grok response");
+
+        let body = network.requests()[0].body.clone().expect("request body");
+        assert_eq!(body["reasoning"]["effort"], json!(expected));
+    }
+}
+
 /// When `max_output_tokens` is not configured, the field MUST be omitted
 /// from the wire request (not sent as `null`), so the upstream provider
 /// applies its own default.
@@ -1191,10 +1220,31 @@ async fn grok_search_request_omits_max_output_tokens_when_unconfigured() {
 
     let body = network.requests()[0].body.clone().expect("request body");
     assert!(body.get("max_output_tokens").is_none());
+    assert!(body.get("reasoning").is_none());
     assert!(body["tools"][0].get("search_context_size").is_none());
     assert!(body["tools"][0].get("contents").is_none());
     assert!(body["tools"][0].get("maxAgeHours").is_none());
     assert_eq!(body["tools"][0]["type"], json!("web_search"));
+}
+
+#[tokio::test]
+async fn grok_search_request_omits_reasoning_when_unconfigured() {
+    let network = mock_completed_sse(json!({ "output": [] }));
+    let provider = GrokSearchProvider::new(
+        network.clone(),
+        "https://api.x.ai/v1".to_owned(),
+        "key".to_owned(),
+        None,
+        "configured-grok-model".to_owned(),
+    );
+
+    provider
+        .search(SearchRequest::new("grok", "lapis", 1))
+        .await
+        .expect("grok response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert!(body.get("reasoning").is_none());
 }
 
 #[tokio::test]

@@ -19,6 +19,27 @@ pub struct GrokSearchProvider {
     timeout_ms: Option<u64>,
     model: String,
     max_output_tokens: Option<u32>,
+    reasoning_effort: Option<GrokReasoningEffort>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GrokReasoningEffort {
+    None,
+    Low,
+    Medium,
+    High,
+}
+
+impl GrokReasoningEffort {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
 }
 
 impl GrokSearchProvider {
@@ -29,7 +50,7 @@ impl GrokSearchProvider {
         timeout_ms: Option<u64>,
         model: String,
     ) -> Self {
-        Self::with_max_output_tokens(network, base_url, api_key, timeout_ms, model, None)
+        Self::with_request_options(network, base_url, api_key, timeout_ms, model, None, None)
     }
 
     /// Constructs the provider with the response-size cap supplied from
@@ -45,6 +66,27 @@ impl GrokSearchProvider {
         model: String,
         max_output_tokens: Option<u32>,
     ) -> Self {
+        Self::with_request_options(
+            network,
+            base_url,
+            api_key,
+            timeout_ms,
+            model,
+            max_output_tokens,
+            None,
+        )
+    }
+
+    #[must_use]
+    pub fn with_request_options(
+        network: Arc<dyn NetworkClient>,
+        base_url: String,
+        api_key: String,
+        timeout_ms: Option<u64>,
+        model: String,
+        max_output_tokens: Option<u32>,
+        reasoning_effort: Option<GrokReasoningEffort>,
+    ) -> Self {
         Self {
             network,
             base_url,
@@ -52,6 +94,7 @@ impl GrokSearchProvider {
             timeout_ms,
             model,
             max_output_tokens,
+            reasoning_effort,
         }
     }
 }
@@ -73,6 +116,9 @@ impl SearchProvider for GrokSearchProvider {
             tools: vec![GrokSearchTool::WebSearch(GrokWebSearchTool {
                 filters: grok_filters(&request),
             })],
+            reasoning: self.reasoning_effort.map(|effort| GrokReasoning {
+                effort: effort.as_str().to_owned(),
+            }),
             max_output_tokens: self.max_output_tokens,
             stream: true,
         })
@@ -536,8 +582,15 @@ struct GrokSearchRequest {
     input: Vec<GrokSearchInputMessage>,
     tools: Vec<GrokSearchTool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning: Option<GrokReasoning>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     max_output_tokens: Option<u32>,
     stream: bool,
+}
+
+#[derive(Serialize)]
+struct GrokReasoning {
+    effort: String,
 }
 
 #[derive(Serialize)]

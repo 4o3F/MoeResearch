@@ -141,6 +141,7 @@ pub struct SearchProviderEndpoint {
     pub api_key_env: Option<String>,
     pub timeout_ms: Option<u64>,
     pub model: Option<String>,
+    pub reasoning_effort: Option<GrokReasoningEffort>,
     #[serde(default)]
     pub max_output_tokens: Option<u32>,
 }
@@ -151,7 +152,12 @@ impl SearchProviderEndpoint {
 
         match name {
             "exa" => {
-                validate_enabled_common("search", name, self.enabled, self.api_key_env.as_ref())
+                validate_enabled_common("search", name, self.enabled, self.api_key_env.as_ref())?;
+                validate_exa_knobs(
+                    name,
+                    self.reasoning_effort.is_some(),
+                    self.max_output_tokens.is_some(),
+                )
             }
             "grok" => {
                 validate_enabled_common("search", name, self.enabled, self.api_key_env.as_ref())?;
@@ -161,6 +167,26 @@ impl SearchProviderEndpoint {
             _ => Err(Error::ConfigInvalid {
                 message: format!("unknown search.providers.{name} provider"),
             }),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GrokReasoningEffort {
+    None,
+    Low,
+    Medium,
+    High,
+}
+
+impl GrokReasoningEffort {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
         }
     }
 }
@@ -287,6 +313,24 @@ fn validate_grok_knobs(name: &str, max_output_tokens: Option<u32>) -> Result<()>
     if max_output_tokens == Some(0) {
         return Err(Error::ConfigInvalid {
             message: format!("search.providers.{name}.max_output_tokens must be greater than zero"),
+        });
+    }
+    Ok(())
+}
+
+fn validate_exa_knobs(
+    name: &str,
+    has_reasoning_effort: bool,
+    has_max_output_tokens: bool,
+) -> Result<()> {
+    if has_reasoning_effort {
+        return Err(Error::ConfigInvalid {
+            message: format!("search.providers.{name}.reasoning_effort is only supported by grok"),
+        });
+    }
+    if has_max_output_tokens {
+        return Err(Error::ConfigInvalid {
+            message: format!("search.providers.{name}.max_output_tokens is only supported by grok"),
         });
     }
     Ok(())

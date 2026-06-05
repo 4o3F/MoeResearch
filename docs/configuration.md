@@ -94,6 +94,7 @@ base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
 timeout_ms = 30000
 model = "grok-4.3"
+reasoning_effort = "high"
 max_output_tokens = 1024
 ```
 
@@ -104,7 +105,7 @@ export XAI_API_KEY="..."
 
 Only enabled providers require their environment variables to be set.
 
-Search provider configuration is infrastructure-only: endpoint URL, credentials, timeout, model where required, and provider-specific response caps. Per-query search tuning belongs in MCP request policy or the model-facing search tool call, not in `lapis.toml`.
+Search provider configuration is infrastructure-only: endpoint URL, credentials, timeout, model where required, and provider-specific response knobs. Grok supports optional `max_output_tokens` and `reasoning_effort`; `reasoning_effort` must be one of `none`, `low`, `medium`, or `high`. Set `none` to disable Grok reasoning, or omit the field to leave the provider default in effect. Per-query search tuning belongs in MCP request policy or the model-facing search tool call, not in `lapis.toml`.
 
 Do not configure search `depth`, `content_level`, `recency`, `category`, or Exa-native request fields such as `type`, `contents`, `highlights`, `text`, or `maxAgeHours` under `[search.providers.*]`; unknown fields fail configuration validation.
 

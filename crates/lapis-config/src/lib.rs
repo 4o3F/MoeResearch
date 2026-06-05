@@ -7,7 +7,7 @@ pub mod types;
 pub use limit::{ConfigLimit, CountLimit, DurationLimitMs, TokenLimit};
 pub use loader::load_config;
 pub use types::{
-    AgentBudgetConfig, BudgetConfig, LapisConfig, LoggingConfig, ModelProviderEndpoint,
-    ModelProviderRegistry, NetworkConfig, ResearchBudgetConfig, SearchProviderEndpoint,
-    SearchProviderRegistry,
+    AgentBudgetConfig, BudgetConfig, GrokReasoningEffort, LapisConfig, LoggingConfig,
+    ModelProviderEndpoint, ModelProviderRegistry, NetworkConfig, ResearchBudgetConfig,
+    SearchProviderEndpoint, SearchProviderRegistry,
 };

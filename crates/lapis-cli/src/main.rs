@@ -4,12 +4,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use lapis_config::{BudgetConfig as ConfigBudgetConfig, ConfigLimit, LapisConfig, load_config};
+use lapis_config::{
+    BudgetConfig as ConfigBudgetConfig, ConfigLimit,
+    GrokReasoningEffort as ConfigGrokReasoningEffort, LapisConfig, load_config,
+};
 use lapis_error::{Error, Result};
 use lapis_model::{ModelService, OpenAiProvider};
 use lapis_net::NetworkClient;
 use lapis_net::reqwest_client::ReqwestNetworkClient;
-use lapis_search::{ExaSearchProvider, GrokSearchProvider, SearchService};
+use lapis_search::{
+    ExaSearchProvider, GrokReasoningEffort as SearchGrokReasoningEffort, GrokSearchProvider,
+    SearchService,
+};
 use lapis_workflow::{AgentBudget, BudgetConfig, Limit, ResearchBudget};
 use tracing_subscriber::EnvFilter;
 
@@ -145,13 +151,14 @@ fn build_search_service(
                 api_key,
                 provider.timeout_ms.or(Some(config.network.timeout_ms)),
             )),
-            "grok" => service.register(GrokSearchProvider::with_max_output_tokens(
+            "grok" => service.register(GrokSearchProvider::with_request_options(
                 network.clone(),
                 provider.base_url.clone(),
                 api_key,
                 provider.timeout_ms.or(Some(config.network.timeout_ms)),
                 provider_model("search", name, provider.model.as_ref())?,
                 provider.max_output_tokens,
+                provider.reasoning_effort.map(map_grok_reasoning_effort),
             )),
             other => {
                 return Err(Error::ConfigInvalid {
@@ -162,6 +169,15 @@ fn build_search_service(
     }
 
     Ok(service)
+}
+
+fn map_grok_reasoning_effort(effort: ConfigGrokReasoningEffort) -> SearchGrokReasoningEffort {
+    match effort {
+        ConfigGrokReasoningEffort::None => SearchGrokReasoningEffort::None,
+        ConfigGrokReasoningEffort::Low => SearchGrokReasoningEffort::Low,
+        ConfigGrokReasoningEffort::Medium => SearchGrokReasoningEffort::Medium,
+        ConfigGrokReasoningEffort::High => SearchGrokReasoningEffort::High,
+    }
 }
 
 fn provider_api_key(kind: &str, name: &str, api_key_env: Option<&String>) -> Result<String> {

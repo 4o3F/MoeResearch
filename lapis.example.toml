@@ -26,6 +26,7 @@ timeout_ms = 30000
 model = "grok-4.3"
 # Optional Grok-only knob:
 #   max_output_tokens = 1024      # cap response size; omit to let provider default apply
+#   reasoning_effort = "high"     # one of: none, low, medium, high; omit to let provider default apply
 
 [model.providers.openai]
 enabled = false

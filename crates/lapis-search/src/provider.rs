@@ -7,7 +7,7 @@ pub mod exa;
 pub mod grok;
 
 pub use exa::ExaSearchProvider;
-pub use grok::GrokSearchProvider;
+pub use grok::{GrokReasoningEffort, GrokSearchProvider};
 
 #[async_trait]
 pub trait SearchProvider: Send + Sync {
