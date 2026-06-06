@@ -1,6 +1,6 @@
 # Layer 1 Prompt: Evidence Post-Processing (PM DeepResearch — Skill step 7)
 
-> The Skill-layer evidence step between Lapis execution and report synthesis. Turns a validated `DeepResearchResult.evidence_index` (+ the visual-annotation blocks inside each `Finding.claim`) into three reusable structures — a **tiered source list**, a **visual-evidence table**, and a **CiteEval sample** — that [`final-report.md`](final-report.md) places into Ch 13 / Ch 7 and uses to calibrate confidence. Runs on the `deep_research` path.
+> The Skill-layer evidence step between Lapis execution and report synthesis. Turns a validated `DeepResearchResult.evidence_index` (+ the visual-annotation blocks inside each `Finding.claim`) into three reusable structures — a **tiered source list**, a **visual-evidence table**, and a **CiteEval sample** — that [`final-report.md`](final-report.md) places into Ch 13 / Ch 7 and uses to calibrate confidence.
 
 ## Role
 
@@ -43,7 +43,7 @@ Lapis aspect agents only expose `search`; they cannot screenshot. Visual backfil
 
 - Use `agent-browser` (precise, step-wise: `open → snapshot → get`) or `browser-use` (autonomous) against the **system Chrome over CDP 9222** (shared logged-in profile), per the host Deep-Research Layer 2 setup.
 - Target the missing surfaces (e.g. the target product's onboarding / plan-setup / daily-workout / post-run screens) — exactly the gaps named in the experience-paths aspect's `open_questions`.
-- Save captures under a path that is shared with the host where Lapis runs, then add them as **new visual-evidence rows** with `media_type=screenshot`, a real `source_url` (the captured page URL) or a local capture path, and an honest `confidence`. Do not fabricate a URL for an image you did not actually capture.
+- Save captures under `/home/heye/projects/...` (shared with the container), then add them as **new visual-evidence rows** with `media_type=screenshot`, a real `source_url` (the captured page URL) or a local capture path, and an honest `confidence`. Do not fabricate a URL for an image you did not actually capture.
 - If the host browser stack is unavailable (no CDP, no Chrome), skip and keep the gap — never invent visual evidence.
 
 ## Step C — CiteEval sampling (FActScore / DeepTRACE discipline)
@@ -54,7 +54,7 @@ Sample the **key findings** (importance ∈ {critical, high}; at minimum every C
 - **Partially supported** — source is related but weaker/indirect than the claim → downgrade one confidence step + add a limitation.
 - **Unsupported** — cited source does not actually support the claim ("citation existed but doesn't back it") → **move the claim to Ch 12 (open questions / assumptions)**; do not state as fact.
 
-Emit a short `cite_eval` note per sampled finding (`supported | partial | unsupported` + one-line reason). This is the same citation-faithfulness bar enforced elsewhere in the methodology.
+Emit a short `cite_eval` note per sampled finding (`supported | partial | unsupported` + one-line reason). This is the same faithfulness bar the rubric scores as A2.
 
 ## Output
 

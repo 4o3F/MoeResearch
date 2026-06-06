@@ -63,7 +63,7 @@ For every enum field output exactly one allowed value; never invent synonyms. Fo
  "open_questions": [ { "id": "oq-1", "question": "string", "reason": "string", "suggested_follow_up": ["string"] } ],
  "confidence": "medium", "limitations": []
  },
- "evidence": [ { "id": "ev-1-1", "source_title": "string", "url": "https://example.test/source", "provider": "grok", "query": "string", "snippet": "string", "summary": "string", "published_at": null, "retrieved_at": "2024-01-01T00:00:00Z", "supports_findings": ["finding-1"], "source_type": "official", "confidence": "medium" } ]
+ "evidence": [ { "id": "ev-1-1", "source_title": "string", "url": "https://example.test/source", "provider": "grok", "query": "string", "snippet": "string", "summary": "string", "published_at": null, "retrieved_at": "<ISO8601 timestamp>", "supports_findings": ["finding-1"], "source_type": "official", "confidence": "medium" } ]
 }
 ```
 
