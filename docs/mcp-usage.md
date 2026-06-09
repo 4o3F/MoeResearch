@@ -17,6 +17,44 @@ Protocol rules:
 - Current stdio transport does not use `Content-Length` framing.
 - Do not send API keys, Authorization headers, or other secrets in MCP payloads.
 
+## 1.1 Claude Code registration
+
+Prefer the official Claude Code MCP CLI instead of editing Claude settings by hand:
+
+```bash
+lapis mcp register --scope local --config ~/.config/lapis/lapis.toml
+```
+
+The command invokes `claude mcp add` with the current `lapis` executable path by default:
+
+```bash
+claude mcp add --transport stdio --scope local lapis -- /absolute/path/to/lapis serve --config /absolute/path/to/lapis.toml
+```
+
+Use `--lapis-bin` when Claude Code should launch a different binary.
+
+The registration command validates the config file and the environment variables for enabled providers before invoking `claude`. Use `--dry-run` to print the command and JSON example without calling `claude`:
+
+```bash
+lapis mcp register --scope local --config ~/.config/lapis/lapis.toml --dry-run
+```
+
+For project-scoped configs, the equivalent `mcpServers` shape is:
+
+```json
+{
+  "mcpServers": {
+    "lapis": {
+      "type": "stdio",
+      "command": "lapis",
+      "args": ["serve", "--config", "/absolute/path/to/lapis.toml"]
+    }
+  }
+}
+```
+
+Do not put provider API keys in Claude MCP config. Lapis reads provider secrets from the environment variables named by `api_key_env` in `lapis.toml`.
+
 ## 2. MCP lifecycle
 
 ### 2.1 Initialize

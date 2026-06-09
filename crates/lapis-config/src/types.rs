@@ -18,12 +18,50 @@ pub struct LapisConfig {
     pub budget: BudgetConfig,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnabledProviderEnv<'a> {
+    pub kind: &'a str,
+    pub name: &'a str,
+    pub api_key_env: Option<&'a str>,
+}
+
 impl LapisConfig {
     pub fn validate(&self) -> Result<()> {
+        self.validate_structure()?;
+        self.validate_runtime_environment()
+    }
+
+    pub fn enabled_provider_envs(&self) -> Vec<EnabledProviderEnv<'_>> {
+        let model_providers = self.model.providers.iter().filter_map(|(name, provider)| {
+            provider.enabled.then_some(EnabledProviderEnv {
+                kind: "model",
+                name,
+                api_key_env: provider.api_key_env.as_deref(),
+            })
+        });
+        let search_providers = self.search.providers.iter().filter_map(|(name, provider)| {
+            provider.enabled.then_some(EnabledProviderEnv {
+                kind: "search",
+                name,
+                api_key_env: provider.api_key_env.as_deref(),
+            })
+        });
+
+        model_providers.chain(search_providers).collect()
+    }
+
+    fn validate_structure(&self) -> Result<()> {
         self.network.validate()?;
         self.budget.validate()?;
-        self.search.validate()?;
-        self.model.validate()
+        self.search.validate_structure()?;
+        self.model.validate_structure()
+    }
+
+    fn validate_runtime_environment(&self) -> Result<()> {
+        for provider in self.enabled_provider_envs() {
+            validate_env_key(provider.kind, provider.name, provider.api_key_env)?;
+        }
+        Ok(())
     }
 }
 
@@ -79,9 +117,9 @@ impl ModelProviderRegistry {
             .count()
     }
 
-    fn validate(&self) -> Result<()> {
+    fn validate_structure(&self) -> Result<()> {
         for (name, provider) in &self.providers {
-            provider.validate(name)?;
+            provider.validate_structure(name)?;
         }
         Ok(())
     }
@@ -101,9 +139,9 @@ impl SearchProviderRegistry {
             .count()
     }
 
-    fn validate(&self) -> Result<()> {
+    fn validate_structure(&self) -> Result<()> {
         for (name, provider) in &self.providers {
-            provider.validate(name)?;
+            provider.validate_structure(name)?;
         }
         Ok(())
     }
@@ -120,7 +158,7 @@ pub struct ModelProviderEndpoint {
 }
 
 impl ModelProviderEndpoint {
-    fn validate(&self, name: &str) -> Result<()> {
+    fn validate_structure(&self, name: &str) -> Result<()> {
         if name != "openai" {
             return Err(Error::ConfigInvalid {
                 message: format!("unknown model.providers.{name} provider"),
@@ -128,7 +166,7 @@ impl ModelProviderEndpoint {
         }
 
         validate_timeout("model", name, self.timeout_ms)?;
-        validate_enabled_common("model", name, self.enabled, self.api_key_env.as_ref())?;
+        validate_api_key_env_name("model", name, self.api_key_env.as_ref())?;
         validate_model("model", name, self.enabled, self.model.as_ref())
     }
 }
@@ -147,20 +185,17 @@ pub struct SearchProviderEndpoint {
 }
 
 impl SearchProviderEndpoint {
-    fn validate(&self, name: &str) -> Result<()> {
+    fn validate_structure(&self, name: &str) -> Result<()> {
         validate_timeout("search", name, self.timeout_ms)?;
+        validate_api_key_env_name("search", name, self.api_key_env.as_ref())?;
 
         match name {
-            "exa" => {
-                validate_enabled_common("search", name, self.enabled, self.api_key_env.as_ref())?;
-                validate_exa_knobs(
-                    name,
-                    self.reasoning_effort.is_some(),
-                    self.max_output_tokens.is_some(),
-                )
-            }
+            "exa" => validate_exa_knobs(
+                name,
+                self.reasoning_effort.is_some(),
+                self.max_output_tokens.is_some(),
+            ),
             "grok" => {
-                validate_enabled_common("search", name, self.enabled, self.api_key_env.as_ref())?;
                 validate_model("search", name, self.enabled, self.model.as_ref())?;
                 validate_grok_knobs(name, self.max_output_tokens)
             }
@@ -261,19 +296,33 @@ fn validate_timeout(kind: &str, name: &str, timeout_ms: Option<u64>) -> Result<(
     Ok(())
 }
 
-fn validate_enabled_common(
-    kind: &str,
-    name: &str,
-    enabled: bool,
-    api_key_env: Option<&String>,
-) -> Result<()> {
-    if !enabled {
+fn validate_api_key_env_name(kind: &str, name: &str, api_key_env: Option<&String>) -> Result<()> {
+    let Some(env_name) = api_key_env else {
         return Ok(());
+    };
+
+    if !is_valid_env_var_name(env_name) {
+        return Err(Error::ConfigInvalid {
+            message: format!(
+                "{kind}.providers.{name}.api_key_env must be a valid environment variable name"
+            ),
+        });
     }
-    validate_env_key(kind, name, api_key_env)
+
+    Ok(())
 }
 
-fn validate_env_key(kind: &str, name: &str, api_key_env: Option<&String>) -> Result<()> {
+fn is_valid_env_var_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+
+    (first.is_ascii_alphabetic() || first == b'_')
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn validate_env_key(kind: &str, name: &str, api_key_env: Option<&str>) -> Result<()> {
     let env_name = api_key_env.ok_or_else(|| Error::ProviderUnavailable {
         provider: format!("{kind}:{name}"),
         message: "enabled provider must set api_key_env".to_owned(),
