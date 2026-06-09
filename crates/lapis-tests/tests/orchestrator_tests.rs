@@ -1449,10 +1449,10 @@ async fn budget_exhaustion_stops_before_actions() {
 async fn slow_final_model_call_exhausts_effective_timeout() {
     let mut request = aspect_request();
     request.task.budget.timeout_ms = Limit::limited(60_000);
-    request.execution_policy.timeout_ms = Limit::limited(1);
+    request.execution_policy.timeout_ms = Limit::limited(50);
     let (model_service, search_service, model_calls, search_calls) = services_with_delay(
         vec![final_response("{}".to_owned())],
-        Some(Duration::from_millis(5)),
+        Some(Duration::from_millis(250)),
     );
 
     let error = AgentRuntime::new(
@@ -1474,10 +1474,10 @@ async fn slow_final_model_call_exhausts_effective_timeout() {
 async fn lower_execution_timeout_is_enforced_before_search() {
     let mut request = aspect_request();
     request.task.budget.timeout_ms = Limit::limited(60_000);
-    request.execution_policy.timeout_ms = Limit::limited(1);
+    request.execution_policy.timeout_ms = Limit::limited(50);
     let (model_service, search_service, model_calls, search_calls) = services_with_delay(
         vec![tool_response("search")],
-        Some(Duration::from_millis(5)),
+        Some(Duration::from_millis(250)),
     );
 
     let error = AgentRuntime::new(
