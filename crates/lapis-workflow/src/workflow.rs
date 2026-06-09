@@ -4,7 +4,7 @@
 //! the effective research budget from operator config and request limits, run
 //! aspect agents, then aggregate successes and failures into the public result.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use futures::{StreamExt, stream};
@@ -113,6 +113,19 @@ pub async fn deep_research(
         }
     };
     if let Err(error) = effective_budget.ensure_usage_within(&run.budget_usage) {
+        let failures_before = run.failures.len();
+        let mut accounted = run.completed.iter().cloned().collect::<BTreeSet<_>>();
+        accounted.extend(run.failures.iter().map(|failure| failure.aspect_id.clone()));
+        for task in &request.aspect_tasks {
+            let aspect_id = &task.aspect.aspect_id;
+            if accounted.insert(aspect_id.clone()) {
+                run.failures.push(aspect_failure(aspect_id, &error));
+            }
+        }
+        let terminal_failures_added = run.failures.len() - failures_before;
+        let return_partial = request.execution_policy.allow_partial_results
+            && !run.completed.is_empty()
+            && terminal_failures_added > 0;
         tracing::warn!(
             request_id = %request_id,
             run_id = %run_id,
@@ -120,18 +133,21 @@ pub async fn deep_research(
             agents_started = run.budget_usage.agents_started,
             completed_aspects = run.completed.len(),
             failed_aspects = run.failures.len(),
+            terminal_failures_added,
             model_calls_used = run.budget_usage.model_calls_used,
             search_calls_used = run.budget_usage.search_calls_used,
             elapsed_ms = run.budget_usage.elapsed_ms,
             error_code = error.code().as_str(),
             retryable = error.retryable(),
-            status = "failed",
+            status = if return_partial { "partial" } else { "failed" },
             "deep research budget check failed"
         );
-        return Err(DeepResearchFailure::with_aspects(
-            error,
-            order_failures_by_request(&request, run.failures),
-        ));
+        if !return_partial {
+            return Err(DeepResearchFailure::with_aspects(
+                error,
+                order_failures_by_request(&request, run.failures),
+            ));
+        }
     }
 
     let result = finalize_deep_result(&request, run, run_id.clone());

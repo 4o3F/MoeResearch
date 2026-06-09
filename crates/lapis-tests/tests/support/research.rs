@@ -110,10 +110,22 @@ pub fn unlimited_budget_config() -> BudgetConfig {
 }
 
 pub fn services(failing_aspects: &[&str]) -> Services {
-    services_with_token_usage(failing_aspects, None)
+    services_with_options(failing_aspects, None, Duration::from_millis(10))
 }
 
 pub fn services_with_token_usage(failing_aspects: &[&str], usage: Option<TokenUsage>) -> Services {
+    services_with_options(failing_aspects, usage, Duration::from_millis(10))
+}
+
+pub fn services_with_delay(failing_aspects: &[&str], delay: Duration) -> Services {
+    services_with_options(failing_aspects, None, delay)
+}
+
+fn services_with_options(
+    failing_aspects: &[&str],
+    usage: Option<TokenUsage>,
+    delay: Duration,
+) -> Services {
     let model_calls = Arc::new(AtomicUsize::new(0));
     let search_calls = Arc::new(AtomicUsize::new(0));
     let in_flight = Arc::new(AtomicUsize::new(0));
@@ -127,7 +139,7 @@ pub fn services_with_token_usage(failing_aspects: &[&str], usage: Option<TokenUs
         calls: model_calls.clone(),
         in_flight,
         max_in_flight: max_in_flight.clone(),
-        delay: Duration::from_millis(10),
+        delay,
         usage,
     });
     let search = static_search_service(search_calls.clone());

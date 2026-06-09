@@ -24,8 +24,8 @@ use rmcp::schemars::schema_for;
 use serde_json::json;
 use support::research::{
     Services, aspect_field, aspect_request, deep_request, final_response,
-    first_evidence_from_tool_output, medium_result_json, services, static_search_service,
-    tool_response, unlimited_budget_config,
+    first_evidence_from_tool_output, medium_result_json, services, services_with_delay,
+    static_search_service, tool_response, unlimited_budget_config,
 };
 
 struct SequenceModelProvider {
@@ -262,6 +262,38 @@ async fn deep_research_partial_success_returns_partial_envelope() {
         data.failed_aspects[0].error_code,
         "schema_validation_failed"
     );
+}
+
+#[tokio::test]
+async fn deep_research_post_run_budget_partial_returns_partial_envelope_with_data() {
+    let mut request = deep_request(3);
+    request.budget.max_concurrent_agents = Limit::limited(1);
+    request.budget.total_timeout_ms = Limit::limited(110);
+    request.execution_policy.fail_fast = true;
+    request.execution_policy.timeout_ms = Limit::limited(110);
+
+    let envelope = mcp_server(services_with_delay(
+        &["aspect-2"],
+        Duration::from_millis(30),
+    ))
+    .deep_research(Parameters(request))
+    .await
+    .0;
+
+    assert_eq!(envelope.status, ToolStatus::Partial);
+    assert!(envelope.error.is_none());
+
+    let data = envelope.data.expect("partial deep data");
+    assert_eq!(envelope.run_id.as_deref(), Some(data.run_id.as_str()));
+    assert_eq!(data.completed_aspects, vec!["aspect-1".to_owned()]);
+    assert_eq!(data.failed_aspects.len(), 2);
+    assert_eq!(data.failed_aspects[0].aspect_id, "aspect-2");
+    assert_eq!(data.failed_aspects[1].aspect_id, "aspect-3");
+    assert_eq!(data.failed_aspects[1].error_code, "budget_exceeded");
+    assert!(!data.failed_aspects[1].aspect_id.starts_with("__"));
+    assert_eq!(data.coverage_summary.requested_aspects, 3);
+    assert_eq!(data.coverage_summary.completed_aspects, 1);
+    assert_eq!(data.coverage_summary.failed_aspects, 2);
 }
 
 #[tokio::test]

@@ -2,13 +2,14 @@ mod support;
 
 use std::collections::BTreeSet;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use lapis_error::Error;
 use lapis_workflow::Limit;
 use lapis_workflow::deep_research;
 use lapis_workflow::{AgentBudget, BudgetConfig, ResearchBudget};
 use support::research::{
-    deep_request, services, services_with_token_usage, unlimited_budget_config,
+    deep_request, services, services_with_delay, services_with_token_usage, unlimited_budget_config,
 };
 
 #[tokio::test]
@@ -513,6 +514,37 @@ async fn request_budget_max_tokens_is_clamped_to_config_cap() {
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
 }
 
+#[tokio::test]
+async fn post_run_timeout_preserves_completed_aspect_when_partial_allowed() {
+    let mut request = deep_request(3);
+    request.budget.max_concurrent_agents = Limit::limited(1);
+    request.budget.total_timeout_ms = Limit::limited(110);
+    request.execution_policy.fail_fast = true;
+    request.execution_policy.timeout_ms = Limit::limited(110);
+    let services = services_with_delay(&["aspect-2"], Duration::from_millis(30));
+
+    let result = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect("partial result");
+
+    assert_eq!(result.completed_aspects, vec!["aspect-1".to_owned()]);
+    assert_eq!(result.aspect_reports.len(), 1);
+    assert_eq!(result.evidence_index.len(), 1);
+    assert_eq!(result.failed_aspects.len(), 2);
+    assert_eq!(result.failed_aspects[0].aspect_id, "aspect-2");
+    assert_eq!(result.failed_aspects[1].aspect_id, "aspect-3");
+    assert_eq!(result.failed_aspects[1].error_code, "budget_exceeded");
+    assert!(!result.failed_aspects[1].aspect_id.starts_with("__"));
+    assert_eq!(result.coverage_summary.requested_aspects, 3);
+    assert_eq!(result.coverage_summary.completed_aspects, 1);
+    assert_eq!(result.coverage_summary.failed_aspects, 2);
+}
+
 /// Two concurrent aspects share the same cross-aspect guard: with
 /// `max_total_search_calls = 1`, exactly one aspect must succeed at search
 /// while the other is rejected pre-dispatch.
@@ -535,4 +567,9 @@ async fn concurrent_aspects_share_global_budget_guard() {
     assert_eq!(services.search_calls.load(Ordering::SeqCst), 1);
     assert_eq!(result.completed_aspects.len(), 1);
     assert_eq!(result.failed_aspects.len(), 1);
+    assert_eq!(result.failed_aspects[0].error_code, "budget_exceeded");
+    assert!(!result.failed_aspects[0].aspect_id.starts_with("__"));
+    assert_eq!(result.coverage_summary.requested_aspects, 2);
+    assert_eq!(result.coverage_summary.completed_aspects, 1);
+    assert_eq!(result.coverage_summary.failed_aspects, 1);
 }
