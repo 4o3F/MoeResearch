@@ -62,7 +62,7 @@
         Id='*'
         Name='lapis-cli'
         UpgradeCode='DE713A13-5833-4F54-B1B9-EB67FCD217A6'
-        Manufacturer='4o3F'
+        Manufacturer='4o3F; Heye'
         Language='1033'
         Codepage='1252'
         Version='$(var.Version)'>
@@ -70,7 +70,7 @@
         <Package Id='*'
             Keywords='Installer'
             Description='Rust-based deep research MCP core service'
-            Manufacturer='4o3F'
+            Manufacturer='4o3F; Heye'
             InstallerVersion='450'
             Languages='1033'
             Compressed='yes'
