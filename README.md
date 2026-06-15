@@ -15,16 +15,46 @@ Lapis is not a general-purpose chatbot and does not provide a Web UI. Its role i
 
 ## Quick Start
 
-Build the release binary:
+Install Lapis from a tagged release first. `cargo-dist` is configured to generate GitHub Release installers, Homebrew and npm publishing metadata, MSI packages, and updater support.
 
-```bash
-cargo build --release
-```
+### Install
+
+- **GitHub Releases, macOS/Linux**: download the generated shell installer from the tagged release assets, then run it locally:
+
+  ```bash
+  sh ./<downloaded-installer>.sh
+  ```
+
+- **GitHub Releases, Windows**: run the generated PowerShell installer from the release assets, or download and run the generated `.msi` package.
+- **Homebrew**: download the generated `lapis.rb` formula from the tagged release assets, then install it locally:
+
+  ```bash
+  brew install ./lapis.rb
+  ```
+
+  Automatic Homebrew tap publishing is not configured, so no separate tap repository is required.
+
+- **npm**: once the package is published, install the configured CLI package globally:
+
+  ```bash
+  npm install -g @4o3f/lapis
+  ```
+
+  `cargo-dist` also prints a version-pinned npm install hint in release notes for project-local installs.
+
+- **Source fallback**: build locally when release artifacts are not available or when developing:
+
+  ```bash
+  cargo build --release
+  ./target/release/lapis --help
+  ```
+
+If you built from source, replace `lapis` in the commands below with `./target/release/lapis`.
 
 Create a starter configuration and follow the provider prompts:
 
 ```bash
-./target/release/lapis init --config ~/.config/lapis/lapis.toml
+lapis init --config ~/.config/lapis/lapis.toml
 ```
 
 For scripted setup, pass provider flags such as `--enable-openai` with `--non-interactive`. Lapis keeps secrets out of config; provider entries use `api_key_env`.
@@ -38,7 +68,7 @@ export EXA_API_KEY="..."
 Check local readiness:
 
 ```bash
-./target/release/lapis check --config ~/.config/lapis/lapis.toml
+lapis check --config ~/.config/lapis/lapis.toml
 ```
 
 `lapis check --live` reports provider reachability probes as deferred in v1; it does not validate real API key correctness.
@@ -46,7 +76,7 @@ Check local readiness:
 Register Lapis with Claude Code:
 
 ```bash
-./target/release/lapis mcp register --scope local --config ~/.config/lapis/lapis.toml
+lapis mcp register --scope local --config ~/.config/lapis/lapis.toml
 ```
 
 By default, registration records the current `lapis` executable path. Pass `--lapis-bin` only when Claude Code should launch a different binary. Registration validates enabled-provider environment variables before invoking `claude` and forwards their current values into Claude Code registration with redacted dry-run output.
@@ -54,7 +84,7 @@ By default, registration records the current `lapis` executable path. Pass `--la
 Start the MCP server manually when needed:
 
 ```bash
-./target/release/lapis serve --config ~/.config/lapis/lapis.toml
+lapis serve --config ~/.config/lapis/lapis.toml
 ```
 
 Or run through Cargo during development:
@@ -65,6 +95,15 @@ cargo run -- serve --config ~/.config/lapis/lapis.toml
 ```
 
 Logs are written to stderr. MCP protocol messages are exchanged over stdin and stdout.
+
+### Maintainer release prerequisites
+
+Before creating a release tag:
+
+- Ensure the npm scope/package for `@4o3f/lapis` is available to publish.
+- Configure `NPM_TOKEN` as a GitHub secret with publish access to `@4o3f/lapis`.
+- Homebrew formula generation is enabled, but automatic tap publishing is intentionally disabled to avoid requiring a separate tap repository.
+- `cargo-dist` generates the MSI package with a license sidecar. Windows code signing is a later hardening step unless configured separately.
 
 ## MCP Tools
 
@@ -94,10 +133,10 @@ See [`docs/mcp-usage.md`](docs/mcp-usage.md) for the full MCP client interface, 
 
 ## Requirements
 
-- Rust toolchain with Rust 2024 edition support.
 - An MCP client that can run stdio MCP servers.
 - At least one enabled model provider.
 - A search provider for aspects that allow search.
+- Rust toolchain with Rust 2024 edition support when building from source or developing.
 
 ## Common Development Checks
 

@@ -16,6 +16,11 @@ resolver = "3"
 [workspace.package]
 edition = "2024"
 version = "0.1.0"
+repository = "https://github.com/4o3F/Lapis"
+homepage = "https://github.com/4o3F/Lapis"
+license = "AGPL-3.0-only"
+authors = ["4o3F", "Heye"]
+description = "Rust-based deep research MCP core service"
 
 [workspace.dependencies]
 async-trait = "0.1"
@@ -36,3 +41,19 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = "2"
 uuid = { version = "1", features = ["serde", "v4"] }
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+[workspace.metadata.dist]
+cargo-dist-version = "0.32.0"
+ci = ["github"]
+installers = ["shell", "powershell", "homebrew", "npm", "msi"]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "x86_64-apple-darwin", "aarch64-apple-darwin"]
+install-updater = true
+display-name = "Lapis"
+formula = "lapis"
+npm-scope = "@4o3f"
+npm-package = "lapis"
+publish-jobs = ["npm"]

@@ -43,17 +43,3 @@ jobs:
 
       - name: Build release binary
         run: cargo build --release --locked --workspace
-
-      - name: Package artifact
-        run: |
-          mkdir -p dist
-          cp target/release/lapis dist/lapis-linux-x86_64
-          chmod +x dist/lapis-linux-x86_64
-
-      - name: Upload release artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: lapis-linux-x86_64
-          path: dist/lapis-linux-x86_64
-          if-no-files-found: error
-          retention-days: 14

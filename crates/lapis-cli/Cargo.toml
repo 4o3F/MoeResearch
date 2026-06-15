@@ -2,7 +2,21 @@
 name = "lapis-cli"
 version.workspace = true
 edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
 publish = false
+
+[package.metadata.dist]
+dist = true
+
+[package.metadata.wix]
+upgrade-guid = "DE713A13-5833-4F54-B1B9-EB67FCD217A6"
+path-guid = "3C564348-A6CA-44E8-8AD1-7F49EA59A149"
+license = "../../LICENSE"
+eula = false
 
 [[bin]]
 name = "lapis"
