@@ -53,6 +53,27 @@ cargo install --path crates/lapis-cli --locked
 
 ## 4. Run locally
 
+Generate a local config with one model provider enabled:
+
+```bash
+cargo run -- init --config lapis.toml --non-interactive --enable-openai --force
+export OPENAI_API_KEY="..."
+```
+
+Check config and MCP readiness:
+
+```bash
+cargo run -- check --config lapis.toml
+```
+
+Preview Claude Code MCP registration:
+
+```bash
+cargo run -- mcp register --config lapis.toml --dry-run
+```
+
+Start the MCP server manually:
+
 ```bash
 cargo run -- serve --config lapis.toml
 ```

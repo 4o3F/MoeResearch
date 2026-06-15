@@ -21,24 +21,47 @@ Build the release binary:
 cargo build --release
 ```
 
-Copy the example configuration:
+Create a starter configuration and follow the provider prompts:
 
 ```bash
-cp lapis.example.toml lapis.toml
+./target/release/lapis init --config ~/.config/lapis/lapis.toml
 ```
 
-Edit `lapis.toml`, enable the providers you need, and export the referenced API key environment variables.
-
-Start the MCP server:
+For scripted setup, pass provider flags such as `--enable-openai` with `--non-interactive`. Lapis keeps secrets out of config; provider entries use `api_key_env`.
 
 ```bash
-./target/release/lapis serve --config lapis.toml
+export OPENAI_API_KEY="..."
+export XAI_API_KEY="..."
+export EXA_API_KEY="..."
+```
+
+Check local readiness:
+
+```bash
+./target/release/lapis check --config ~/.config/lapis/lapis.toml
+```
+
+`lapis check --live` reports provider reachability probes as deferred in v1; it does not validate real API key correctness.
+
+Register Lapis with Claude Code:
+
+```bash
+./target/release/lapis mcp register --scope local --config ~/.config/lapis/lapis.toml
+```
+
+By default, registration records the current `lapis` executable path. Pass `--lapis-bin` only when Claude Code should launch a different binary. Registration validates enabled-provider environment variables before invoking `claude`.
+
+Start the MCP server manually when needed:
+
+```bash
+./target/release/lapis serve --config ~/.config/lapis/lapis.toml
 ```
 
 Or run through Cargo during development:
 
 ```bash
-cargo run -- serve --config lapis.toml
+cargo run -- onboard --config ~/.config/lapis/lapis.toml --dry-run
+cargo run -- serve --config ~/.config/lapis/lapis.toml
 ```
 
 Logs are written to stderr. MCP protocol messages are exchanged over stdin and stdout.

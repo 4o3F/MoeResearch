@@ -4,19 +4,35 @@ This guide describes the Lapis configuration file used by `lapis serve`.
 
 ## 1. Configuration file location
 
-Copy the example configuration before running the server:
+For new users, generate a user-level starter config and follow the provider prompts:
+
+```bash
+lapis init --config ~/.config/lapis/lapis.toml
+```
+
+For automation, use `--non-interactive` plus explicit provider flags such as `--enable-openai`.
+
+Then validate it:
+
+```bash
+lapis check --config ~/.config/lapis/lapis.toml
+```
+
+You can also copy the example configuration before running the server:
 
 ```bash
 cp lapis.example.toml lapis.toml
 ```
 
-By default, `lapis` reads `lapis.toml` from the current working directory. You can pass an explicit path:
+By default, `lapis serve` reads `lapis.toml` from the current working directory. You can pass an explicit path:
 
 ```bash
 lapis serve --config /absolute/path/to/lapis.toml
 ```
 
 ## 2. Secret handling
+
+Lapis onboarding preserves the `api_key_env` secret model. The CLI does not accept raw provider keys, does not write keys to config, and does not pass keys to Claude Code MCP registration commands.
 
 Do not put real API keys in `lapis.toml`.
 
@@ -36,6 +52,10 @@ export OPENAI_API_KEY="..."
 
 ## 3. Basic shape
 
+`lapis init` generates this same shape. Without provider flags it asks which providers to enable and which environment variable names to reference. With `--non-interactive`, all providers stay disabled unless enable flags are passed.
+
+`lapis check` uses the same config validation as `lapis serve`: the TOML shape must be valid, and enabled providers must reference environment variables that are set. It then performs local MCP checks when requested. `lapis check --live` does not call provider APIs in v1; provider key correctness and endpoint reachability probes are explicitly deferred.
+
 ```toml
 [logging]
 format = "json"
@@ -51,7 +71,6 @@ enabled = false
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
 timeout_ms = 30000
-model = ""
 
 [search.providers.grok]
 enabled = false

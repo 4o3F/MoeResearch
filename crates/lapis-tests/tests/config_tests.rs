@@ -469,6 +469,44 @@ fn accepts_grok_with_no_max_output_tokens() {
 }
 
 #[test]
+fn rejects_secret_like_api_key_env_value() {
+    let input = VALID_CONFIG.replace(
+        "api_key_env = \"EXA_API_KEY\"",
+        "api_key_env = \"sk-secret-like-value\"",
+    );
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("api_key_env must be a valid environment variable name"),
+        "unexpected error: {err}"
+    );
+    assert!(!err.to_string().contains("sk-secret-like-value"));
+}
+
+#[test]
+fn enabled_provider_requires_environment_variable() {
+    let missing_env = format!("LAPIS_TEST_MISSING_OPENAI_KEY_{}", std::process::id());
+    let input = VALID_CONFIG.replace(
+        "[model.providers.openai]\nenabled = false\nbase_url = \"https://api.openai.com/v1\"\napi_key_env = \"OPENAI_API_KEY\"",
+        &format!(
+            "[model.providers.openai]\nenabled = true\nbase_url = \"https://api.openai.com/v1\"\napi_key_env = \"{missing_env}\""
+        ),
+    );
+    let id = CONFIG_ID.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "lapis-config-test-{}-{id}.toml",
+        std::process::id()
+    ));
+
+    std::fs::write(&path, input).expect("write test config");
+    let err = load_config(Some(&path)).expect_err("enabled provider should require env var");
+    let _ = std::fs::remove_file(&path);
+
+    assert!(err.to_string().contains(&missing_env));
+}
+
+#[test]
 fn rejects_exa_search_tuning_in_config() {
     for field in [
         "depth = \"balanced\"",
