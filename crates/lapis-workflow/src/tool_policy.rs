@@ -13,6 +13,7 @@ pub const SEARCH_TOOL_NAME: &str = "search";
 #[serde(deny_unknown_fields)]
 pub struct SearchToolArgs {
     pub query: String,
+    #[schemars(schema_with = "crate::limit::optional_non_negative_integer_schema")]
     pub max_results: Option<usize>,
     pub depth: Option<SearchDepth>,
     pub content_level: Option<SearchContentLevel>,

@@ -3,7 +3,22 @@ use std::path::Path;
 
 use clap::ValueEnum;
 use lapis_error::{Error, Result};
-use serde_json::{Map, json};
+use serde_json::{Map, Value, json};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpEnvVar {
+    pub name: String,
+    pub value: OsString,
+}
+
+impl McpEnvVar {
+    fn assignment(&self) -> OsString {
+        let mut assignment = OsString::from(&self.name);
+        assignment.push("=");
+        assignment.push(&self.value);
+        assignment
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum McpScope {
@@ -51,35 +66,59 @@ pub fn claude_mcp_add_argv(
     scope: McpScope,
     lapis_bin: &Path,
     config_path: &Path,
+    env_vars: &[McpEnvVar],
 ) -> Vec<OsString> {
-    vec![
+    let mut argv = vec![
         OsString::from("mcp"),
         OsString::from("add"),
         OsString::from("--transport"),
         OsString::from("stdio"),
         OsString::from("--scope"),
         OsString::from(scope.as_str()),
+    ];
+    for env in env_vars {
+        argv.push(OsString::from("--env"));
+        argv.push(env.assignment());
+    }
+    argv.extend([
         OsString::from(name),
         OsString::from("--"),
         lapis_bin.as_os_str().to_owned(),
         OsString::from("serve"),
         OsString::from("--config"),
         config_path.as_os_str().to_owned(),
-    ]
+    ]);
+    argv
 }
 
 #[must_use]
-pub fn mcp_servers_json(name: &str, lapis_bin: &Path, config_path: &Path) -> String {
-    let mut servers = Map::new();
-    servers.insert(
-        name.to_owned(),
-        json!({
-            "type": "stdio",
-            "command": lapis_bin.display().to_string(),
-            "args": ["serve", "--config", config_path.display().to_string()],
-        }),
+pub fn mcp_servers_json(
+    name: &str,
+    lapis_bin: &Path,
+    config_path: &Path,
+    env_vars: &[McpEnvVar],
+) -> String {
+    let mut server = Map::new();
+    server.insert("type".to_owned(), json!("stdio"));
+    server.insert("command".to_owned(), json!(lapis_bin.display().to_string()));
+    server.insert(
+        "args".to_owned(),
+        json!(["serve", "--config", config_path.display().to_string()]),
     );
+    if !env_vars.is_empty() {
+        server.insert("env".to_owned(), Value::Object(redacted_env_json(env_vars)));
+    }
+
+    let mut servers = Map::new();
+    servers.insert(name.to_owned(), Value::Object(server));
 
     serde_json::to_string_pretty(&json!({ "mcpServers": servers }))
         .expect("MCP server config must serialize")
+}
+
+fn redacted_env_json(env_vars: &[McpEnvVar]) -> Map<String, Value> {
+    env_vars
+        .iter()
+        .map(|env| (env.name.clone(), json!("<redacted>")))
+        .collect()
 }

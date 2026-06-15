@@ -48,7 +48,7 @@ pub fn run(args: CheckArgs) -> Result<()> {
             rows.push(CheckRow::fail(
                 "config",
                 error.to_string(),
-                Some("run `lapis init --config <path>` or fix the TOML".to_owned()),
+                Some(config_failure_fix(&path, &error)),
                 Some("docs/configuration.md".to_owned()),
             ));
             None
@@ -107,6 +107,20 @@ struct CheckRow {
     summary: String,
     fix: Option<String>,
     detail: Option<String>,
+}
+
+fn config_failure_fix(path: &Path, error: &Error) -> String {
+    match error {
+        Error::ProviderUnavailable { .. } => format!(
+            "export the referenced api_key_env variable or disable the provider in {}",
+            path.display()
+        ),
+        _ => format!(
+            "edit {} or rerun `lapis onboard --force --config {}`",
+            path.display(),
+            path.display()
+        ),
+    }
 }
 
 impl CheckRow {

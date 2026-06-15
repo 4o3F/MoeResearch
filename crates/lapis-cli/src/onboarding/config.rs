@@ -5,6 +5,7 @@ use lapis_error::{Error, Result};
 
 #[derive(Clone, Debug)]
 pub struct ConfigPlan {
+    pub network_timeout_ms: u64,
     pub openai: ProviderPlan,
     pub grok: ProviderPlan,
     pub exa: ProviderPlan,
@@ -34,19 +35,22 @@ impl ConfigPlan {
 impl Default for ConfigPlan {
     fn default() -> Self {
         Self {
+            network_timeout_ms: 120_000,
             openai: ProviderPlan::new(
                 false,
                 "https://api.openai.com/v1",
                 "OPENAI_API_KEY",
+                120_000,
                 Some("gpt-5.5"),
             ),
             grok: ProviderPlan::new(
                 false,
                 "https://api.x.ai/v1",
                 "XAI_API_KEY",
+                120_000,
                 Some("grok-4.3"),
             ),
-            exa: ProviderPlan::new(false, "https://api.exa.ai", "EXA_API_KEY", None),
+            exa: ProviderPlan::new(false, "https://api.exa.ai", "EXA_API_KEY", 120_000, None),
         }
     }
 }
@@ -56,16 +60,24 @@ pub struct ProviderPlan {
     pub enabled: bool,
     pub base_url: String,
     pub api_key_env: String,
+    pub timeout_ms: u64,
     pub model: Option<String>,
 }
 
 impl ProviderPlan {
     #[must_use]
-    pub fn new(enabled: bool, base_url: &str, api_key_env: &str, model: Option<&str>) -> Self {
+    pub fn new(
+        enabled: bool,
+        base_url: &str,
+        api_key_env: &str,
+        timeout_ms: u64,
+        model: Option<&str>,
+    ) -> Self {
         Self {
             enabled,
             base_url: base_url.to_owned(),
             api_key_env: api_key_env.to_owned(),
+            timeout_ms,
             model: model.map(str::to_owned),
         }
     }
@@ -108,7 +120,7 @@ pub fn render_config(plan: &ConfigPlan) -> String {
 format = "json"
 
 [network]
-timeout_ms = 30000
+timeout_ms = {network_timeout_ms}
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "lapis/0.1.0"
@@ -117,20 +129,20 @@ user_agent = "lapis/0.1.0"
 enabled = {}
 base_url = {}
 api_key_env = {}
-timeout_ms = 30000
+timeout_ms = {exa_timeout_ms}
 
 [search.providers.grok]
 enabled = {}
 base_url = {}
 api_key_env = {}
-timeout_ms = 30000
+timeout_ms = {grok_timeout_ms}
 model = {}
 
 [model.providers.openai]
 enabled = {}
 base_url = {}
 api_key_env = {}
-timeout_ms = 30000
+timeout_ms = {openai_timeout_ms}
 model = {}
 
 [budget.research]
@@ -158,6 +170,10 @@ timeout_ms = -1
         toml_string(&plan.openai.base_url),
         toml_string(&plan.openai.api_key_env),
         toml_string(plan.openai.model.as_deref().unwrap_or("gpt-5.5")),
+        network_timeout_ms = plan.network_timeout_ms,
+        exa_timeout_ms = plan.exa.timeout_ms,
+        grok_timeout_ms = plan.grok.timeout_ms,
+        openai_timeout_ms = plan.openai.timeout_ms,
     )
 }
 

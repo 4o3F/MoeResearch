@@ -1,12 +1,14 @@
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
 
 use clap::{Args, Subcommand};
-use lapis_config::load_config;
+use lapis_config::{LapisConfig, load_config};
 use lapis_error::{Error, Result};
 
 use crate::onboarding::claude::{
-    McpScope, claude_mcp_add_argv, mcp_servers_json, validate_mcp_name,
+    McpEnvVar, McpScope, claude_mcp_add_argv, mcp_servers_json, validate_mcp_name,
 };
 use crate::onboarding::config::{absolute_path, resolve_config_path};
 use crate::onboarding::output::format_command;
@@ -61,23 +63,8 @@ pub fn run_register(register_args: McpRegisterArgs) -> Result<()> {
     validate_mcp_name(&register_args.name)?;
     let config_path = absolute_path(&resolve_config_path(register_args.config))?;
     let lapis_bin = resolve_lapis_bin(register_args.lapis_bin)?;
-    let claude_args = claude_mcp_add_argv(
-        &register_args.name,
-        register_args.scope,
-        &lapis_bin,
-        &config_path,
-    );
 
-    if register_args.dry_run {
-        tracing::info!(
-            command = %format_command(&register_args.claude_bin, &claude_args),
-            config = %mcp_servers_json(&register_args.name, &lapis_bin, &config_path),
-            "would register Lapis MCP server"
-        );
-        return Ok(());
-    }
-
-    if register_args.scope.needs_confirmation() && !register_args.yes {
+    if !register_args.dry_run && register_args.scope.needs_confirmation() && !register_args.yes {
         return Err(Error::InvalidInput {
             message: format!(
                 "--scope {} changes shared or global Claude Code registration; pass --yes to confirm",
@@ -86,7 +73,32 @@ pub fn run_register(register_args: McpRegisterArgs) -> Result<()> {
         });
     }
 
-    load_config(Some(&config_path))?;
+    let config = load_config(Some(&config_path))?;
+    let provider_envs = provider_env_vars(&config);
+    let claude_args = claude_mcp_add_argv(
+        &register_args.name,
+        register_args.scope,
+        &lapis_bin,
+        &config_path,
+        &provider_envs,
+    );
+
+    if register_args.dry_run {
+        let redacted_envs = redacted_env_vars(&provider_envs);
+        let redacted_args = claude_mcp_add_argv(
+            &register_args.name,
+            register_args.scope,
+            &lapis_bin,
+            &config_path,
+            &redacted_envs,
+        );
+        tracing::info!(
+            command = %format_command(&register_args.claude_bin, &redacted_args),
+            config = %mcp_servers_json(&register_args.name, &lapis_bin, &config_path, &provider_envs),
+            "would register Lapis MCP server"
+        );
+        return Ok(());
+    }
 
     let status = ProcessCommand::new(&register_args.claude_bin)
         .args(&claude_args)
@@ -105,4 +117,28 @@ pub fn run_register(register_args: McpRegisterArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn provider_env_vars(config: &LapisConfig) -> Vec<McpEnvVar> {
+    let mut envs = BTreeMap::new();
+    for provider in config.enabled_provider_envs() {
+        if let Some(name) = provider.api_key_env
+            && let Some(value) = std::env::var_os(name)
+        {
+            envs.entry(name.to_owned()).or_insert(value);
+        }
+    }
+
+    envs.into_iter()
+        .map(|(name, value)| McpEnvVar { name, value })
+        .collect()
+}
+
+fn redacted_env_vars(envs: &[McpEnvVar]) -> Vec<McpEnvVar> {
+    envs.iter()
+        .map(|env| McpEnvVar {
+            name: env.name.clone(),
+            value: OsString::from("<redacted>"),
+        })
+        .collect()
 }

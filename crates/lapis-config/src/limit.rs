@@ -69,11 +69,11 @@ where
     T: JsonSchema,
 {
     fn schema_name() -> Cow<'static, str> {
-        format!("ConfigLimit_{}", T::schema_name()).into()
+        "ConfigLimit".into()
     }
 
     fn schema_id() -> Cow<'static, str> {
-        format!("{}::ConfigLimit<{}>", module_path!(), T::schema_id()).into()
+        format!("{}::ConfigLimit", module_path!()).into()
     }
 
     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {

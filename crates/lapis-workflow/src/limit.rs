@@ -17,11 +17,11 @@ where
     T: JsonSchema,
 {
     fn schema_name() -> Cow<'static, str> {
-        format!("Limit_{}", T::schema_name()).into()
+        "Limit".into()
     }
 
     fn schema_id() -> Cow<'static, str> {
-        format!("{}::Limit<{}>", module_path!(), T::schema_id()).into()
+        format!("{}::Limit", module_path!()).into()
     }
 
     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
@@ -36,6 +36,20 @@ where
 pub type CountLimit = Limit<usize>;
 pub type DurationLimitMs = Limit<u64>;
 pub type TokenLimit = Limit<u64>;
+
+pub(crate) fn non_negative_integer_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "integer",
+        "minimum": 0
+    })
+}
+
+pub(crate) fn optional_non_negative_integer_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": ["integer", "null"],
+        "minimum": 0
+    })
+}
 
 impl<T> Limit<T> {
     pub const fn limited(value: T) -> Self {

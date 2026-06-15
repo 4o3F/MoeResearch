@@ -1,4 +1,4 @@
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -13,6 +13,7 @@ pub struct ModelRequest {
     pub tools: Vec<ModelTool>,
     pub response_format: Option<ModelResponseFormat>,
     pub temperature: Option<f32>,
+    #[schemars(schema_with = "optional_non_negative_integer_schema")]
     pub max_tokens: Option<u32>,
 }
 
@@ -85,10 +86,20 @@ fn schema_error(message: &str) -> Error {
     }
 }
 
+fn optional_non_negative_integer_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": ["integer", "null"],
+        "minimum": 0
+    })
+}
+
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct TokenUsage {
+    #[schemars(schema_with = "optional_non_negative_integer_schema")]
     pub input_tokens: Option<u64>,
+    #[schemars(schema_with = "optional_non_negative_integer_schema")]
     pub output_tokens: Option<u64>,
+    #[schemars(schema_with = "optional_non_negative_integer_schema")]
     pub total_tokens: Option<u64>,
 }
 

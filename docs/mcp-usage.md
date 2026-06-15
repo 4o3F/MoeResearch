@@ -28,12 +28,12 @@ lapis mcp register --scope local --config ~/.config/lapis/lapis.toml
 The command invokes `claude mcp add` with the current `lapis` executable path by default:
 
 ```bash
-claude mcp add --transport stdio --scope local lapis -- /absolute/path/to/lapis serve --config /absolute/path/to/lapis.toml
+claude mcp add --transport stdio --scope local --env OPENAI_API_KEY=<redacted> lapis -- /absolute/path/to/lapis serve --config /absolute/path/to/lapis.toml
 ```
 
 Use `--lapis-bin` when Claude Code should launch a different binary.
 
-The registration command validates the config file and the environment variables for enabled providers before invoking `claude`. Use `--dry-run` to print the command and JSON example without calling `claude`:
+The registration command validates the config file and the environment variables for enabled providers before invoking `claude`. It copies current enabled-provider environment values into Claude Code registration with `--env`; use `--dry-run` to print the command and JSON example without calling `claude`, with values redacted:
 
 ```bash
 lapis mcp register --scope local --config ~/.config/lapis/lapis.toml --dry-run
@@ -47,13 +47,16 @@ For project-scoped configs, the equivalent `mcpServers` shape is:
     "lapis": {
       "type": "stdio",
       "command": "lapis",
-      "args": ["serve", "--config", "/absolute/path/to/lapis.toml"]
+      "args": ["serve", "--config", "/absolute/path/to/lapis.toml"],
+      "env": {
+        "OPENAI_API_KEY": "<redacted>"
+      }
     }
   }
 }
 ```
 
-Do not put provider API keys in Claude MCP config. Lapis reads provider secrets from the environment variables named by `api_key_env` in `lapis.toml`.
+Do not put provider API keys in `lapis.toml`. Lapis config stores only environment variable names in `api_key_env`; `lapis mcp register` reads current values for enabled providers and copies them into Claude Code registration. Dry-run output redacts the values.
 
 ## 2. MCP lifecycle
 

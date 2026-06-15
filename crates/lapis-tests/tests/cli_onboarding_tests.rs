@@ -9,7 +9,7 @@ const BASE_CONFIG: &str = r#"
 format = "json"
 
 [network]
-timeout_ms = 30000
+timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "lapis/0.1.0"
@@ -18,20 +18,20 @@ user_agent = "lapis/0.1.0"
 enabled = false
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
-timeout_ms = 30000
+timeout_ms = 120000
 
 [search.providers.grok]
 enabled = false
 base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
-timeout_ms = 30000
+timeout_ms = 120000
 model = "grok-4.3"
 
 [model.providers.openai]
 enabled = false
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
-timeout_ms = 30000
+timeout_ms = 120000
 model = "gpt-5.5"
 
 [budget.research]
@@ -148,6 +148,8 @@ fn init_writes_valid_config_without_raw_api_key() {
     );
     assert!(content.contains("[model.providers.openai]"));
     assert!(content.contains("api_key_env"));
+    assert!(content.contains("timeout_ms = 120000"));
+    assert!(!content.contains("timeout_ms = 30000"));
     assert!(!content.contains("api_key ="));
     lapis_config::load_config(Some(&config_path))
         .unwrap_or_else(|error| panic!("generated config should be valid: {error}"));
@@ -188,7 +190,7 @@ fn check_missing_config_returns_actionable_failure() {
     assert!(stdout.is_empty(), "stdout: {stdout}");
     assert!(stderr.contains("config"), "stderr: {stderr}");
     assert!(
-        stderr.contains("run `lapis init --config <path>`"),
+        stderr.contains("lapis onboard --force --config"),
         "stderr: {stderr}"
     );
 }
@@ -222,6 +224,11 @@ fn check_distinguishes_missing_enabled_provider_env() {
     assert!(stdout.is_empty(), "stdout: {stdout}");
     assert!(stderr.contains("config"), "stderr: {stderr}");
     assert!(stderr.contains(&missing_env), "stderr: {stderr}");
+    assert!(
+        stderr.contains("export the referenced api_key_env"),
+        "stderr: {stderr}"
+    );
+    assert!(!stderr.contains("onboard --force"), "stderr: {stderr}");
 }
 
 #[test]
@@ -360,27 +367,139 @@ fn onboard_dry_run_without_register_mcp_only_prints_next_step() {
 }
 
 #[test]
-fn mcp_register_dry_run_logs_claude_command_and_json_example() {
-    let config_path = temp_path("register.toml");
+fn onboard_dry_run_register_mcp_for_new_config_does_not_require_written_config() {
+    let config_path = temp_path("onboard-dry-run-register.toml");
 
     let output = lapis_command()
-        .args(["mcp", "register", "--dry-run", "--config"])
+        .args([
+            "onboard",
+            "--dry-run",
+            "--register-mcp",
+            "--enable-openai",
+            "--config",
+        ])
         .arg(&config_path)
+        .env("OPENAI_API_KEY", "raw-test-secret")
         .output()
-        .expect("run mcp dry-run");
+        .expect("run onboard dry-run register");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(output.status.success(), "stderr: {stderr}");
+    assert!(!config_path.exists());
     assert!(stdout.is_empty(), "stdout: {stdout}");
     assert!(
-        stderr.contains("claude mcp add --transport stdio --scope local lapis -- "),
+        stderr.contains("would write Lapis config"),
         "stderr: {stderr}"
     );
+    assert!(stderr.contains("claude mcp add"), "stderr: {stderr}");
+    assert!(stderr.contains("OPENAI_API_KEY"), "stderr: {stderr}");
+    assert!(stderr.contains("<redacted>"), "stderr: {stderr}");
+    assert!(!stderr.contains("raw-test-secret"));
+}
+
+#[test]
+fn onboard_existing_config_rejects_provider_flags_without_force() {
+    let config_path = temp_path("onboard-existing-flags.toml");
+    write_config(&config_path, BASE_CONFIG);
+
+    let output = lapis_command()
+        .args(["onboard", "--config"])
+        .arg(&config_path)
+        .arg("--enable-openai")
+        .output()
+        .expect("run onboard existing");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let content = std::fs::read_to_string(&config_path).expect("read config");
+    let _ = std::fs::remove_file(&config_path);
+
+    assert!(!output.status.success());
+    assert!(stderr.contains("--force"), "stderr: {stderr}");
+    assert!(content.contains("enabled = false"));
+}
+
+#[test]
+fn onboard_existing_config_without_provider_flags_continues_check() {
+    let config_path = temp_path("onboard-existing-check.toml");
+    write_config(&config_path, BASE_CONFIG);
+
+    let output = lapis_command()
+        .args(["onboard", "--config"])
+        .arg(&config_path)
+        .output()
+        .expect("run onboard existing");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let _ = std::fs::remove_file(&config_path);
+
+    assert!(!output.status.success());
+    assert!(
+        stderr.contains("using existing Lapis config"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("no model provider is enabled"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn onboard_force_allows_regenerating_existing_config() {
+    let config_path = temp_path("onboard-force.toml");
+    write_config(&config_path, BASE_CONFIG);
+
+    let output = lapis_command()
+        .args(["onboard", "--force", "--enable-openai", "--config"])
+        .arg(&config_path)
+        .env("OPENAI_API_KEY", "test-key")
+        .output()
+        .expect("run onboard force");
+    let content = std::fs::read_to_string(&config_path).expect("read config");
+    let _ = std::fs::remove_file(&config_path);
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(content.contains("enabled = true"));
+    assert!(content.contains("timeout_ms = 120000"));
+}
+
+#[test]
+fn mcp_register_dry_run_logs_claude_command_and_json_example() {
+    let config_path = temp_path("register.toml");
+    let env_name = format!("LAPIS_TEST_OPENAI_KEY_{}", std::process::id());
+    let config = BASE_CONFIG
+        .replace(
+            "[model.providers.openai]\nenabled = false",
+            "[model.providers.openai]\nenabled = true",
+        )
+        .replace(
+            "api_key_env = \"OPENAI_API_KEY\"",
+            &format!("api_key_env = \"{env_name}\""),
+        );
+    write_config(&config_path, &config);
+
+    let output = lapis_command()
+        .args(["mcp", "register", "--dry-run", "--config"])
+        .arg(&config_path)
+        .env(&env_name, "raw-test-secret")
+        .output()
+        .expect("run mcp dry-run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let _ = std::fs::remove_file(&config_path);
+
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(stdout.is_empty(), "stdout: {stdout}");
+    assert!(stderr.contains("claude mcp add"), "stderr: {stderr}");
+    assert!(stderr.contains("--env"), "stderr: {stderr}");
+    assert!(stderr.contains(&env_name), "stderr: {stderr}");
+    assert!(stderr.contains("<redacted>"), "stderr: {stderr}");
     assert!(stderr.contains(" serve --config"), "stderr: {stderr}");
     assert!(stderr.contains("mcpServers"));
     assert!(stderr.contains("stdio"));
-    assert!(!stderr.contains("OPENAI_API_KEY=\""));
+    assert!(!stderr.contains("raw-test-secret"));
 }
 
 #[test]
@@ -390,12 +509,23 @@ fn mcp_register_invokes_fake_claude_with_local_scope_by_default() {
     write_fake_claude(&fake_claude, &argv_path);
 
     let config_path = temp_path("register.toml");
-    write_config(&config_path, BASE_CONFIG);
+    let env_name = format!("LAPIS_TEST_REGISTER_KEY_{}", std::process::id());
+    let config = BASE_CONFIG
+        .replace(
+            "[model.providers.openai]\nenabled = false",
+            "[model.providers.openai]\nenabled = true",
+        )
+        .replace(
+            "api_key_env = \"OPENAI_API_KEY\"",
+            &format!("api_key_env = \"{env_name}\""),
+        );
+    write_config(&config_path, &config);
     let output = lapis_command()
         .args(["mcp", "register", "--claude-bin"])
         .arg(&fake_claude)
         .arg("--config")
         .arg(&config_path)
+        .env(&env_name, "raw-test-secret")
         .output()
         .expect("run mcp register");
     let argv = std::fs::read_to_string(&argv_path).expect("read fake argv");
@@ -408,8 +538,10 @@ fn mcp_register_invokes_fake_claude_with_local_scope_by_default() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(argv.contains("mcp\nadd\n--transport\nstdio\n--scope\nlocal\nlapis\n--\n"));
+    assert!(argv.contains("mcp\nadd\n--transport\nstdio\n--scope\nlocal\n--env\n"));
+    assert!(argv.contains(&format!("{env_name}=raw-test-secret\nlapis\n--\n")));
     assert!(argv.contains("\nserve\n--config\n"));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("raw-test-secret"));
 }
 
 #[test]

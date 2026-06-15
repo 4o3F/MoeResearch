@@ -361,6 +361,7 @@ fn count_limit_schema_matches_wire_format() {
 
     assert_eq!(schema.get("type"), Some(&json!(["integer", "null"])));
     assert_eq!(schema.get("minimum"), Some(&json!(-1)));
+    assert!(schema.get("format").is_none());
 }
 
 #[test]
@@ -370,6 +371,7 @@ fn duration_limit_schema_matches_wire_format() {
 
     assert_eq!(schema.get("type"), Some(&json!(["integer", "null"])));
     assert_eq!(schema.get("minimum"), Some(&json!(-1)));
+    assert!(schema.get("format").is_none());
 }
 
 #[test]

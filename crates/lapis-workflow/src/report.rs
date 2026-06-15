@@ -101,9 +101,13 @@ pub struct AspectFailure {
 pub use lapis_model::TokenUsage;
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct AgentBudgetUsage {
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub turns_used: usize,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub tool_calls_used: usize,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub search_calls_used: usize,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub elapsed_ms: u64,
 }
 
@@ -122,9 +126,13 @@ impl AgentBudgetUsage {
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ResearchBudgetUsage {
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub agents_started: usize,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub model_calls_used: usize,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub search_calls_used: usize,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub elapsed_ms: u64,
     pub token_usage: Option<TokenUsage>,
 }
@@ -175,9 +183,13 @@ pub struct ValidationIssue {
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct CoverageSummary {
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub requested_aspects: usize,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub completed_aspects: usize,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub failed_aspects: usize,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub evidence_count: usize,
 }
 
@@ -196,8 +208,11 @@ impl CoverageSummary {
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ConfidenceSummary {
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub high: usize,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub medium: usize,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub low: usize,
 }
 

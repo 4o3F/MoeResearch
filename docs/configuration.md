@@ -32,11 +32,11 @@ lapis serve --config /absolute/path/to/lapis.toml
 
 ## 2. Secret handling
 
-Lapis onboarding preserves the `api_key_env` secret model. The CLI does not accept raw provider keys, does not write keys to config, and does not pass keys to Claude Code MCP registration commands.
+Lapis onboarding preserves the `api_key_env` secret model. The CLI does not accept raw provider keys and does not write keys to config.
 
 Do not put real API keys in `lapis.toml`.
 
-Provider entries store environment variable names in `api_key_env`; the server reads the corresponding environment variable at startup.
+Provider entries store environment variable names in `api_key_env`; the server reads the corresponding environment variable at startup. `lapis mcp register` copies current values for enabled provider environment variables into Claude Code registration, while dry-run output redacts those values.
 
 ```toml
 [model.providers.openai]
@@ -61,7 +61,7 @@ export OPENAI_API_KEY="..."
 format = "json"
 
 [network]
-timeout_ms = 30000
+timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "lapis/0.1.0"
@@ -70,20 +70,20 @@ user_agent = "lapis/0.1.0"
 enabled = false
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
-timeout_ms = 30000
+timeout_ms = 120000
 
 [search.providers.grok]
 enabled = false
 base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
-timeout_ms = 30000
+timeout_ms = 120000
 model = "grok-4.3"
 
 [model.providers.openai]
 enabled = false
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
-timeout_ms = 30000
+timeout_ms = 120000
 model = "gpt-5.5"
 ```
 
@@ -104,14 +104,14 @@ Example:
 enabled = true
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
-timeout_ms = 30000
+timeout_ms = 120000
 model = "gpt-5.5"
 
 [search.providers.grok]
 enabled = true
 base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
-timeout_ms = 30000
+timeout_ms = 120000
 model = "grok-4.3"
 reasoning_effort = "high"
 max_output_tokens = 1024
@@ -132,7 +132,7 @@ Do not configure search `depth`, `content_level`, `recency`, `category`, or Exa-
 
 ```toml
 [network]
-timeout_ms = 30000
+timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "lapis/0.1.0"
@@ -142,7 +142,7 @@ Fields:
 
 | Field | Meaning |
 | --- | --- |
-| `timeout_ms` | Default request timeout in milliseconds. Must be greater than zero. |
+| `timeout_ms` | Default request timeout in milliseconds. Generated configs use `120000` for research-safe provider calls. Must be greater than zero. |
 | `max_retries` | Number of retry attempts for retryable network failures. |
 | `retry_backoff_ms` | Backoff base in milliseconds. |
 | `user_agent` | HTTP user-agent value. Must be non-empty and valid as a header value. |

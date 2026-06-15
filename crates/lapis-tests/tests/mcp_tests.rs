@@ -106,21 +106,17 @@ fn aspect_research_tool_schema_uses_limit_wire_format() {
         .get_tool("aspect_research")
         .expect("aspect research tool");
     let schema = serde_json::Value::Object(tool.input_schema.as_ref().clone());
-    let limit = schema
-        .pointer("/$defs/Limit_uint")
-        .expect("count limit schema");
-    let duration_limit = schema
-        .pointer("/$defs/Limit_uint64")
-        .expect("duration limit schema");
+    let limit = schema.pointer("/$defs/Limit").expect("shared limit schema");
 
     assert_eq!(limit.get("type"), Some(&json!(["integer", "null"])));
     assert_eq!(limit.get("minimum"), Some(&json!(-1)));
-    assert_eq!(
-        duration_limit.get("type"),
-        Some(&json!(["integer", "null"]))
+    let schema_json = schema.to_string();
+    assert!(!schema_json.contains("Limited"));
+    assert!(!schema_json.contains("\"format\":\"uint"));
+    assert!(
+        schema_json.contains("\"minimum\":0"),
+        "unsigned integer schema fields should advertise a non-negative minimum"
     );
-    assert_eq!(duration_limit.get("minimum"), Some(&json!(-1)));
-    assert!(!schema.to_string().contains("Limited"));
 }
 
 #[test]
@@ -685,7 +681,7 @@ fn cli_serve_writes_startup_logs_to_stderr_not_stdout() {
 format = "json"
 
 [network]
-timeout_ms = 30000
+timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "lapis/0.1.0"
@@ -694,20 +690,20 @@ user_agent = "lapis/0.1.0"
 enabled = false
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
-timeout_ms = 30000
+timeout_ms = 120000
 
 [search.providers.grok]
 enabled = false
 base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
-timeout_ms = 30000
+timeout_ms = 120000
 model = "grok-4.3"
 
 [model.providers.openai]
 enabled = false
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
-timeout_ms = 30000
+timeout_ms = 120000
 model = "gpt-5.5"
 
 [budget.research]

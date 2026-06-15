@@ -49,7 +49,7 @@ Register Lapis with Claude Code:
 ./target/release/lapis mcp register --scope local --config ~/.config/lapis/lapis.toml
 ```
 
-By default, registration records the current `lapis` executable path. Pass `--lapis-bin` only when Claude Code should launch a different binary. Registration validates enabled-provider environment variables before invoking `claude`.
+By default, registration records the current `lapis` executable path. Pass `--lapis-bin` only when Claude Code should launch a different binary. Registration validates enabled-provider environment variables before invoking `claude` and forwards their current values into Claude Code registration with redacted dry-run output.
 
 Start the MCP server manually when needed:
 

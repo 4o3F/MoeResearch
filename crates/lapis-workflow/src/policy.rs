@@ -37,6 +37,7 @@ impl AsRef<str> for ToolName {
 pub struct ModelPolicy {
     pub allowed_providers: Vec<String>,
     pub temperature: Option<f32>,
+    #[schemars(schema_with = "crate::limit::optional_non_negative_integer_schema")]
     pub max_tokens: Option<u32>,
     pub require_tool_call_support: bool,
 }
@@ -46,6 +47,7 @@ pub use lapis_search::{Freshness, SearchCategory, SearchContentLevel, SearchDept
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct SearchPolicy {
     pub allowed_providers: Vec<String>,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub max_results_per_query: usize,
     pub freshness: Option<Freshness>,
     pub depth: Option<SearchDepth>,
@@ -186,12 +188,14 @@ impl SearchPolicy {
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct EvidencePolicy {
     pub require_evidence_for_findings: bool,
+    #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
     pub min_evidence_per_finding: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct OutputPolicy {
     pub language: String,
+    #[schemars(schema_with = "crate::limit::optional_non_negative_integer_schema")]
     pub max_findings_per_aspect: Option<usize>,
 }
 
