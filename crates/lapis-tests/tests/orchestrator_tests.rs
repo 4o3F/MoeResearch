@@ -847,7 +847,11 @@ async fn aspect_research_uses_configured_research_model_call_budget() {
         .await
         .expect_err("configured research model budget should cap aspect_research");
 
-    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
+    assert!(matches!(&failure.error, Error::BudgetExceeded { .. }));
+    let partial = failure.partial_output.expect("partial evidence output");
+    assert_eq!(partial.result.evidence.len(), 1);
+    assert!(partial.result.aspect_report.findings.is_empty());
+    assert!(partial.result.aspect_report.limitations[0].contains("budget_exceeded"));
     assert_eq!(model_calls.load(Ordering::SeqCst), 1);
     assert_eq!(search_calls.load(Ordering::SeqCst), 1);
 }
@@ -1102,7 +1106,10 @@ async fn rejects_tampered_evidence_provenance() {
     .await
     .expect_err("tampered evidence rejected");
 
-    assert!(matches!(error.error, Error::SchemaValidationFailed { .. }));
+    assert!(matches!(&error.error, Error::SchemaValidationFailed { .. }));
+    let partial = error.partial_output.expect("partial evidence output");
+    assert_eq!(partial.result.evidence.len(), 1);
+    assert!(partial.result.aspect_report.findings.is_empty());
 }
 
 #[tokio::test]
@@ -1401,7 +1408,11 @@ async fn provider_failure_returns_error_after_prior_successful_search() {
     .await
     .expect_err("provider failure");
 
-    assert!(matches!(failure.error, Error::NetworkFailed { .. }));
+    assert!(matches!(&failure.error, Error::NetworkFailed { .. }));
+    let partial = failure.partial_output.expect("partial evidence output");
+    assert_eq!(partial.result.evidence.len(), 1);
+    assert!(partial.result.aspect_report.findings.is_empty());
+    assert!(partial.result.aspect_report.limitations[0].contains("network request failed"));
     assert_eq!(search_calls.load(Ordering::SeqCst), 2);
 }
 
@@ -1531,7 +1542,8 @@ async fn invalid_final_output_returns_schema_failure() {
     .await
     .expect_err("schema error");
 
-    assert!(matches!(error.error, Error::SchemaValidationFailed { .. }));
+    assert!(matches!(&error.error, Error::SchemaValidationFailed { .. }));
+    assert!(error.partial_output.is_none());
 }
 
 /// Returns a model response with two tool calls sharing the same `id`, so the

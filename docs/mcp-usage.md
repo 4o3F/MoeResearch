@@ -344,7 +344,7 @@ Fields:
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `allow_partial_results` | boolean | Yes | For `deep_research`, return partial output when at least one aspect succeeds. |
+| `allow_partial_results` | boolean | Yes | Return usable partial output when evidence was collected before a terminal failure; `deep_research` may return partial data even when all aspects failed. |
 | `fail_fast` | boolean | Yes | For `deep_research`, stop after the first aspect failure when possible. |
 | `timeout_ms` | limit | Yes | Request timeout in milliseconds. Use `-1` for unlimited. |
 
@@ -745,7 +745,7 @@ Use `deep_research` when the client wants the MCP server to run multiple aspect 
 }
 ```
 
-`status` may be `partial` when at least one aspect succeeds and at least one aspect fails while `execution_policy.allow_partial_results` is true. In that case, `data.failed_aspects` describes failed aspect-level work.
+`status` may be `partial` when `execution_policy.allow_partial_results` is true and usable evidence was collected before a terminal failure. For `deep_research`, `data.failed_aspects` describes failed aspect-level work and `data.evidence_index` may include evidence from failed aspects even when `completed_aspects` is empty. For `aspect_research`, `data` contains collected evidence with no findings, while `error` preserves the original failure metadata.
 
 ## 8. MCP response envelope
 
@@ -784,14 +784,14 @@ Envelope fields:
 | `run_id` | string or null | Present for successful or partial `deep_research`; null for `aspect_research`. |
 | `status` | `ok`, `partial`, or `failed` | Tool-level outcome. |
 | `data` | object or null | Tool result when status is `ok` or `partial`. |
-| `error` | `ToolError` or null | Public-safe error when status is `failed`. |
+| `error` | `ToolError` or null | Public-safe error when status is `failed`; also present for `aspect_research` partial failures. |
 
 Status values:
 
 | Status | Meaning |
 | --- | --- |
 | `ok` | Tool completed successfully. |
-| `partial` | `deep_research` produced usable partial output. |
+| `partial` | The tool produced usable partial output; `deep_research` may have only failed aspects with preserved evidence, and `aspect_research` may include both `data` and `error`. |
 | `failed` | Tool failed and no result data is available. |
 
 ## 9. Result object schemas
@@ -903,7 +903,7 @@ ResearchBudgetUsage
 
 ## 10. Error format
 
-When `status` is `failed`, `error` has this shape:
+When `status` is `failed`, or when single-aspect `aspect_research` returns partial evidence with original failure metadata, `error` has this shape:
 
 ```json
 {
