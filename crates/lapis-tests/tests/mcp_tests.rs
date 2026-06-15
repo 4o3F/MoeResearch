@@ -180,7 +180,7 @@ async fn aspect_research_invalid_input_returns_failed_envelope() {
 }
 
 #[tokio::test]
-async fn aspect_research_budget_failure_envelope_returns_tool_error() {
+async fn aspect_research_budget_failure_envelope_returns_partial_with_tool_error() {
     let mut request = aspect_request();
     request.task.budget.max_search_calls = Limit::limited(2);
     let services = sequence_services(vec![tool_response(), tool_response(), tool_response()]);
@@ -191,13 +191,42 @@ async fn aspect_research_budget_failure_envelope_returns_tool_error() {
         .await
         .0;
 
-    assert_eq!(envelope.status, ToolStatus::Failed);
-    assert!(envelope.data.is_none());
+    assert_eq!(envelope.status, ToolStatus::Partial);
+    assert!(envelope.run_id.is_none());
+    let data = envelope.data.expect("partial aspect data");
+    assert_eq!(data.evidence.len(), 2);
+    assert!(data.aspect_report.findings.is_empty());
+    assert!(data.aspect_report.limitations[0].contains("budget_exceeded"));
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::BudgetExceeded);
+    assert_eq!(error.message, "agent search call budget exhausted");
+    assert_eq!(error.aspect_id.as_deref(), Some("aspect-1"));
+    assert!(!error.retryable);
     assert!(error.failed_aspects.is_empty());
-    assert!(envelope.run_id.is_none());
     assert_eq!(search_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn aspect_research_partial_failure_disabled_returns_failed_envelope() {
+    let mut request = aspect_request();
+    request.execution_policy.allow_partial_results = false;
+    request.task.budget.max_search_calls = Limit::limited(1);
+    let services = sequence_services(vec![tool_response(), tool_response()]);
+    let search_calls = services.search_calls.clone();
+
+    let envelope = mcp_server(services)
+        .aspect_research(Parameters(request))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    assert!(envelope.data.is_none());
+    assert!(envelope.run_id.is_none());
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::BudgetExceeded);
+    assert_eq!(error.aspect_id.as_deref(), Some("aspect-1"));
+    assert!(error.failed_aspects.is_empty());
+    assert_eq!(search_calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -297,28 +326,30 @@ async fn deep_research_post_run_budget_partial_returns_partial_envelope_with_dat
 }
 
 #[tokio::test]
-async fn deep_research_all_failed_returns_failed_envelope_with_tool_error() {
+async fn deep_research_all_failed_with_partial_evidence_returns_partial_envelope() {
     let envelope = mcp_server(services(&["aspect-1", "aspect-2"]))
         .deep_research(Parameters(deep_request(2)))
         .await
         .0;
 
-    assert_eq!(envelope.status, ToolStatus::Failed);
-    assert!(envelope.data.is_none());
-    let error = envelope.error.expect("tool error");
-    assert_eq!(error.code, ToolErrorCode::PartialResult);
-    assert!(error.aspect_id.is_none());
-    assert_eq!(error.failed_aspects.len(), 2);
-    assert_eq!(error.failed_aspects[0].aspect_id, "aspect-1");
-    assert_eq!(error.failed_aspects[1].aspect_id, "aspect-2");
+    assert_eq!(envelope.status, ToolStatus::Partial);
+    assert!(envelope.error.is_none());
+    let data = envelope.data.expect("partial deep data");
+    assert!(data.completed_aspects.is_empty());
+    assert!(data.aspect_reports.is_empty());
+    assert_eq!(data.failed_aspects.len(), 2);
+    assert_eq!(data.failed_aspects[0].aspect_id, "aspect-1");
+    assert_eq!(data.failed_aspects[1].aspect_id, "aspect-2");
     assert_eq!(
-        error.failed_aspects[0].error_code,
+        data.failed_aspects[0].error_code,
         "schema_validation_failed"
     );
     assert_eq!(
-        error.failed_aspects[1].error_code,
+        data.failed_aspects[1].error_code,
         "schema_validation_failed"
     );
+    assert_eq!(data.evidence_index.len(), 2);
+    assert_eq!(data.coverage_summary.completed_aspects, 0);
 }
 
 #[tokio::test]
@@ -510,9 +541,9 @@ async fn tool_envelope_ok_serializes_null_run_id_and_null_error() {
     assert!(object["error"].is_null(), "error must serialize as null");
 }
 
-/// Partial envelopes MUST surface `run_id`, populated `data`, and an explicit
-/// `error: null` so clients can distinguish the partial path from a failed
-/// envelope without inspecting `status`.
+/// Deep-research partial envelopes MUST surface `run_id`, populated `data`, and
+/// an explicit `error: null` so clients can distinguish the aggregated partial
+/// path from a failed envelope without inspecting `status`.
 #[tokio::test]
 async fn tool_envelope_partial_includes_data_and_null_error_with_run_id() {
     let envelope = mcp_server(services(&["aspect-2"]))
@@ -526,6 +557,28 @@ async fn tool_envelope_partial_includes_data_and_null_error_with_run_id() {
     assert!(object["data"].is_object(), "data must be populated");
     assert!(object.contains_key("error"));
     assert!(object["error"].is_null(), "error must serialize as null");
+}
+
+/// Single-aspect partial envelopes preserve the original failure metadata in
+/// `error` while returning the collected evidence in `data`.
+#[tokio::test]
+async fn tool_envelope_aspect_partial_serializes_data_and_error() {
+    let mut request = aspect_request();
+    request.task.budget.max_search_calls = Limit::limited(1);
+    let envelope = mcp_server(sequence_services(vec![tool_response(), tool_response()]))
+        .aspect_research(Parameters(request))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Partial);
+    let value = serde_json::to_value(&envelope).expect("envelope json");
+    let object = value.as_object().expect("object envelope");
+    assert!(object["run_id"].is_null(), "run_id must serialize as null");
+    assert!(object["data"].is_object(), "data must be populated");
+    assert!(object["error"].is_object(), "error must be populated");
+    assert_eq!(object["data"]["aspect_report"]["findings"], json!([]));
+    assert_eq!(object["error"]["code"], json!("budget_exceeded"));
+    assert_eq!(object["error"]["aspect_id"], json!("aspect-1"));
 }
 
 /// Failed envelopes MUST serialize `run_id: null` and `data: null` so clients

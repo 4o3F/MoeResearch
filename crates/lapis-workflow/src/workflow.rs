@@ -123,9 +123,10 @@ pub async fn deep_research(
             }
         }
         let terminal_failures_added = run.failures.len() - failures_before;
+        let has_partial_payload = !run.completed.is_empty() || !run.evidence_by_id.is_empty();
         let return_partial = request.execution_policy.allow_partial_results
-            && !run.completed.is_empty()
-            && terminal_failures_added > 0;
+            && has_partial_payload
+            && (!run.failures.is_empty() || terminal_failures_added > 0);
         tracing::warn!(
             request_id = %request_id,
             run_id = %run_id,
@@ -246,8 +247,7 @@ async fn execute_aspects(
                 budget_config,
                 research_budget,
             )
-            .await
-            .map_err(|failure| failure.error);
+            .await;
             (aspect_id, result)
         }
     }))
@@ -259,7 +259,12 @@ async fn execute_aspects(
     );
 
     while let Some((aspect_id, result)) = results.next().await {
-        record_aspect_result(&mut run, &aspect_id, result);
+        record_aspect_result(
+            &mut run,
+            &aspect_id,
+            result,
+            request.execution_policy.allow_partial_results,
+        );
         if request.execution_policy.fail_fast && !run.failures.is_empty() {
             break;
         }
@@ -281,7 +286,10 @@ async fn run_aspect_runtime(
             supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
             supported_tool_name: SEARCH_TOOL_NAME,
         })
-        .map_err(|error| AgentRuntimeFailure { error })?;
+        .map_err(|error| AgentRuntimeFailure {
+            error,
+            partial_output: None,
+        })?;
     AgentRuntime::new(model_service, search_service, &request, research_budget)
         .run()
         .await
@@ -357,13 +365,22 @@ fn aspect_requests(request: &DeepResearchRequest) -> Vec<AspectResearchRequest> 
 fn record_aspect_result(
     run: &mut DeepResearchRun,
     aspect_id: &str,
-    result: Result<AgentRuntimeOutput>,
+    result: std::result::Result<AgentRuntimeOutput, AgentRuntimeFailure>,
+    allow_partial_results: bool,
 ) {
     match result {
         Ok(result) => record_aspect_success(run, result),
-        Err(error) => {
-            let failure = aspect_failure(aspect_id, &error);
-            run.failures.push(failure);
+        Err(mut failure) => {
+            let aspect_error = aspect_failure(aspect_id, &failure.error);
+            if allow_partial_results && let Some(mut output) = failure.partial_output.take() {
+                namespace_aspect_evidence(&mut output.result);
+                for evidence in &output.result.evidence {
+                    run.evidence_by_id
+                        .entry(evidence.id.clone())
+                        .or_insert_with(|| evidence.clone());
+                }
+            }
+            run.failures.push(aspect_error);
         }
     }
 }
@@ -412,7 +429,9 @@ fn finalize_deep_result(
     run: DeepResearchRun,
     run_id: String,
 ) -> std::result::Result<DeepResearchResult, Box<DeepResearchFailure>> {
-    if run.completed.is_empty() {
+    if run.completed.is_empty()
+        && (!request.execution_policy.allow_partial_results || run.evidence_by_id.is_empty())
+    {
         return Err(DeepResearchFailure::with_aspects(
             Error::PartialResult {
                 message: "all aspects failed".to_owned(),

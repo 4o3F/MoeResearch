@@ -8,7 +8,8 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use crate::limit::{DurationLimitMs, Limit};
 use crate::policy::SearchPolicy;
 use crate::report::{
-    AgentBudgetUsage, AspectResearchResult, Confidence, Evidence, SourceType, TokenUsage,
+    AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, SourceType,
+    TokenUsage,
 };
 use crate::research::{ASPECT_PROMPT_MAX_BYTES, AspectResearchRequest};
 use crate::runtime_budget::{AgentBudgetGuard, ResearchBudgetGuard};
@@ -40,6 +41,7 @@ pub struct AgentRuntimeOutput {
 #[derive(Debug)]
 pub struct AgentRuntimeFailure {
     pub error: Error,
+    pub partial_output: Option<AgentRuntimeOutput>,
 }
 
 impl AgentRuntimeOutput {
@@ -650,8 +652,47 @@ impl<'a> AgentRuntime<'a> {
         .to_string()
     }
 
+    fn partial_output(
+        &self,
+        error: &Error,
+        state: &RuntimeState,
+        budget: &AgentBudgetGuard,
+    ) -> Option<AgentRuntimeOutput> {
+        if state.candidate_evidence.is_empty() {
+            return None;
+        }
+
+        Some(AgentRuntimeOutput {
+            result: AspectResearchResult {
+                aspect_report: AspectReport {
+                    aspect_id: self.request.task.aspect.aspect_id.clone(),
+                    aspect_name: self.request.task.aspect.name.clone(),
+                    question: self.request.task.aspect.research_question.clone(),
+                    scope: self.request.task.aspect.scope.clone(),
+                    findings: Vec::new(),
+                    assumptions: Vec::new(),
+                    risks: Vec::new(),
+                    counterarguments: Vec::new(),
+                    open_questions: Vec::new(),
+                    confidence: Confidence::Low,
+                    limitations: vec![format!(
+                        "terminal failure [{}]: {}",
+                        error.code().as_str(),
+                        error.public_message()
+                    )],
+                },
+                evidence: state.candidate_evidence.clone(),
+            },
+            budget_usage: budget.usage(),
+            token_usage: state.token_usage.clone(),
+        })
+    }
+
     fn untraced_failure(error: Error) -> AgentRuntimeFailure {
-        AgentRuntimeFailure { error }
+        AgentRuntimeFailure {
+            error,
+            partial_output: None,
+        }
     }
 
     /// Records a terminal agent failure with full diagnostic context and
@@ -667,6 +708,7 @@ impl<'a> AgentRuntime<'a> {
         budget: &AgentBudgetGuard,
     ) -> AgentRuntimeFailure {
         let budget_usage = budget.usage();
+        let partial_output = self.partial_output(&error, state, budget);
         tracing::warn!(
             request_id = %self.request.request_id,
             aspect_id = %self.request.task.aspect.aspect_id,
@@ -681,7 +723,10 @@ impl<'a> AgentRuntime<'a> {
             status = "failed",
             "agent runtime failed"
         );
-        AgentRuntimeFailure { error }
+        AgentRuntimeFailure {
+            error,
+            partial_output,
+        }
     }
 }
 

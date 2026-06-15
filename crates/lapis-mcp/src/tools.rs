@@ -22,6 +22,7 @@ impl LapisMcpServer {
         let schema_version = request.schema_version.clone();
         let request_id = request.request_id.clone();
         let aspect_id = request.task.aspect.aspect_id.clone();
+        let allow_partial_results = request.execution_policy.allow_partial_results;
         tracing::info!(
             request_id = %request_id,
             aspect_id = %aspect_id,
@@ -48,7 +49,8 @@ impl LapisMcpServer {
                     );
                     aspect_success_envelope(schema_version, request_id, output)
                 }
-                Err(failure) => {
+                Err(mut failure) => {
+                    let return_partial = allow_partial_results && failure.partial_output.is_some();
                     tracing::warn!(
                         request_id = %request_id,
                         aspect_id = %aspect_id,
@@ -56,16 +58,32 @@ impl LapisMcpServer {
                         error_code = failure.error.code().as_str(),
                         error_detail = %failure.error.public_message(),
                         retryable = failure.error.retryable(),
-                        status = "failed",
+                        status = if return_partial { "partial" } else { "failed" },
                         "MCP tool failed"
                     );
-                    failed_envelope(
-                        schema_version,
-                        request_id,
-                        Some(aspect_id.clone()),
-                        &failure.error,
-                        Vec::new(),
-                    )
+                    if return_partial {
+                        let output = failure.partial_output.take().expect("partial output");
+                        ToolEnvelope {
+                            schema_version,
+                            request_id,
+                            run_id: None,
+                            status: ToolStatus::Partial,
+                            data: Some(output.result),
+                            error: Some(tool_error_from_error(
+                                &failure.error,
+                                Some(aspect_id.clone()),
+                                Vec::new(),
+                            )),
+                        }
+                    } else {
+                        failed_envelope(
+                            schema_version,
+                            request_id,
+                            Some(aspect_id.clone()),
+                            &failure.error,
+                            Vec::new(),
+                        )
+                    }
                 }
             },
         )

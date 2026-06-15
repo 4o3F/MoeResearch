@@ -368,7 +368,9 @@ ToolError
 - `ToolEnvelope` 的顶层字段始终序列化；无值字段使用 JSON `null`，不省略 key。
 - `ToolError.failed_aspects` 始终存在；没有 aspect 级失败时为 `[]`，不使用 `null` 或省略字段。
 - `status=ok` 时，`data` 承载 Layer 2 输出的业务结果；单 aspect 成功结果不在 `data` 中携带 runtime trace、provider usage 或 budget usage。
-- `status=partial` 用于多 aspect 工作流中部分 aspect 失败但整体仍返回可用结果的场景。
+- `status=partial` 用于返回可用部分结果的场景：`deep_research` 可在部分或全部 aspect 失败但已收集证据时返回 partial；`aspect_research` 可在已收集证据后遇到终止失败时返回 partial。
+- `aspect_research` 的 partial envelope 同时携带 `data` 和 `error`：`data.evidence` 为运行时已收集证据，`data.aspect_report.findings=[]`，`error` 保留原始失败 code、message、aspect_id 与 retryable。
+- `deep_research` 的 partial envelope 将失败 aspect 的已收集证据纳入 `data.evidence_index`，但失败 aspect 不进入 `completed_aspects` 或 `aspect_reports`。
 - `status=failed` 时，`data` 为 `null`，`error` 说明失败原因；`schema_validation_failed` 的 `error.message` 可包含经过整理的校验 code、JSON path 和可读诊断；运行期 model/search/tool call 诊断通过结构化 `tracing` 日志输出。
 - `run_id` 对 `deep_research` 成功或部分成功结果必填，并与 `DeepResearchResult.run_id` 一致；单 aspect 工具可返回 `null`，调用方应使用 `request_id` 与 `aspect_id` 关联日志。
 - terminal `deep_research` 若由 aspect failures 聚合导致，顶层 `error.code` 使用 `partial_result`，每个 aspect 的真实 `error_code`、`message` 和 `retryable` 写入 `error.failed_aspects`，顺序与请求中的 `aspect_tasks` 一致。

@@ -72,13 +72,52 @@ async fn returns_partial_result_after_single_aspect_failure() {
     .expect("partial result");
 
     assert_eq!(result.completed_aspects.len(), 2);
+    assert!(!result.completed_aspects.iter().any(|id| id == "aspect-2"));
     assert_eq!(result.failed_aspects.len(), 1);
     assert_eq!(result.failed_aspects[0].aspect_id, "aspect-2");
+    assert_eq!(result.aspect_reports.len(), 2);
+    assert_eq!(result.evidence_index.len(), 3);
+    assert!(
+        result
+            .evidence_index
+            .iter()
+            .any(|evidence| evidence.id.starts_with("aspect-2:"))
+    );
 }
 
 #[tokio::test]
-async fn all_aspects_failed_returns_error() {
+async fn all_aspects_failed_with_partial_evidence_returns_partial_result() {
     let request = deep_request(2);
+    let services = services(&["aspect-1", "aspect-2"]);
+
+    let result = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect("partial result");
+
+    assert!(result.completed_aspects.is_empty());
+    assert!(result.aspect_reports.is_empty());
+    assert_eq!(result.failed_aspects.len(), 2);
+    assert_eq!(result.failed_aspects[0].aspect_id, "aspect-1");
+    assert_eq!(result.failed_aspects[1].aspect_id, "aspect-2");
+    assert_eq!(
+        result.failed_aspects[0].error_code,
+        "schema_validation_failed"
+    );
+    assert_eq!(result.evidence_index.len(), 2);
+    assert_eq!(result.coverage_summary.completed_aspects, 0);
+    assert_eq!(result.coverage_summary.failed_aspects, 2);
+    assert_eq!(result.coverage_summary.evidence_count, 2);
+}
+
+#[tokio::test]
+async fn all_aspects_failed_with_partial_evidence_and_partials_disabled_returns_error() {
+    let mut request = deep_request(2);
+    request.execution_policy.allow_partial_results = false;
     let services = services(&["aspect-1", "aspect-2"]);
 
     let failure = deep_research(
@@ -88,16 +127,12 @@ async fn all_aspects_failed_returns_error() {
         &unlimited_budget_config(),
     )
     .await
-    .expect_err("all failed");
+    .expect_err("partial disabled");
 
     assert!(matches!(failure.error, Error::PartialResult { .. }));
     assert_eq!(failure.failed_aspects.len(), 2);
     assert_eq!(failure.failed_aspects[0].aspect_id, "aspect-1");
     assert_eq!(failure.failed_aspects[1].aspect_id, "aspect-2");
-    assert_eq!(
-        failure.failed_aspects[0].error_code,
-        "schema_validation_failed"
-    );
 }
 
 #[tokio::test]
@@ -127,18 +162,19 @@ async fn fail_fast_stops_before_scheduling_remaining_aspects() {
     request.execution_policy.fail_fast = true;
     let services = services(&["aspect-1"]);
 
-    let failure = deep_research(
+    let result = deep_research(
         request,
         &services.model,
         &services.search,
         &unlimited_budget_config(),
     )
     .await
-    .expect_err("fail fast error");
+    .expect("partial result");
 
-    assert!(matches!(failure.error, Error::PartialResult { .. }));
-    assert_eq!(failure.failed_aspects.len(), 1);
-    assert_eq!(failure.failed_aspects[0].aspect_id, "aspect-1");
+    assert!(result.completed_aspects.is_empty());
+    assert_eq!(result.failed_aspects.len(), 1);
+    assert_eq!(result.failed_aspects[0].aspect_id, "aspect-1");
+    assert_eq!(result.evidence_index.len(), 1);
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
     assert_eq!(services.search_calls.load(Ordering::SeqCst), 1);
 }
@@ -504,13 +540,14 @@ async fn request_budget_max_tokens_is_clamped_to_config_cap() {
         per_agent: AgentBudget::unlimited(),
     };
 
-    let failure = deep_research(request, &services.model, &services.search, &limits)
+    let result = deep_research(request, &services.model, &services.search, &limits)
         .await
-        .expect_err("configured token budget should cap request");
+        .expect("partial result");
 
-    assert!(matches!(failure.error, Error::PartialResult { .. }));
-    assert_eq!(failure.failed_aspects.len(), 1);
-    assert_eq!(failure.failed_aspects[0].error_code, "budget_exceeded");
+    assert!(result.completed_aspects.is_empty());
+    assert_eq!(result.failed_aspects.len(), 1);
+    assert_eq!(result.failed_aspects[0].error_code, "budget_exceeded");
+    assert_eq!(result.evidence_index.len(), 1);
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
 }
 
@@ -534,7 +571,13 @@ async fn post_run_timeout_preserves_completed_aspect_when_partial_allowed() {
 
     assert_eq!(result.completed_aspects, vec!["aspect-1".to_owned()]);
     assert_eq!(result.aspect_reports.len(), 1);
-    assert_eq!(result.evidence_index.len(), 1);
+    assert_eq!(result.evidence_index.len(), 2);
+    assert!(
+        result
+            .evidence_index
+            .iter()
+            .any(|evidence| evidence.id.starts_with("aspect-2:"))
+    );
     assert_eq!(result.failed_aspects.len(), 2);
     assert_eq!(result.failed_aspects[0].aspect_id, "aspect-2");
     assert_eq!(result.failed_aspects[1].aspect_id, "aspect-3");
@@ -543,6 +586,32 @@ async fn post_run_timeout_preserves_completed_aspect_when_partial_allowed() {
     assert_eq!(result.coverage_summary.requested_aspects, 3);
     assert_eq!(result.coverage_summary.completed_aspects, 1);
     assert_eq!(result.coverage_summary.failed_aspects, 2);
+}
+
+#[tokio::test]
+async fn post_run_timeout_preserves_failed_aspect_evidence_when_none_completed() {
+    let mut request = deep_request(1);
+    request.budget.max_concurrent_agents = Limit::limited(1);
+    request.budget.total_timeout_ms = Limit::limited(50);
+    request.execution_policy.timeout_ms = Limit::limited(50);
+    let services = services_with_delay(&["aspect-1"], Duration::from_millis(30));
+
+    let result = deep_research(
+        request,
+        &services.model,
+        &services.search,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect("partial result");
+
+    assert!(result.completed_aspects.is_empty());
+    assert!(result.aspect_reports.is_empty());
+    assert_eq!(result.failed_aspects.len(), 1);
+    assert_eq!(result.failed_aspects[0].aspect_id, "aspect-1");
+    assert_eq!(result.evidence_index.len(), 1);
+    assert_eq!(result.coverage_summary.completed_aspects, 0);
+    assert_eq!(result.coverage_summary.failed_aspects, 1);
 }
 
 /// Two concurrent aspects share the same cross-aspect guard: with
