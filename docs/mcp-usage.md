@@ -296,7 +296,7 @@ Fields:
 | `include_domains` | string[] | Yes | Domain allow filter. |
 | `exclude_domains` | string[] | Yes | Domain deny filter. A domain must not appear in both include and exclude lists. |
 
-The model-facing internal `search` tool accepts the same provider-neutral call-time fields. It rejects provider-specific fields such as provider overrides, Exa request `type`, `contents`, `maxAgeHours`, or deep search mode names.
+The model-facing internal `search` tool accepts the same provider-neutral call-time fields. It rejects provider-specific fields such as provider overrides, Exa request `type`, `contents`, `maxAgeHours`, Tavily request `search_depth`, `topic`, `time_range`, `include_answer`, `include_raw_content`, or deep search mode names.
 
 ### 5.7 `EvidencePolicy`
 

@@ -63,6 +63,7 @@ For scripted setup, pass provider flags such as `--enable-openai` with `--non-in
 export OPENAI_API_KEY="..."
 export XAI_API_KEY="..."
 export EXA_API_KEY="..."
+export TAVILY_API_KEY="..."
 ```
 
 Check local readiness:

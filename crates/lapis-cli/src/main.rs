@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
         }
         Command::Onboard(args) => {
             init_cli_logging()?;
-            commands::onboard::run(args)
+            commands::onboard::run(&args)
         }
         Command::Mcp { command } => {
             init_cli_logging()?;

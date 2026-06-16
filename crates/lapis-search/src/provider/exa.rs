@@ -44,23 +44,7 @@ impl SearchProvider for ExaSearchProvider {
 
     async fn search(&self, request: SearchRequest) -> Result<SearchResponse> {
         validate_exa_category_conflicts(&request)?;
-
-        let (start_published_date, end_published_date) = match request.freshness.as_ref() {
-            Some(freshness) => (freshness.since.clone(), freshness.until.clone()),
-            None => (None, None),
-        };
-        let body = serde_json::to_value(ExaSearchRequest {
-            query: request.query,
-            num_results: request.max_results,
-            include_domains: request.include_domains,
-            exclude_domains: request.exclude_domains,
-            search_type: exa_search_type(request.depth),
-            contents: exa_contents(request.content_level, request.recency),
-            category: request.category.and_then(exa_category),
-            start_published_date,
-            end_published_date,
-        })
-        .context(JsonSnafu)?;
+        let body = serde_json::to_value(ExaSearchRequest::from(request)).context(JsonSnafu)?;
 
         let response = self
             .network
@@ -227,6 +211,27 @@ struct ExaSearchRequest {
     start_published_date: Option<String>,
     #[serde(rename = "endPublishedDate", skip_serializing_if = "Option::is_none")]
     end_published_date: Option<String>,
+}
+
+impl From<SearchRequest> for ExaSearchRequest {
+    fn from(request: SearchRequest) -> Self {
+        let (start_published_date, end_published_date) = match request.freshness {
+            Some(freshness) => (freshness.since, freshness.until),
+            None => (None, None),
+        };
+
+        Self {
+            query: request.query,
+            num_results: request.max_results,
+            include_domains: request.include_domains,
+            exclude_domains: request.exclude_domains,
+            search_type: exa_search_type(request.depth),
+            contents: exa_contents(request.content_level, request.recency),
+            category: request.category.and_then(exa_category),
+            start_published_date,
+            end_published_date,
+        }
+    }
 }
 
 #[derive(Serialize)]

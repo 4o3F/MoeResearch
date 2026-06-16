@@ -19,6 +19,11 @@ pub fn prompt_config_plan(mut plan: ConfigPlan) -> Result<ConfigPlan> {
         prompt_provider("Exa", &mut plan.exa, false)?;
     }
 
+    plan.tavily.enabled = prompt_bool("Enable Tavily search provider", plan.tavily.enabled)?;
+    if plan.tavily.enabled {
+        prompt_provider("Tavily", &mut plan.tavily, false)?;
+    }
+
     Ok(plan)
 }
 

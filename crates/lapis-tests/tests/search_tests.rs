@@ -6,7 +6,9 @@ use lapis_net::JsonNetworkResponse;
 use lapis_search::Freshness;
 use lapis_search::SearchProvider;
 use lapis_search::SearchService;
-use lapis_search::{ExaSearchProvider, GrokReasoningEffort, GrokSearchProvider};
+use lapis_search::{
+    ExaSearchProvider, GrokReasoningEffort, GrokSearchProvider, TavilySearchProvider,
+};
 use lapis_search::{
     SearchCategory, SearchContentLevel, SearchDepth, SearchRecency, SearchRequest, SearchResponse,
     SearchResult,
@@ -104,6 +106,15 @@ fn grok_provider(network: Arc<MockNetworkClient>) -> GrokSearchProvider {
     )
 }
 
+fn tavily_provider(network: Arc<MockNetworkClient>) -> TavilySearchProvider {
+    TavilySearchProvider::new(
+        network,
+        "https://api.tavily.com".to_owned(),
+        "key".to_owned(),
+        None,
+    )
+}
+
 async fn search_with_policy(
     service: &SearchService,
     request: SearchRequest,
@@ -117,6 +128,7 @@ async fn dispatches_only_to_explicit_provider() {
     let mut service = SearchService::new();
     let exa_calls = Arc::new(AtomicUsize::new(0));
     let grok_calls = Arc::new(AtomicUsize::new(0));
+    let tavily_calls = Arc::new(AtomicUsize::new(0));
     service.register(CountingProvider {
         name: "exa",
         calls: exa_calls.clone(),
@@ -125,15 +137,20 @@ async fn dispatches_only_to_explicit_provider() {
         name: "grok",
         calls: grok_calls.clone(),
     });
+    service.register(CountingProvider {
+        name: "tavily",
+        calls: tavily_calls.clone(),
+    });
 
-    let policy = search_policy(&["exa", "grok"]);
-    let response = search_with_policy(&service, SearchRequest::new("grok", "lapis", 3), &policy)
+    let policy = search_policy(&["exa", "grok", "tavily"]);
+    let response = search_with_policy(&service, SearchRequest::new("tavily", "lapis", 3), &policy)
         .await
         .expect("search response");
 
-    assert_eq!(response.provider, "grok");
+    assert_eq!(response.provider, "tavily");
     assert_eq!(exa_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(grok_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(grok_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(tavily_calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -376,6 +393,177 @@ async fn maps_exa_response_to_standard_search_response() {
 
     assert_eq!(response.provider, "exa");
     assert_eq!(response.results[0].title, "Lapis");
+}
+
+#[tokio::test]
+async fn tavily_search_uses_json_search_request() {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }]));
+    let provider = TavilySearchProvider::new(
+        network.clone(),
+        "https://api.tavily.com/".to_owned(),
+        "key".to_owned(),
+        Some(1000),
+    );
+    let mut policy = search_policy(&["tavily"]);
+    policy.freshness = Some(Freshness {
+        since: Some("2026-01-01".to_owned()),
+        until: Some("2026-01-31".to_owned()),
+    });
+    policy.depth = Some(SearchDepth::HighRecall);
+    policy.content_level = Some(SearchContentLevel::Detailed);
+    policy.recency = Some(SearchRecency::Fresh);
+    policy.category = Some(SearchCategory::FinancialFilings);
+    policy.include_domains = vec!["example.com".to_owned()];
+    policy.exclude_domains = vec!["blocked.com".to_owned()];
+
+    provider
+        .search(
+            policy
+                .apply_to(SearchRequest::new("tavily", "lapis", 2))
+                .expect("policy applies"),
+        )
+        .await
+        .expect("tavily response");
+
+    let requests = network.requests();
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.url, "https://api.tavily.com/search");
+    assert_eq!(request.timeout_ms, Some(1000));
+    assert!(
+        request
+            .headers
+            .iter()
+            .any(|header| { header.name == "authorization" && header.value == "Bearer key" })
+    );
+    assert!(
+        request
+            .headers
+            .iter()
+            .any(|header| { header.name == "content-type" && header.value == "application/json" })
+    );
+    assert!(
+        request
+            .headers
+            .iter()
+            .any(|header| { header.name == "accept" && header.value == "application/json" })
+    );
+
+    let body = request.body.as_ref().expect("request body");
+    assert_eq!(body["query"], "lapis");
+    assert_eq!(body["max_results"], 2);
+    assert_eq!(body["search_depth"], "advanced");
+    assert_eq!(body["topic"], "finance");
+    assert_eq!(body["start_date"], "2026-01-01");
+    assert_eq!(body["end_date"], "2026-01-31");
+    assert_eq!(body["include_domains"], json!(["example.com"]));
+    assert_eq!(body["exclude_domains"], json!(["blocked.com"]));
+    assert_eq!(body["include_raw_content"], true);
+    assert!(body.get("time_range").is_none());
+}
+
+#[tokio::test]
+async fn tavily_uses_time_range_only_without_explicit_dates() {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }]));
+    let provider = tavily_provider(network.clone());
+    let mut request = SearchRequest::new("tavily", "lapis", 1);
+    request.recency = Some(SearchRecency::Fresh);
+    request.content_level = Some(SearchContentLevel::Standard);
+    request.category = Some(SearchCategory::People);
+
+    provider.search(request).await.expect("tavily response");
+
+    let body = network.requests()[0].body.clone().expect("request body");
+    assert_eq!(body["time_range"], "day");
+    assert!(body.get("start_date").is_none());
+    assert!(body.get("end_date").is_none());
+    assert!(body.get("include_raw_content").is_none());
+    assert!(body.get("topic").is_none());
+}
+
+#[tokio::test]
+async fn maps_tavily_response_to_standard_search_response() {
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "results": [
+                {
+                    "title": "Lapis",
+                    "url": "https://example.com/lapis",
+                    "content": "snippet",
+                    "raw_content": "summary",
+                    "published_date": "2026-01-01"
+                },
+                {
+                    "title": "Legacy Lapis",
+                    "link": "https://example.com/legacy",
+                    "snippet": "legacy snippet"
+                }
+            ]
+        }),
+    }]));
+    let provider = tavily_provider(network);
+
+    let response = provider
+        .search(SearchRequest::new("tavily", "lapis", 5))
+        .await
+        .expect("tavily response");
+
+    assert_eq!(response.provider, "tavily");
+    assert_eq!(response.results.len(), 2);
+    assert_eq!(response.results[0].title, "Lapis");
+    assert_eq!(
+        response.results[0].url.as_deref(),
+        Some("https://example.com/lapis")
+    );
+    assert_eq!(response.results[0].snippet, "snippet");
+    assert_eq!(response.results[0].summary.as_deref(), Some("summary"));
+    assert_eq!(
+        response.results[0].published_at.as_deref(),
+        Some("2026-01-01")
+    );
+    assert_eq!(
+        response.results[1].url.as_deref(),
+        Some("https://example.com/legacy")
+    );
+    assert_eq!(response.results[1].snippet, "legacy snippet");
+}
+
+#[tokio::test]
+async fn tavily_raw_content_summary_is_bounded() {
+    let raw_content = "alpha ".repeat(900);
+    let network = Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({
+            "results": [{
+                "title": "Long",
+                "url": "https://example.com/long",
+                "content": "snippet",
+                "raw_content": raw_content
+            }]
+        }),
+    }]));
+    let provider = tavily_provider(network);
+
+    let response = provider
+        .search(SearchRequest::new("tavily", "lapis", 1))
+        .await
+        .expect("tavily response");
+
+    let summary = response.results[0].summary.as_deref().expect("summary");
+    assert!(summary.len() <= 4_003);
+    assert!(summary.ends_with('…'));
 }
 
 #[tokio::test]

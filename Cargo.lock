@@ -1063,6 +1063,7 @@ dependencies = [
  "schemars",
  "serde_json",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]

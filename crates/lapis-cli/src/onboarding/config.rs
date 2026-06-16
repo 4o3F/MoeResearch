@@ -3,21 +3,39 @@ use std::path::{Path, PathBuf};
 
 use lapis_error::{Error, Result};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct ProviderSelections {
+    pub openai: bool,
+    pub grok: bool,
+    pub exa: bool,
+    pub tavily: bool,
+}
+
+impl ProviderSelections {
+    #[must_use]
+    pub const fn any(self) -> bool {
+        self.openai || self.grok || self.exa || self.tavily
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ConfigPlan {
     pub network_timeout_ms: u64,
     pub openai: ProviderPlan,
     pub grok: ProviderPlan,
     pub exa: ProviderPlan,
+    pub tavily: ProviderPlan,
 }
 
 impl ConfigPlan {
     #[must_use]
-    pub fn new(enable_openai: bool, enable_grok: bool, enable_exa: bool) -> Self {
+    pub fn new(selections: ProviderSelections) -> Self {
         let mut plan = Self::default();
-        plan.openai.enabled = enable_openai;
-        plan.grok.enabled = enable_grok;
-        plan.exa.enabled = enable_exa;
+        plan.openai.enabled = selections.openai;
+        plan.grok.enabled = selections.grok;
+        plan.exa.enabled = selections.exa;
+        plan.tavily.enabled = selections.tavily;
         plan
     }
 
@@ -28,7 +46,7 @@ impl ConfigPlan {
 
     #[must_use]
     pub const fn search_enabled(&self) -> bool {
-        self.grok.enabled || self.exa.enabled
+        self.grok.enabled || self.exa.enabled || self.tavily.enabled
     }
 }
 
@@ -51,6 +69,13 @@ impl Default for ConfigPlan {
                 Some("grok-4.3"),
             ),
             exa: ProviderPlan::new(false, "https://api.exa.ai", "EXA_API_KEY", 120_000, None),
+            tavily: ProviderPlan::new(
+                false,
+                "https://api.tavily.com",
+                "TAVILY_API_KEY",
+                120_000,
+                None,
+            ),
         }
     }
 }
@@ -131,6 +156,12 @@ base_url = {}
 api_key_env = {}
 timeout_ms = {exa_timeout_ms}
 
+[search.providers.tavily]
+enabled = {}
+base_url = {}
+api_key_env = {}
+timeout_ms = {tavily_timeout_ms}
+
 [search.providers.grok]
 enabled = {}
 base_url = {}
@@ -162,6 +193,9 @@ timeout_ms = -1
         plan.exa.enabled,
         toml_string(&plan.exa.base_url),
         toml_string(&plan.exa.api_key_env),
+        plan.tavily.enabled,
+        toml_string(&plan.tavily.base_url),
+        toml_string(&plan.tavily.api_key_env),
         plan.grok.enabled,
         toml_string(&plan.grok.base_url),
         toml_string(&plan.grok.api_key_env),
@@ -172,6 +206,7 @@ timeout_ms = -1
         toml_string(plan.openai.model.as_deref().unwrap_or("gpt-5.5")),
         network_timeout_ms = plan.network_timeout_ms,
         exa_timeout_ms = plan.exa.timeout_ms,
+        tavily_timeout_ms = plan.tavily.timeout_ms,
         grok_timeout_ms = plan.grok.timeout_ms,
         openai_timeout_ms = plan.openai.timeout_ms,
     )

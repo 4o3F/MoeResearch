@@ -107,15 +107,11 @@ impl SearchProvider for GrokSearchProvider {
 
     async fn search(&self, request: SearchRequest) -> Result<SearchResponse> {
         let max_results = request.max_results;
+        let parts = GrokSearchRequestParts::from(request);
         let body = serde_json::to_value(GrokSearchRequest {
             model: self.model.clone(),
-            input: vec![GrokSearchInputMessage {
-                role: "user",
-                content: search_prompt(&request),
-            }],
-            tools: vec![GrokSearchTool::WebSearch(GrokWebSearchTool {
-                filters: grok_filters(&request),
-            })],
+            input: parts.input,
+            tools: parts.tools,
             reasoning: self.reasoning_effort.map(|effort| GrokReasoning {
                 effort: effort.as_str().to_owned(),
             }),
@@ -196,12 +192,12 @@ fn sse_event_type<'a>(event: &'a SseEvent, data: &'a Value) -> Option<&'a str> {
     }
 }
 
-fn grok_filters(request: &SearchRequest) -> Option<GrokWebSearchFilters> {
-    if request.include_domains.is_empty() {
+fn grok_filters(include_domains: Vec<String>) -> Option<GrokWebSearchFilters> {
+    if include_domains.is_empty() {
         None
     } else {
         Some(GrokWebSearchFilters {
-            allowed_domains: Some(request.include_domains.clone()),
+            allowed_domains: Some(include_domains),
         })
     }
 }
@@ -586,6 +582,26 @@ struct GrokSearchRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     max_output_tokens: Option<u32>,
     stream: bool,
+}
+
+struct GrokSearchRequestParts {
+    input: Vec<GrokSearchInputMessage>,
+    tools: Vec<GrokSearchTool>,
+}
+
+impl From<SearchRequest> for GrokSearchRequestParts {
+    fn from(request: SearchRequest) -> Self {
+        let content = search_prompt(&request);
+        let filters = grok_filters(request.include_domains);
+
+        Self {
+            input: vec![GrokSearchInputMessage {
+                role: "user",
+                content,
+            }],
+            tools: vec![GrokSearchTool::WebSearch(GrokWebSearchTool { filters })],
+        }
+    }
 }
 
 #[derive(Serialize)]

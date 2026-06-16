@@ -12,7 +12,7 @@ use lapis_net::NetworkClient;
 use lapis_net::reqwest_client::ReqwestNetworkClient;
 use lapis_search::{
     ExaSearchProvider, GrokReasoningEffort as SearchGrokReasoningEffort, GrokSearchProvider,
-    SearchService,
+    SearchService, TavilySearchProvider,
 };
 use lapis_workflow::{AgentBudget, BudgetConfig, Limit, ResearchBudget};
 use tracing_subscriber::EnvFilter;
@@ -145,6 +145,12 @@ fn build_search_service(
                 provider_model("search", name, provider.model.as_ref())?,
                 provider.max_output_tokens,
                 provider.reasoning_effort.map(map_grok_reasoning_effort),
+            )),
+            "tavily" => service.register(TavilySearchProvider::new(
+                network.clone(),
+                provider.base_url.clone(),
+                api_key,
+                provider.timeout_ms.or(Some(config.network.timeout_ms)),
             )),
             other => {
                 return Err(Error::ConfigInvalid {

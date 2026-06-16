@@ -188,21 +188,95 @@ impl SearchProviderEndpoint {
     fn validate_structure(&self, name: &str) -> Result<()> {
         validate_timeout("search", name, self.timeout_ms)?;
         validate_api_key_env_name("search", name, self.api_key_env.as_ref())?;
+        search_provider_spec(name)?.validate(name, self)
+    }
+}
 
-        match name {
-            "exa" => validate_exa_knobs(
-                name,
-                self.reasoning_effort.is_some(),
-                self.max_output_tokens.is_some(),
-            ),
-            "grok" => {
-                validate_model("search", name, self.enabled, self.model.as_ref())?;
-                validate_grok_knobs(name, self.max_output_tokens)
-            }
-            _ => Err(Error::ConfigInvalid {
-                message: format!("unknown search.providers.{name} provider"),
-            }),
+#[derive(Clone, Copy)]
+struct SearchProviderSpec {
+    model: SearchModelPolicy,
+    reasoning_effort: SearchFieldPolicy,
+    max_output_tokens: SearchTokenPolicy,
+}
+
+impl SearchProviderSpec {
+    fn validate(self, name: &str, endpoint: &SearchProviderEndpoint) -> Result<()> {
+        self.model
+            .validate(name, endpoint.enabled, endpoint.model.as_ref())?;
+        self.reasoning_effort.validate(
+            name,
+            "reasoning_effort",
+            endpoint.reasoning_effort.is_some(),
+        )?;
+        self.max_output_tokens
+            .validate(name, endpoint.max_output_tokens)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SearchModelPolicy {
+    Unsupported,
+    RequiredWhenEnabled,
+}
+
+impl SearchModelPolicy {
+    fn validate(self, name: &str, enabled: bool, model: Option<&String>) -> Result<()> {
+        match self {
+            Self::Unsupported => validate_unsupported_search_field(name, "model", model.is_some()),
+            Self::RequiredWhenEnabled => validate_model("search", name, enabled, model),
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SearchFieldPolicy {
+    GrokOnly,
+    Supported,
+}
+
+impl SearchFieldPolicy {
+    fn validate(self, name: &str, field: &str, is_set: bool) -> Result<()> {
+        match self {
+            Self::GrokOnly => validate_grok_only_search_field(name, field, is_set),
+            Self::Supported => Ok(()),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SearchTokenPolicy {
+    GrokOnly,
+    PositiveOptional,
+}
+
+impl SearchTokenPolicy {
+    fn validate(self, name: &str, max_output_tokens: Option<u32>) -> Result<()> {
+        match self {
+            Self::GrokOnly => validate_grok_only_search_field(
+                name,
+                "max_output_tokens",
+                max_output_tokens.is_some(),
+            ),
+            Self::PositiveOptional => validate_positive_search_tokens(name, max_output_tokens),
+        }
+    }
+}
+
+fn search_provider_spec(name: &str) -> Result<SearchProviderSpec> {
+    match name {
+        "exa" | "tavily" => Ok(SearchProviderSpec {
+            model: SearchModelPolicy::Unsupported,
+            reasoning_effort: SearchFieldPolicy::GrokOnly,
+            max_output_tokens: SearchTokenPolicy::GrokOnly,
+        }),
+        "grok" => Ok(SearchProviderSpec {
+            model: SearchModelPolicy::RequiredWhenEnabled,
+            reasoning_effort: SearchFieldPolicy::Supported,
+            max_output_tokens: SearchTokenPolicy::PositiveOptional,
+        }),
+        _ => Err(Error::ConfigInvalid {
+            message: format!("unknown search.providers.{name} provider"),
+        }),
     }
 }
 
@@ -358,7 +432,7 @@ fn validate_model(kind: &str, name: &str, enabled: bool, model: Option<&String>)
     Ok(())
 }
 
-fn validate_grok_knobs(name: &str, max_output_tokens: Option<u32>) -> Result<()> {
+fn validate_positive_search_tokens(name: &str, max_output_tokens: Option<u32>) -> Result<()> {
     if max_output_tokens == Some(0) {
         return Err(Error::ConfigInvalid {
             message: format!("search.providers.{name}.max_output_tokens must be greater than zero"),
@@ -367,19 +441,19 @@ fn validate_grok_knobs(name: &str, max_output_tokens: Option<u32>) -> Result<()>
     Ok(())
 }
 
-fn validate_exa_knobs(
-    name: &str,
-    has_reasoning_effort: bool,
-    has_max_output_tokens: bool,
-) -> Result<()> {
-    if has_reasoning_effort {
+fn validate_unsupported_search_field(name: &str, field: &str, is_set: bool) -> Result<()> {
+    if is_set {
         return Err(Error::ConfigInvalid {
-            message: format!("search.providers.{name}.reasoning_effort is only supported by grok"),
+            message: format!("search.providers.{name}.{field} is not supported"),
         });
     }
-    if has_max_output_tokens {
+    Ok(())
+}
+
+fn validate_grok_only_search_field(name: &str, field: &str, is_set: bool) -> Result<()> {
+    if is_set {
         return Err(Error::ConfigInvalid {
-            message: format!("search.providers.{name}.max_output_tokens is only supported by grok"),
+            message: format!("search.providers.{name}.{field} is only supported by grok"),
         });
     }
     Ok(())

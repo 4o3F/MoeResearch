@@ -15,7 +15,7 @@ This guide contains repository layout and local development commands for contrib
 │   ├── lapis-mcp/             # MCP envelope, server, and tool adapter
 │   ├── lapis-model/           # Model provider boundary and OpenAI adapter
 │   ├── lapis-net/             # Network client, redaction, retry, and wire tracing
-│   ├── lapis-search/          # Search provider boundary and Exa/Grok adapters
+│   ├── lapis-search/          # Search provider boundary and Exa/Grok/Tavily adapters
 │   ├── lapis-workflow/        # Research workflow, policies, budgets, and reports
 │   └── lapis-tests/           # Integration tests
 ├── docs/                      # Product and user documentation

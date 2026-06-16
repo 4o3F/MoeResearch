@@ -72,6 +72,12 @@ base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
 timeout_ms = 120000
 
+[search.providers.tavily]
+enabled = false
+base_url = "https://api.tavily.com"
+api_key_env = "TAVILY_API_KEY"
+timeout_ms = 120000
+
 [search.providers.grok]
 enabled = false
 base_url = "https://api.x.ai/v1"
@@ -94,7 +100,7 @@ To enable a provider:
 1. Set `enabled = true`.
 2. Set `base_url` for the provider endpoint.
 3. Set `api_key_env` to the environment variable name that contains the secret.
-4. Set `model` when the provider requires a model name.
+4. Set `model` only for providers that support it. Among search providers, only Grok accepts `model`.
 5. Export the referenced environment variable before starting the server.
 
 Example:
@@ -106,6 +112,12 @@ base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
 timeout_ms = 120000
 model = "gpt-5.5"
+
+[search.providers.tavily]
+enabled = true
+base_url = "https://api.tavily.com"
+api_key_env = "TAVILY_API_KEY"
+timeout_ms = 120000
 
 [search.providers.grok]
 enabled = true
@@ -120,13 +132,14 @@ max_output_tokens = 1024
 ```bash
 export OPENAI_API_KEY="..."
 export XAI_API_KEY="..."
+export TAVILY_API_KEY="..."
 ```
 
 Only enabled providers require their environment variables to be set.
 
-Search provider configuration is infrastructure-only: endpoint URL, credentials, timeout, model where required, and provider-specific response knobs. Grok supports optional `max_output_tokens` and `reasoning_effort`; `reasoning_effort` must be one of `none`, `low`, `medium`, or `high`. Set `none` to disable Grok reasoning, or omit the field to leave the provider default in effect. Per-query search tuning belongs in MCP request policy or the model-facing search tool call, not in `lapis.toml`.
+Search provider configuration is infrastructure-only: endpoint URL, credentials, timeout, model where supported, and provider-specific response knobs. Among search providers, only `[search.providers.grok]` accepts `model`; Exa and Tavily reject it even when disabled. Grok supports optional `max_output_tokens` and `reasoning_effort`; `reasoning_effort` must be one of `none`, `low`, `medium`, or `high`. Set `none` to disable Grok reasoning, or omit the field to leave the provider default in effect. Per-query search tuning belongs in MCP request policy or the model-facing search tool call, not in `lapis.toml`.
 
-Do not configure search `depth`, `content_level`, `recency`, `category`, or Exa-native request fields such as `type`, `contents`, `highlights`, `text`, or `maxAgeHours` under `[search.providers.*]`; unknown fields fail configuration validation.
+Do not configure search `depth`, `content_level`, `recency`, `category`, Exa-native request fields such as `type`, `contents`, `highlights`, `text`, or `maxAgeHours`, or Tavily-native request fields such as `search_depth`, `topic`, `time_range`, `include_answer`, or `include_raw_content` under `[search.providers.*]`; unknown fields fail configuration validation.
 
 ## 5. Network settings
 
@@ -217,6 +230,7 @@ An enabled provider references an environment variable that is not exported.
 export OPENAI_API_KEY="..."
 export EXA_API_KEY="..."
 export XAI_API_KEY="..."
+export TAVILY_API_KEY="..."
 ```
 
 ### `model must not be empty`

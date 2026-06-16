@@ -24,6 +24,12 @@ base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
 timeout_ms = 30000
 
+[search.providers.tavily]
+enabled = false
+base_url = "https://api.tavily.com"
+api_key_env = "TAVILY_API_KEY"
+timeout_ms = 30000
+
 [search.providers.grok]
 enabled = false
 base_url = "https://api.x.ai/v1"
@@ -316,6 +322,18 @@ fn accepts_enabled_exa_search_provider_without_model() {
     assert!(config.search.providers["exa"].model.is_none());
 }
 
+#[test]
+fn accepts_enabled_tavily_search_provider_without_model() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
+        "[search.providers.tavily]\nenabled = true\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"PATH\"\ntimeout_ms = 30000",
+    );
+
+    let config = load_config_from_test_str(&input).expect("Tavily without model must validate");
+    assert!(config.search.providers["tavily"].enabled);
+    assert!(config.search.providers["tavily"].model.is_none());
+}
+
 /// Unknown model provider names must be rejected at config validation time
 /// so a typo cannot reach the runtime service registry. Regression guard
 /// for Commit 2 / M14.
@@ -431,6 +449,21 @@ fn rejects_grok_xhigh_reasoning_effort() {
 }
 
 #[test]
+fn rejects_exa_model() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000\nmodel = \"unused\"",
+    );
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("search.providers.exa.model is not supported"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn rejects_exa_reasoning_effort() {
     let input = VALID_CONFIG.replace(
         "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
@@ -456,6 +489,51 @@ fn rejects_exa_max_output_tokens() {
     assert!(
         err.to_string()
             .contains("search.providers.exa.max_output_tokens is only supported by grok"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn rejects_tavily_model() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000\nmodel = \"unused\"",
+    );
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("search.providers.tavily.model is not supported"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn rejects_tavily_reasoning_effort() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000\nreasoning_effort = \"high\"",
+    );
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("search.providers.tavily.reasoning_effort is only supported by grok"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn rejects_tavily_max_output_tokens() {
+    let input = VALID_CONFIG.replace(
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000\nmax_output_tokens = 1024",
+    );
+
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("search.providers.tavily.max_output_tokens is only supported by grok"),
         "unexpected error: {err}"
     );
 }
@@ -507,6 +585,28 @@ fn enabled_provider_requires_environment_variable() {
 }
 
 #[test]
+fn enabled_tavily_requires_environment_variable() {
+    let missing_env = format!("LAPIS_TEST_MISSING_TAVILY_KEY_{}", std::process::id());
+    let input = VALID_CONFIG.replace(
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
+        &format!(
+            "[search.providers.tavily]\nenabled = true\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"{missing_env}\"\ntimeout_ms = 30000"
+        ),
+    );
+    let id = CONFIG_ID.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "lapis-config-test-{}-{id}.toml",
+        std::process::id()
+    ));
+
+    std::fs::write(&path, input).expect("write test config");
+    let err = load_config(Some(&path)).expect_err("enabled Tavily should require env var");
+    let _ = std::fs::remove_file(&path);
+
+    assert!(err.to_string().contains(&missing_env));
+}
+
+#[test]
 fn rejects_exa_search_tuning_in_config() {
     for field in [
         "depth = \"balanced\"",
@@ -527,6 +627,33 @@ fn rejects_exa_search_tuning_in_config() {
         assert!(
             err.to_string().contains("unknown field"),
             "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn rejects_tavily_search_tuning_in_config() {
+    for field in [
+        "depth = \"balanced\"",
+        "content_level = \"standard\"",
+        "recency = \"fresh\"",
+        "category = \"news\"",
+        "search_depth = \"advanced\"",
+        "topic = \"news\"",
+        "time_range = \"day\"",
+        "include_answer = true",
+        "include_raw_content = true",
+    ] {
+        let input = VALID_CONFIG.replace(
+            "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
+            &format!(
+                "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000\n{field}"
+            ),
+        );
+        let err = load_config_from_test_str(&input).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field"),
+            "unexpected error for {field}: {err}"
         );
     }
 }

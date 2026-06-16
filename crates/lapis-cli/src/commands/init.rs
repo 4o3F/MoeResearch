@@ -4,7 +4,7 @@ use clap::Args;
 use lapis_error::{Error, Result};
 
 use crate::onboarding::config::{
-    ConfigPlan, render_config, resolve_config_path, write_config_file,
+    ConfigPlan, ProviderSelections, render_config, resolve_config_path, write_config_file,
 };
 use crate::onboarding::prompt::prompt_config_plan;
 
@@ -32,12 +32,16 @@ pub struct InitArgs {
     /// Enable the Exa search provider in the generated config.
     #[arg(long)]
     pub enable_exa: bool,
+    /// Enable the Tavily search provider in the generated config.
+    #[arg(long)]
+    pub enable_tavily: bool,
 }
 
 pub fn run(args: InitArgs) -> Result<()> {
-    let has_provider_flags = provider_flags_set(&args);
+    let selections = provider_selections(&args);
+    let has_provider_flags = selections.any();
     let path = resolve_config_path(args.config);
-    let mut plan = ConfigPlan::new(args.enable_openai, args.enable_grok, args.enable_exa);
+    let mut plan = ConfigPlan::new(selections);
 
     if !args.dry_run && path.exists() && !args.force {
         return Err(Error::InvalidInput {
@@ -66,8 +70,13 @@ pub fn run(args: InitArgs) -> Result<()> {
     Ok(())
 }
 
-fn provider_flags_set(args: &InitArgs) -> bool {
-    args.enable_openai || args.enable_grok || args.enable_exa
+fn provider_selections(args: &InitArgs) -> ProviderSelections {
+    ProviderSelections {
+        openai: args.enable_openai,
+        grok: args.enable_grok,
+        exa: args.enable_exa,
+        tavily: args.enable_tavily,
+    }
 }
 
 fn log_next_steps(path: &std::path::Path, plan: &ConfigPlan) {
@@ -80,6 +89,9 @@ fn log_next_steps(path: &std::path::Path, plan: &ConfigPlan) {
     }
     if plan.exa.enabled {
         tracing::info!(env = %plan.exa.api_key_env, "export provider API key");
+    }
+    if plan.tavily.enabled {
+        tracing::info!(env = %plan.tavily.api_key_env, "export provider API key");
     }
     if !plan.model_enabled() {
         tracing::info!("enable at least one model provider before running readiness checks");

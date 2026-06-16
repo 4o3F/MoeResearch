@@ -16,7 +16,12 @@ enabled = false
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
 timeout_ms = 120000
-model = ""
+
+[search.providers.tavily]
+enabled = false
+base_url = "https://api.tavily.com"
+api_key_env = "TAVILY_API_KEY"
+timeout_ms = 120000
 
 [search.providers.grok]
 enabled = false

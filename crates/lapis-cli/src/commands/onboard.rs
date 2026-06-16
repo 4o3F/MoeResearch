@@ -9,7 +9,9 @@ use crate::commands::check::CheckArgs;
 use crate::commands::init::{self, InitArgs};
 use crate::commands::mcp::{self, McpRegisterArgs};
 use crate::onboarding::claude::{McpEnvVar, McpScope, claude_mcp_add_argv, mcp_servers_json};
-use crate::onboarding::config::{ConfigPlan, absolute_path, resolve_config_path};
+use crate::onboarding::config::{
+    ConfigPlan, ProviderSelections, absolute_path, resolve_config_path,
+};
 use crate::onboarding::output::format_command;
 
 #[derive(Debug, Args)]
@@ -42,12 +44,26 @@ pub struct OnboardArgs {
     /// Enable the Exa search provider in the generated config.
     #[arg(long)]
     pub enable_exa: bool,
+    /// Enable the Tavily search provider in the generated config.
+    #[arg(long)]
+    pub enable_tavily: bool,
 }
 
-pub fn run(args: OnboardArgs) -> Result<()> {
-    let has_provider_flags = provider_flags_set(&args);
-    let config_path = resolve_config_path(args.config);
+pub fn run(args: &OnboardArgs) -> Result<()> {
+    let selections = provider_selections(args);
+    let has_provider_flags = selections.any();
+    let config_path = resolve_config_path(args.config.clone());
 
+    validate_registration_scope(args)?;
+    if args.dry_run {
+        return run_dry_run(args, &config_path, selections, has_provider_flags);
+    }
+
+    ensure_config(args, &config_path, has_provider_flags)?;
+    run_check_and_registration(args, &config_path)
+}
+
+fn validate_registration_scope(args: &OnboardArgs) -> Result<()> {
     if args.register_mcp && args.scope.needs_confirmation() && !args.yes && !args.dry_run {
         return Err(Error::InvalidInput {
             message: format!(
@@ -56,78 +72,54 @@ pub fn run(args: OnboardArgs) -> Result<()> {
             ),
         });
     }
+    Ok(())
+}
 
-    if args.dry_run {
-        let generated_env_names = if config_path.exists() && !args.force {
-            ensure_existing_config_allows_flags(&config_path, has_provider_flags)?;
-            tracing::info!(config = %config_path.display(), "would use existing Lapis config");
-            None
+fn run_dry_run(
+    args: &OnboardArgs,
+    config_path: &Path,
+    selections: ProviderSelections,
+    has_provider_flags: bool,
+) -> Result<()> {
+    let generated_env_names = if config_path.exists() && !args.force {
+        ensure_existing_config_allows_flags(config_path, has_provider_flags)?;
+        tracing::info!(config = %config_path.display(), "would use existing Lapis config");
+        None
+    } else {
+        init::run(init_args(args, config_path, args.force, true))?;
+        Some(generated_provider_env_names(selections))
+    };
+
+    if args.register_mcp {
+        let register_args = register_args(args, config_path.to_path_buf(), true);
+        if let Some(env_names) = generated_env_names {
+            log_generated_mcp_dry_run(&register_args, env_names)?;
         } else {
-            init::run(InitArgs {
-                config: Some(config_path.clone()),
-                force: args.force,
-                dry_run: true,
-                non_interactive: false,
-                enable_openai: args.enable_openai,
-                enable_grok: args.enable_grok,
-                enable_exa: args.enable_exa,
-            })?;
-            Some(generated_provider_env_names(
-                args.enable_openai,
-                args.enable_grok,
-                args.enable_exa,
-            ))
-        };
-        if args.register_mcp {
-            let register_args = McpRegisterArgs {
-                config: Some(config_path.clone()),
-                name: "lapis".to_owned(),
-                scope: args.scope,
-                dry_run: true,
-                yes: args.yes,
-                claude_bin: std::path::PathBuf::from("claude"),
-                lapis_bin: None,
-            };
-            if let Some(env_names) = generated_env_names {
-                log_generated_mcp_dry_run(&register_args, env_names)?;
-            } else {
-                mcp::run_register(register_args)?;
-            }
-        } else {
-            log_register_next_step(&config_path, args.scope);
+            mcp::run_register(register_args)?;
         }
-        return Ok(());
+    } else {
+        log_register_next_step(config_path, args.scope);
     }
+    Ok(())
+}
 
+fn ensure_config(args: &OnboardArgs, config_path: &Path, has_provider_flags: bool) -> Result<()> {
     if config_path.exists() {
         if args.force {
-            init::run(InitArgs {
-                config: Some(config_path.clone()),
-                force: true,
-                dry_run: false,
-                non_interactive: false,
-                enable_openai: args.enable_openai,
-                enable_grok: args.enable_grok,
-                enable_exa: args.enable_exa,
-            })?;
+            init::run(init_args(args, config_path, true, false))?;
         } else {
-            ensure_existing_config_allows_flags(&config_path, has_provider_flags)?;
+            ensure_existing_config_allows_flags(config_path, has_provider_flags)?;
             tracing::info!(config = %config_path.display(), "using existing Lapis config");
         }
     } else {
-        init::run(InitArgs {
-            config: Some(config_path.clone()),
-            force: false,
-            dry_run: false,
-            non_interactive: false,
-            enable_openai: args.enable_openai,
-            enable_grok: args.enable_grok,
-            enable_exa: args.enable_exa,
-        })?;
+        init::run(init_args(args, config_path, false, false))?;
     }
+    Ok(())
+}
 
+fn run_check_and_registration(args: &OnboardArgs, config_path: &Path) -> Result<()> {
     crate::commands::check::run(CheckArgs {
-        config: Some(config_path.clone()),
+        config: Some(config_path.to_path_buf()),
         verbose: false,
         json: false,
         live: false,
@@ -135,20 +127,36 @@ pub fn run(args: OnboardArgs) -> Result<()> {
     })?;
 
     if args.register_mcp {
-        mcp::run_register(McpRegisterArgs {
-            config: Some(config_path),
-            name: "lapis".to_owned(),
-            scope: args.scope,
-            dry_run: false,
-            yes: args.yes,
-            claude_bin: std::path::PathBuf::from("claude"),
-            lapis_bin: None,
-        })?;
+        mcp::run_register(register_args(args, config_path.to_path_buf(), false))?;
     } else {
-        log_register_next_step(&config_path, args.scope);
+        log_register_next_step(config_path, args.scope);
     }
-
     Ok(())
+}
+
+fn init_args(args: &OnboardArgs, config_path: &Path, force: bool, dry_run: bool) -> InitArgs {
+    InitArgs {
+        config: Some(config_path.to_path_buf()),
+        force,
+        dry_run,
+        non_interactive: false,
+        enable_openai: args.enable_openai,
+        enable_grok: args.enable_grok,
+        enable_exa: args.enable_exa,
+        enable_tavily: args.enable_tavily,
+    }
+}
+
+fn register_args(args: &OnboardArgs, config_path: PathBuf, dry_run: bool) -> McpRegisterArgs {
+    McpRegisterArgs {
+        config: Some(config_path),
+        name: "lapis".to_owned(),
+        scope: args.scope,
+        dry_run,
+        yes: args.yes,
+        claude_bin: PathBuf::from("claude"),
+        lapis_bin: None,
+    }
 }
 
 fn log_register_next_step(config_path: &std::path::Path, scope: McpScope) {
@@ -159,16 +167,17 @@ fn log_register_next_step(config_path: &std::path::Path, scope: McpScope) {
     );
 }
 
-fn provider_flags_set(args: &OnboardArgs) -> bool {
-    args.enable_openai || args.enable_grok || args.enable_exa
+fn provider_selections(args: &OnboardArgs) -> ProviderSelections {
+    ProviderSelections {
+        openai: args.enable_openai,
+        grok: args.enable_grok,
+        exa: args.enable_exa,
+        tavily: args.enable_tavily,
+    }
 }
 
-fn generated_provider_env_names(
-    enable_openai: bool,
-    enable_grok: bool,
-    enable_exa: bool,
-) -> Vec<String> {
-    let plan = ConfigPlan::new(enable_openai, enable_grok, enable_exa);
+fn generated_provider_env_names(selections: ProviderSelections) -> Vec<String> {
+    let plan = ConfigPlan::new(selections);
     let mut names = BTreeSet::new();
     if plan.openai.enabled {
         names.insert(plan.openai.api_key_env);
@@ -178,6 +187,9 @@ fn generated_provider_env_names(
     }
     if plan.exa.enabled {
         names.insert(plan.exa.api_key_env);
+    }
+    if plan.tavily.enabled {
+        names.insert(plan.tavily.api_key_env);
     }
     names.into_iter().collect()
 }

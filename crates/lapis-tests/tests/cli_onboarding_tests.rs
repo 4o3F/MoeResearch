@@ -20,6 +20,12 @@ base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
 timeout_ms = 120000
 
+[search.providers.tavily]
+enabled = false
+base_url = "https://api.tavily.com"
+api_key_env = "TAVILY_API_KEY"
+timeout_ms = 120000
+
 [search.providers.grok]
 enabled = false
 base_url = "https://api.x.ai/v1"
@@ -76,6 +82,26 @@ fn lapis_command() -> Command {
 
 fn write_config(path: &Path, content: &str) {
     std::fs::write(path, content).expect("write config");
+}
+
+fn assert_generated_search_provider_without_model(
+    content: &str,
+    provider: &str,
+    base_url: &str,
+    api_key_env: &str,
+) {
+    let config = toml::from_str::<toml::Value>(content).expect("parse generated config");
+    let provider_config = config["search"]["providers"][provider]
+        .as_table()
+        .expect("search provider table");
+
+    assert_eq!(provider_config["enabled"].as_bool(), Some(true));
+    assert_eq!(provider_config["base_url"].as_str(), Some(base_url));
+    assert_eq!(provider_config["api_key_env"].as_str(), Some(api_key_env));
+    assert_eq!(provider_config["timeout_ms"].as_integer(), Some(120_000));
+    assert!(provider_config.get("model").is_none());
+    assert!(provider_config.get("api_key").is_none());
+    assert!(!content.contains("api_key ="));
 }
 
 #[test]
@@ -147,6 +173,7 @@ fn init_writes_valid_config_without_raw_api_key() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(content.contains("[model.providers.openai]"));
+    assert!(content.contains("[search.providers.tavily]"));
     assert!(content.contains("api_key_env"));
     assert!(content.contains("timeout_ms = 120000"));
     assert!(!content.contains("timeout_ms = 30000"));
@@ -154,6 +181,56 @@ fn init_writes_valid_config_without_raw_api_key() {
     lapis_config::load_config(Some(&config_path))
         .unwrap_or_else(|error| panic!("generated config should be valid: {error}"));
     let _ = std::fs::remove_file(&config_path);
+}
+
+#[test]
+fn init_enable_exa_writes_config_without_model_or_raw_api_key() {
+    let config_path = temp_path("exa.toml");
+
+    let output = lapis_command()
+        .args(["init", "--non-interactive", "--enable-exa", "--config"])
+        .arg(&config_path)
+        .output()
+        .expect("run init");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let content = std::fs::read_to_string(&config_path).expect("read generated config");
+    let _ = std::fs::remove_file(&config_path);
+    assert_generated_search_provider_without_model(
+        &content,
+        "exa",
+        "https://api.exa.ai",
+        "EXA_API_KEY",
+    );
+}
+
+#[test]
+fn init_enable_tavily_writes_config_without_model_or_raw_api_key() {
+    let config_path = temp_path("tavily.toml");
+
+    let output = lapis_command()
+        .args(["init", "--non-interactive", "--enable-tavily", "--config"])
+        .arg(&config_path)
+        .output()
+        .expect("run init");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let content = std::fs::read_to_string(&config_path).expect("read generated config");
+    let _ = std::fs::remove_file(&config_path);
+    assert_generated_search_provider_without_model(
+        &content,
+        "tavily",
+        "https://api.tavily.com",
+        "TAVILY_API_KEY",
+    );
 }
 
 #[test]
@@ -314,6 +391,10 @@ fn check_disabled_search_provider_does_not_require_env_var() {
         !stderr.contains("EXA_API_KEY is not set"),
         "stderr: {stderr}"
     );
+    assert!(
+        !stderr.contains("TAVILY_API_KEY is not set"),
+        "stderr: {stderr}"
+    );
 }
 
 #[test]
@@ -394,6 +475,38 @@ fn onboard_dry_run_register_mcp_for_new_config_does_not_require_written_config()
     );
     assert!(stderr.contains("claude mcp add"), "stderr: {stderr}");
     assert!(stderr.contains("OPENAI_API_KEY"), "stderr: {stderr}");
+    assert!(stderr.contains("<redacted>"), "stderr: {stderr}");
+    assert!(!stderr.contains("raw-test-secret"));
+}
+
+#[test]
+fn onboard_dry_run_register_mcp_for_tavily_redacts_env_value() {
+    let config_path = temp_path("onboard-dry-run-register-tavily.toml");
+
+    let output = lapis_command()
+        .args([
+            "onboard",
+            "--dry-run",
+            "--register-mcp",
+            "--enable-tavily",
+            "--config",
+        ])
+        .arg(&config_path)
+        .env("TAVILY_API_KEY", "raw-test-secret")
+        .output()
+        .expect("run onboard dry-run register");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(!config_path.exists());
+    assert!(stdout.is_empty(), "stdout: {stdout}");
+    assert!(
+        stderr.contains("would write Lapis config"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("claude mcp add"), "stderr: {stderr}");
+    assert!(stderr.contains("TAVILY_API_KEY"), "stderr: {stderr}");
     assert!(stderr.contains("<redacted>"), "stderr: {stderr}");
     assert!(!stderr.contains("raw-test-secret"));
 }
