@@ -43,7 +43,7 @@ Lapis aspect agents only expose `search`; they cannot screenshot. Visual backfil
 
 - Use `agent-browser` (precise, step-wise: `open → snapshot → get`) or `browser-use` (autonomous) against the **system Chrome over CDP 9222** (shared logged-in profile), per the host Deep-Research Layer 2 setup.
 - Target the missing surfaces (e.g. the target product's onboarding / plan-setup / daily-workout / post-run screens) — exactly the gaps named in the experience-paths aspect's `open_questions`.
-- Save captures under `/home/heye/projects/...` (shared with the container), then add them as **new visual-evidence rows** with `media_type=screenshot`, a real `source_url` (the captured page URL) or a local capture path, and an honest `confidence`. Do not fabricate a URL for an image you did not actually capture.
+- Save captures under your project working directory (e.g. a `captures/` folder), then add them as **new visual-evidence rows** with `media_type=screenshot`, a real `source_url` (the captured page URL) or a local capture path, and an honest `confidence`. Do not fabricate a URL for an image you did not actually capture.
 - If the host browser stack is unavailable (no CDP, no Chrome), skip and keep the gap — never invent visual evidence.
 
 ## Step C — CiteEval sampling (FActScore / DeepTRACE discipline)
