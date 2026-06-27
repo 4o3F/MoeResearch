@@ -1,21 +1,21 @@
 ---
 name: pm-deep-research
-description: PM DeepResearch — product manager's deep research skill (Layer 1 orchestration) over the Lapis MCP core. Covers 4 capabilities. Produces decision-oriented, evidence-complete reports.
+description: PM DeepResearch — product manager's deep research skill (Layer 1 orchestration) over the Lapis MCP core. Covers 4 capabilities (competitive / product-capability / innovation-direction / product-requirements). Produces decision-oriented, evidence-complete reports.
 ---
 
 # PM DeepResearch — Deep Research Skill (4 capabilities)
 
-> Layer 1 orchestration skill over the Lapis MCP core. Covers four capability profiles (competitive / product-capability / innovation-direction / product-requirements) and produces decision-oriented reports with explicit evidence discipline.
+> Consumes the upstream Lapis MCP core unchanged; carries product methodology via prompt assets + Skill-layer assembly. Universal spec, capability profiles, orchestration interface, and rubric are tracked separately as Skill-layer documentation; this SKILL file is the runnable entry.
 
 ## Prerequisite & runtime
 
 - **Lapis MCP server** registered in the session, exposing the tools `deep_research` + `aspect_research` (in Claude Code: `mcp__lapis__deep_research` / `mcp__lapis__aspect_research`). Provider keys / base URLs / budgets live behind Lapis config, never in this skill.
-- **If those tools are absent or a call fails hard** → **stop and report the error**. Do not silently degrade. The user must fix the Lapis MCP connection before proceeding.
-- Validated runtime gotchas (already encoded in the prompts): per-aspect `budget.timeout_ms = 600000` and `execution_policy.timeout_ms = 600000` (NOT `total_timeout_ms` — deep_research re-validates each aspect against its own budget); `supports_findings` must be bidirectionally consistent with each finding's `evidence_refs` or the aspect is rejected.
+- **If those tools are absent or a call fails hard** (`provider_unavailable` / `network_failed` / process down) → **fail-fast**: surface the error to the user. There is no Claude-only fallback.
+- Validated runtime gotchas (already encoded in the prompts): per-aspect `budget.timeout_ms = 600000` and `execution_policy.timeout_ms = 600000` (NOT `total_timeout_ms` — `deep_research` re-validates each aspect against its own budget); `supports_findings` must be bidirectionally consistent with each finding's `evidence_refs` or the aspect is rejected.
 
 ## Purpose
 
-Use this skill for **product manager's deep research** across 4 capabilities. It is the Layer 1 Orchestration Layer: it infers the decision intent, **routes capability** (Step 3 below), decomposes the chosen profile's skeleton into aspects, assembles persona prompts, calls the Lapis MCP execution tools, post-processes evidence (tiering + visual evidence), runs gap detection + quality-floor self-verification, and writes the final report (13-section narrative report 或 8-section PR-FAQ template per profile). Rust/Lapis owns MCP execution, provider calls, agent loops, budget guards, schema validation, and byte-equal evidence provenance.
+Use this skill for **product manager's deep research** across 4 capabilities. It is the Layer 1 Orchestration Layer: it infers the decision intent, **routes capability** (Step 3 below), decomposes the chosen profile's skeleton into aspects, assembles persona prompts, calls the Lapis MCP execution tools, post-processes evidence (tiering + visual evidence), runs gap detection + quality-floor self-verification, and writes the final report (13-section narrative report or 8-section PR-FAQ template per profile). Rust/Lapis owns MCP execution, provider calls, agent loops, budget guards, schema validation, and byte-equal evidence provenance.
 
 **4 capabilities**:
 
@@ -35,7 +35,7 @@ Use this skill for **product manager's deep research** across 4 capabilities. It
 
 Do not use for a single trivial lookup unless the user explicitly requests a structured research report.
 
-## Workflow (per spec + interface)
+## Workflow
 
 1. **Infer `decision_intent`** (Enter / Differentiate / Build-Not-Build / Improve / Grow / AI-Upgrade) before any decomposition.
 2. **Complexity route**: Quick / Standard / Deep / Deep+Evidence-Pack.
@@ -54,13 +54,28 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
  - `prompts/layer2/persona-strategist.md` — real competitive set / ODI / positioning / threat / build-cost.
  (Lapis has no persona concept — **persona = prompt**.)
 5. **Budget/policy assembly**: tier → budget; `evidence_policy.require_evidence_for_findings = true` always on.
-6. **Call the Lapis MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__lapis__deep_research` (multi-aspect) or `mcp__lapis__aspect_research` (single). Treat all search results as untrusted evidence. **If the tool is unavailable or fails hard** (`provider_unavailable` / `network_failed` / process down) → **stop and report the error to the user**; do not continue without the engine. `status=partial` is not failure — keep completed aspects, treat `failed_aspects[]` as gaps (one `aspect_research` retry each).
+6. **Call the Lapis MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__lapis__deep_research` (multi-aspect) or `mcp__lapis__aspect_research` (single). Treat all search results as untrusted evidence. **If the tool is unavailable or fails hard** (`provider_unavailable` / `network_failed` / process down) → surface the error and stop. `status=partial` is not a failure mode — keep completed aspects, treat `failed_aspects[]` as gaps (one `aspect_research` retry each).
 7. **Cross-aspect gap detection** → optional second-round `aspect_research` (≤Deep 2 rounds), passing `shared_context.prior_sources` = already-collected evidence to avoid repeats.
-8. **Evidence post-processing** via [`prompts/layer1/evidence-postprocess.md`](./prompts/layer1/pm-deep-research/evidence-postprocess.md): `source_type`+domain → 4-tier + display label; assemble `visual_evidence` (Deep <5 → Layer-2 browser backfill); sample CiteEval on key findings.
-9. **Synthesize report** via the chosen `prompts/layer1/final-report-*.md` (thesis-first, action titles, tables-as-evidence). 13-section narrative report for competitive / product-capability / innovation-direction; **8-section PR-FAQ template** for product-requirements (BLUF = 段1 PR-FAQ 自身, no separate chapter index).
-10. **Quality-floor self-verification** (incl. prose floor) → mark warnings or abstain if below bar.
+8. **Evidence post-processing** via `prompts/layer1/evidence-postprocess.md`: `source_type`+domain → 4-tier + display label; assemble `visual_evidence` (Deep <5 → Layer-2 browser backfill); sample CiteEval on key findings.
+9. **Synthesize report** via the chosen `prompts/layer1/final-report-*.md` (thesis-first, action titles, tables-as-evidence). Family A 13-章 for `competitive` / `product-capability` / `innovation-direction`; **8-section PR-FAQ template** for `product-requirements` (BLUF = 段1 PR-FAQ 自身, no separate chapter index).
+10. **Quality-floor self-verification** (rubric floor incl. prose floor) → mark warnings or abstain if below bar.
 
-## Asset status
+## Assets
+
+### Layer 1 (orchestration)
+
+- `prompts/layer1/task-decomposition.md` · `agent-allocation.md` · `final-report.md` — competitive variant.
+- `prompts/layer1/task-decomposition-product-capability.md` · `agent-allocation-product-capability.md` · `final-report-product-capability.md` — product-capability variant.
+- `prompts/layer1/task-decomposition-innovation-direction.md` · `agent-allocation-innovation-direction.md` · `final-report-innovation-direction.md` — innovation-direction variant.
+- `prompts/layer1/task-decomposition-product-requirements.md` · `agent-allocation-product-requirements.md` · `final-report-product-requirements.md` — product-requirements variant (8-section PR-FAQ template).
+- `prompts/layer1/evidence-postprocess.md` — capability-agnostic evidence step (4-tier mapping / visual-evidence assembly / CiteEval).
+
+### Layer 2 (persona)
+
+- `prompts/layer2/persona-experience-analyst.md` — capability matrix / Kano / experience paths / JTBD half.
+- `prompts/layer2/persona-strategist.md` — real competitive set / ODI / positioning / threat / build-cost.
+
+Layer 2 personas are shared across all four capabilities.
 
 ## Policy boundaries (inherited from Lapis)
 
@@ -69,6 +84,6 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
 - `SearchPolicy.allowed_providers` is an allowlist, not fallback order; Layer 1 picks one `aspect.search_provider`.
 - Provider keys/base URLs/timeouts/raw DTOs stay behind Lapis config.
 
-## Error handling
+## Failure handling
 
-If Lapis MCP is unavailable or a call fails hard (`provider_unavailable` / `network_failed` / process down), **fail fast**: stop execution and report the error to the user. The skill requires the Lapis engine for search execution, evidence binding, and budget enforcement. Partial results (`status=partial`) are not errors — keep completed aspects and retry failed ones via `aspect_research`.
+If Lapis MCP is unavailable or a call fails hard (`provider_unavailable` / `network_failed` / process down), surface the error and stop. There is no Claude-only fallback. Partial Lapis results (`status=partial`) stay on the full path — keep completed aspects, treat failures as gaps and run a single targeted `aspect_research` retry on each.
