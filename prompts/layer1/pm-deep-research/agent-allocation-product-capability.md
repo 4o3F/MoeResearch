@@ -44,7 +44,7 @@ One Lapis aspect = one persona, 所以 profile §5 标段5 "Strategist + EA"（S
 
 ## Budget per aspect (hand off to `task-decomposition-product-capability.md` Step 4)
 
-每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `budget` 同 plan §5: deep `max_total_model_calls=80` / `max_total_search_calls=60` (适度上调 from competitive deep 70/56, 因 6 段比 5 段多 1 aspect).
+每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `budget`: deep `max_total_model_calls=80` / `max_total_search_calls=60`.
 
 ## Provider selection per aspect
 

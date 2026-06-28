@@ -1,6 +1,6 @@
 # Layer 1 Prompt: Agent Allocation (Product-Requirements — PM DeepResearch)
 
-> Canonical mapping reference consumed by [`task-decomposition-product-requirements.md`](task-decomposition-product-requirements.md). It defines, for product-requirements deep research: 八段 PR-FAQ skeleton → aspect → persona prompt, the per-tier aspect subset, EA + Strategist **balanced** ownership rationale, the **five hard-gate segments** (段3 4-risks 全 / 段4 ≥3 候选 / 段5 非目标 显式 / 段6 三套指标 / 段8 TM-11 falsification), the 8-section PR-FAQ template "working backwards" PR-FAQ assembly note, and intent overlay.
+> Mapping reference consumed by [`task-decomposition-product-requirements.md`](task-decomposition-product-requirements.md). It defines, for product-requirements deep research: 八段 PR-FAQ skeleton → aspect → persona prompt, the per-tier aspect subset, EA + Strategist **balanced** ownership rationale, the **five hard-gate segments** (段3 4-risks 全 / 段4 ≥3 候选 / 段5 非目标 显式 / 段6 三套指标 / 段8 TM-11 falsification), the "working backwards" PR-FAQ assembly note, and intent overlay.
 
 ## Two personas (each = one inline `aspect_agent_prompt`)
 
@@ -26,10 +26,10 @@ Same two persona prompts as competitive / product-capability / innovation-direct
 | `ost-solution-space` | 4 | **experience-analyst** (+ Strategist 借入做可行性快评) | 段2 每 underserved outcome × ≥3 解决方案候选 + 每候选 ≥1 最危险假设 + 既有 / 竞争方案对照 | **≥3 候选** (缺即 gap fail) + ≥2 最危险假设 + 对照 + 每候选 "可行性 + 用户价值 + 风险" 快评 |
 | `requirements-fn-nfn-nongoals` | 5 | **experience-analyst** (+ Strategist 借入做非功能/非目标) | 功能需求列表 (每条 outcome 语句 + Kano 标) + 非功能需求 (性能 / 安全 / 合规) + **非目标** (明确 "不做什么" + 为何不做) | 每功能 trace 回段2 outcome (gap fail if not)；**非目标显式列** (gap fail if missing) + 每个 "为何不做" 理由；非功能至少含性能 + 安全 |
 | `metrics-tree` | 6 | strategist (+ EA TM-2 metrics-informed) | 主指标 leading (北极星 / 激活 / 完成率) + 次指标 secondary (细分 / 漏斗) + 护栏 guardrails (不能让什么变差) 三套全有 | **主 / 次 / 护栏 全有** (缺一即 gap fail)；每指标 5 字段全 (定义 / 计算方式 / 数据来源 / 成功标准 / 采集频率)；TM-9 杠杆点筛 leading |
-| `evidence-table` | 7 **(OPTIONAL — )** | 跨人格 TM-4 (strategist 主笔) | 一手 / 二手来源表 + 每条声明置信度 + 4-tier 全套 | **默认不 spin**：4-tier 表由 final-report Phase B 跨段聚合产出 (等价)。仅 standalone evidence pack 时 spin，此时 4-tier 全套 (≥1 each tier 或 显式声明 absence reason) + 每声明 confidence label + TM-4 全员 + **"聚合 prior aspects，不重复 search"**|
+| `evidence-table` | 7 **optional** | 跨人格 TM-4 (strategist 主笔) | 一手 / 二手来源表 + 每条声明置信度 + 4-tier 全套 | **默认不 spin**：4-tier 表由 final-report Phase B 跨段聚合产出。仅 standalone evidence pack 时 spin，此时 4-tier 全套 (≥1 each tier 或 显式声明 absence reason) + 每声明 confidence label + TM-4 全员 + **"聚合 prior aspects，不重复 search"**（Lapis `evidence_refs` 不许 cite prior_sources by id，meta-aggregation 自搜容易制造 provenance mismatch）|
 | `open-questions-experiments` | 8 | strategist (**TM-11 hard gate**) | 未决问题清单 + 每个 "为何还未决" + **"靠什么会决"** (discovery sprint / prototype / A-B test 等可执行实验设计) + 下一步 owner / 时间窗 | **每未决问题 TM-11 hard gate**：必须含 "靠什么会决" (实验设计)；缺 → 强制 backfill；不可写 "需要更多研究" 此类空话 |
 
-> **段3 Cagan 4-risks = 4 micro-aspect**：段3 以 4 个 single-class micro-aspect 落地（`cagan-risk-value` / `-usability` / `-feasibility` / `-business`），每个只评 1 类风险、`max_search_calls=4`、bounded 预算强制收敛。**Why**：单个 4-class `cagan-4risks` aspect 在 strategist persona 下持续搜证不收敛、4-risk 评估深度受损；4 个 bounded single-class 任务各自收敛，恢复 dedicated 段3 输出深度。段3 hard gate "4 类全覆盖" = "4 个 micro-aspect 全 present 且各自该类完备"；final-report Phase B 段3 从 4 micro-aspect 装配。段3 仍是 **Strategist 拥有的一个段**（段所有权不变）。
+> **段3 Cagan 4-risks = 4 micro-aspect**：段3 以 4 个 single-class micro-aspect 落地（`cagan-risk-value` / `-usability` / `-feasibility` / `-business`），每个只评 1 类风险、`max_search_calls=3`、bounded 预算强制收敛。**Why**：单个 4-class `cagan-4risks` aspect 在 strategist persona 下持续搜证不收敛、4-risk 评估深度受损；4 个 bounded single-class 任务各自收敛，恢复 dedicated 段3 输出深度。Keep the ceiling at 3 because broader retrieval increases provenance-copy risk for these narrow micro-aspects; unresolved coverage must become a gap, assumption, or follow-up test. 段3 hard gate "4 类全覆盖" = "4 个 micro-aspect 全 present 且各自该类完备"；final-report Phase B 段3 从 4 micro-aspect 装配。段3 仍是 **Strategist 拥有的一个段**（段所有权不变）。
 
 ### EA + Strategist balanced persona ownership note
 
@@ -40,7 +40,7 @@ One Lapis aspect = one persona，所以 profile §5 标 "EA + Strategist 双签 
 
 ### 五个 hard gate 段
 
-不同于 单 hard gate (无 hard gate 段) 与 双 hard gate (段6 pre-mortem 三死因 + 段8 TM-11)，本 profile 有 **5 个 hard gate 段**：
+This profile has **5 hard-gate segments** because product-requirements research is meant to become PRD/development input, not a strategy discussion:
 
 | 段 | hard gate | 触发缺口 | 处理 |
 |---|---|---|---|
@@ -48,15 +48,15 @@ One Lapis aspect = one persona，所以 profile §5 标 "EA + Strategist 双签 
 | 4 | **OST ≥3 候选 / outcome** | <3 候选 | 整段 0 分 + Phase A backfill |
 | 5 | **非目标 显式列** | 缺 "不做什么" 段 | 整段 0 分 + Phase A backfill (PR-FAQ 文化核心) |
 | 6 | **三套指标 (主/次/护栏)** | 缺一套 | 整段 0 分 + Phase A backfill |
-| 8 | **TM-11 falsification 100%** | 任一未决问题缺 "靠什么会决" | 整段 0 分 + Phase A backfill (同 段8) |
+| 8 | **TM-11 falsification 100%** | 任一未决问题缺 "靠什么会决" | 整段 0 分 + Phase A backfill |
 
-> **Hard-gate density 最高**：4 profile 中最严，因 PRD 前置物是 build-input (写完直接接开发/实验)，缺任一 hard gate 都会让下游开发卡住或返工。Strategist + EA 双侧人格在各自段内必须 enforce 本段 hard gate，不可外推到 final-report Phase C 兜底 (那是兜底机制，不是首选)。
+> **Hard-gate density 最高**：四个 capabilities 中最严，因 PRD 前置物是 build-input (写完直接接开发/实验)，缺任一 hard gate 都会让下游开发卡住或返工。Strategist + EA 双侧人格在各自段内必须 enforce 本段 hard gate，不可外推到 final-report Phase C 兜底 (那是兜底机制，不是首选)。
 
-### 8-section PR-FAQ template "working backwards" PR-FAQ assembly note
+### Working backwards PR-FAQ assembly note
 
 PR-FAQ 段1 看似在最前，但 Amazon working backwards 实际流程是：先 JTBD + ODI (段2) → 综合 4-risks + OST (段3+4) → 写需求 + metrics (段5+6) → **回填** PR-FAQ (段1 价值主张语句)。
 
-Lapis 8 段并行 (≤3 concurrent) 跑完后，**final-report Phase B 在 chapter assembly 阶段做 PR-FAQ 回填校验**：段1 strategist 在 aspect-research 中写出的 PR-FAQ structure (headline / FAQ 等) 在 final-report 中必须 verify "价值主张语句是否 trace 回段2 ODI outcomes"。这是 8-section PR-FAQ template 不同于 13-section narrative report 的关键 narrative 流。
+Lapis 8 段并行 (≤3 concurrent) 跑完后，**final-report Phase B 在 chapter assembly 阶段做 PR-FAQ 回填校验**：段1 strategist 在 aspect-research 中写出的 PR-FAQ structure (headline / FAQ 等) 在 final-report 中必须 verify "价值主张语句是否 trace 回段2 ODI outcomes"。这是 product-requirements 8-section template 的关键 narrative 流。
 
 **实践建议**：段1 strategist 在 `success_criteria` 中允许写 "PR-FAQ structure 完整，价值主张语句待 final-report Phase B 用段2 ODI evidence ids 回填校验"，不要求段1 单独 self-contained。
 
@@ -65,20 +65,35 @@ Lapis 8 段并行 (≤3 concurrent) 跑完后，**final-report Phase B 在 chapt
 - `build` (本期 default): 段1 PR-FAQ 强制 "新产品上线日" 风格 (Amazon 经典 PR-FAQ format); 段4 OST 强制 ≥1 "新建 vs 复用既有平台" 对比; 段6 metrics 主指标含激活/留存 leading metric; 段1 `max_search_calls` +1 (PR-FAQ 借鉴 Amazon-style 范例).
 - `improve`: 段2 必含 user-side baseline (current Imp/Sat 数据); 段3 4-risks 重在 value/usability; 段4 OST 强制 ≥1 既有方案 对照; 段6 metrics 含 guardrail "不能让已有指标恶化".
 
+### Sports / fitness / health overlay
+
+When `subject_domain` or the request involves sports, fitness, training, recovery, wearables, nutrition, weight, injury, return-to-play, REDs, wellness, or health claims, layer these requirements onto the same aspect allocation:
+
+| Segment | Added requirement |
+|---|---|
+| 段1 PR-FAQ | Ban over-claiming: no diagnosis / treatment / injury-prevention / guaranteed recovery / guaranteed weight-loss copy without direct regulatory and clinical evidence. |
+| 段3 Cagan risks | Include safety and regulatory implications inside value / usability / feasibility / business risk where relevant. |
+| 段5 Requirements | Include Safety Boundary, No-go Claims, and escalation / referral rules for high-risk states. |
+| 段6 Metrics | Add health/safety guardrails: adverse feedback, pain reports, training interruption, overtraining signals, professional referral rate, explanation error rate, or comparable domain metrics. |
+| 段8 Open questions | Include measurement validity, derived metric validity, and action validity tests when wearable data drives recommendations. |
+
+This overlay does not add a new persona or aspect. It tightens success criteria for the existing segments.
+
 ## Per-tier aspect subsets
 
 | tier | aspects | rationale |
 |---|---|---|
 | `quick` | `pr-faq-frame` + `jtbd-odi-kano` | PR-FAQ + 机会验证 = 最小可决策的 "这事值不值得做" |
 | `standard` | + `cagan-risk-{value,usability,feasibility,business}` (段3×4 micro) + `ost-solution-space` (**7 total**) | 加 4 风险 (4 micro-aspect) + 解空间 (可进入 PRD 评审会的最小集) |
-| `deep` / `deep_evidence_pack` | + `requirements-fn-nfn-nongoals` + `metrics-tree` + `open-questions-experiments` (**10 mandatory**) + `evidence-table` **(OPTIONAL —，仅 `deep_evidence_pack` 或显式 evidence pack 意图)** | 加需求 / metrics / 未决问题 (PRD 前置物全套)；4-tier 证据表默认由 final-report Phase B 聚合，不单独占 aspect |
+| `deep` / `deep_evidence_pack` | + `requirements-fn-nfn-nongoals` + `metrics-tree` + `open-questions-experiments` (**10 mandatory**) + `evidence-table` **optional, only for `deep_evidence_pack` or explicit evidence-pack intent** | 加需求 / metrics / 未决问题 (PRD 前置物全套)；4-tier 证据表默认由 final-report Phase B 聚合，不单独占 aspect |
 
+> Per-tier counts: quick = 2, standard = 7 because 段3 splits into 4 micro-aspects, deep = 10 mandatory + optional 段7. Deep `max_agents=11`（10 mandatory + 1 预留可选段7）/ `max_concurrent_agents=3` / `total_timeout_ms=2400000` (11/3=4 waves), per-aspect `timeout_ms=600000`；段3 cagan micro per-aspect `max_search_calls=3`. Standard `max_agents=7` / `total_timeout_ms=1800000` (7/3=3 waves). 详 [`task-decomposition-product-requirements.md`](task-decomposition-product-requirements.md) Step 4.
 >
-> Quick 段1+段2 (PR-FAQ + ODI) 是 8-section PR-FAQ template 经典最小集 ("有没有用户痛点 + 写得出一段 PR 吗"); standard 加段3+段4 (能不能做 + 怎么做) 是评审会最小集; deep 加段5-段8 (需求 + 度量 + 证据 + 实验) 是开发 input deck.
+> Quick 段1+段2 (PR-FAQ + ODI) 是经典最小集 ("有没有用户痛点 + 写得出一段 PR 吗"); standard 加段3+段4 (能不能做 + 怎么做) 是评审会最小集; deep 加段5-段8 (需求 + 度量 + 证据 + 实验) 是开发 input deck.
 
 ## Budget per aspect (hand off to `task-decomposition-product-requirements.md` Step 4)
 
-每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 5 (standard) / 6 (deep); **段3 cagan micro-aspect (任一 tier) 用更小预算 `max_turns=5` / `max_tool_calls=6` / `max_search_calls=4`**（：单 1 类风险，bounded 预算强制收敛，破 M7 的 search-saturation）; per-aspect `timeout_ms` = **600000 恒**. Top-level `budget` ( 重算): deep `max_agents=11` / `max_total_model_calls=80` / `max_total_search_calls=64` / `total_timeout_ms=2400000`; standard `max_agents=7` / `max_total_model_calls=42` / `max_total_search_calls=32` / `total_timeout_ms=1800000`. 实测撞 budget → 顺序重试 + prior_sources baseline (M5/M6 验证路径).
+每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 5 (standard) / 6 (deep, only for full aspects that need enumeration); **段3 cagan micro-aspect (任一 tier) 用更小预算 `max_turns=5` / `max_tool_calls=5` / `max_search_calls=3`**（单 1 类风险，bounded 预算强制收敛，并降低 provenance mutation 风险）; `metrics-tree` / `open-questions-experiments` 同样使用 search=3 ceiling；per-aspect `timeout_ms` = **600000 恒**. Top-level `budget`: deep `max_agents=11` / `max_total_model_calls=80` / `max_total_search_calls=60` / `total_timeout_ms=2400000`; standard `max_agents=7` / `max_total_model_calls=42` / `max_total_search_calls=32` / `total_timeout_ms=1800000`. If an aspect reaches budget, retry sequentially once with `shared_context.prior_sources`; do not raise the search cap.
 
 ## Provider selection per aspect
 
@@ -91,11 +106,11 @@ Lapis 8 段并行 (≤3 concurrent) 跑完后，**final-report Phase B 在 chapt
 ## Invariants
 
 1. 每 aspect → exactly one persona prompt, inline (verbatim, non-empty, < 64 KiB).
-2. Aspects MECE across the 8 段 — 不重叠. **例外：段3 = 4 个 cagan single-class micro-aspect（value/usability/feasibility/business），共属段3、在段3 内部按风险类别 MECE 分区；跨段仍不重叠。**
+2. Aspects MECE across the 8 段 — 不重叠. **例外**：段3 = 4 个 cagan single-class micro-aspect（value/usability/feasibility/business），共属段3、在段3 内部按风险类别 MECE 分区；跨段仍不重叠。
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `subject` + audience 写在 `shared_context.summary` (aspect agents 读 it).
 5. Downstream `Evidence.source_type` 用 Lapis 7-value 集; 4-tier credibility 是 Skill 后处理, never an engine enum.
-6. **EA + Strategist balanced invariant（按段所有权，非 aspect 计数）**: **段所有权** EA 3 段 (段2/4/5) / Strategist 5 段 (段1/3/6/7/8) — 此平衡是 profile 关键契约，**不变**。注意 后段3 以 4 micro-aspect 落地，故 deep **aspect 计数** = EA 3 / Strategist 8 (段1 + 段3×4 + 段6/7/8)，但这只是段3 单段的执行展开，不改段所有权平衡。若某课题 EA-load 不平衡 (如 subject 已有完整 JTBD 不需 EA 段2 deep)，先合段 (如段2+段4 合并)，不要切给 strategist (会破坏用户视角)。
+6. **EA + Strategist balanced invariant（按段所有权，非 aspect 计数）**: **段所有权** EA 3 段 (段2/4/5) / Strategist 5 段 (段1/3/6/7/8) — 此平衡是 profile 关键契约，**不变**。注意段3 以 4 micro-aspect 落地，故 deep **aspect 计数** = EA 3 / Strategist 8 (段1 + 段3×4 + 段6/7/8)，但这只是段3 单段的执行展开，不改段所有权平衡。若某课题 EA-load 不平衡 (如 subject 已有完整 JTBD 不需 EA 段2 deep)，先合段 (如段2+段4 合并)，不要切给 strategist (会破坏用户视角)。
 7. **段3 / 段4 / 段5 / 段6 / 段8 是 hard floor aspects** — 缺对应 hard gate (4-risks 全 / ≥3 候选 / 非目标 / 三套指标 / TM-11) → 整段 0 分, 拒绝软化. 4 profile 中 hard-gate density 最高 (5 hard gates), by design.
 8. 段1 PR-FAQ 不可包含实现细节 (技术架构 / 模块名 / DB schema 等) — strategist 在 success_criteria 中显式禁止.
-9. 段4 OST 候选可借段3 4-risks viability evidence ids 做快评, 减少独立 search 消耗 (与 段5 ODI 借 EA prior 同模式).
+9. 段4 OST 候选可借段3 4-risks viability evidence ids 做快评，减少独立 search 消耗。

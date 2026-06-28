@@ -11,6 +11,7 @@ Lapis has no persona concept; a persona is realised purely as the inline prompt 
 | `experience-analyst` | [`../layer2/persona-experience-analyst.md`](../layer2/persona-experience-analyst.md) | user / experience / evidence | 2, 3, experience paths, JTBD half | TM-1/2/6/10/12 |
 | `strategist` | [`../layer2/persona-strategist.md`](../layer2/persona-strategist.md) | strategy / trade-off / foresight | 1 (framing), 4, 5, threat, build-cost | TM-3/5/7/8/9/13 (+ TM-12 borrowed for build-cost) |
 
+> CI/Market absorption: there is no separate Competitive-Intelligence or Market analyst. CI work (competitive map, feature matrix) lands in the experience-analyst teardown + strategist positioning/threat; market context is a strategist input (Porter at industry layer only). Add a separate CI/Market persona only after validating the need.
 
 ## Five-dim spine → aspect → persona
 

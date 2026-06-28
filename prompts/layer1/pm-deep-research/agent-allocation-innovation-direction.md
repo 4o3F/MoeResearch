@@ -28,7 +28,7 @@ Same two persona prompts as competitive / product-capability (Lapis has no perso
 
 ### 段2 sole-EA persona ownership note
 
-One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 profile 收敛到段2 一个 aspect. 段4 中 "对位" 维度 (能力候选 vs unmet) 由 `future-capability-map` (strategist) 通过 `shared_context.prior_sources` 引用段2 EA aspect 输出 fold-in. **不另起 dedicated EA aspect for 段4 对位** (避免 8→9 aspect 增预算 + 增 wave; 同 段5 strategist 用 EA 数据同模式).
+One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 profile 收敛到段2 一个 aspect. 段4 中 "对位" 维度 (能力候选 vs unmet) 由 `future-capability-map` (strategist) 通过 `shared_context.prior_sources` 引用段2 EA aspect 输出 fold-in. **不另起 dedicated EA aspect for 段4 对位** (避免 8→9 aspect 增预算 + 增 wave).
 
 ### 段6 pre-mortem 强制三死因 hard rule
 
@@ -40,14 +40,14 @@ One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 pro
 
 未达标 → Phase A (final-report) 触发段6 backfill 一轮; 仍不达标 → 标缺口 + 降置信, 不为分数注水.
 
-### 段8 TM-11 hard gate 
+### 段8 TM-11 hard gate
 
 `recommended-bets` 的 `success_criteria` 必须显式列：
 - 每推荐下注 ≥1 "什么条件下错" (leading indicator + 阈值, 如 "AI 教练赛道 12 月内 Apple/OpenAI 未发 health agent 通用 SDK → 押 vertical Coach 不投空");
 - 每推荐下注 ≥1 显性权衡 (TM-5 "选 X = 放弃 Y");
 - 每推荐下注 4 风险 (value / usability / feasibility / business viability) 评级 (high/medium/low + 一句依据).
 
-缺 falsifiability 条件 → aspect 整段 0 分 (TM-11 是 floor 不是 soft preference). 这是 innovation-direction profile 与 competitive / product-capability 最大差异 — **未来下注的核心质量在"如何知道押错了"**.
+缺 falsifiability 条件 → aspect 整段 0 分 (TM-11 是 floor 不是 soft preference). **未来下注的核心质量在"如何知道押错了"**.
 
 ### Intent overlay
 
@@ -63,11 +63,13 @@ One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 pro
 | `standard` | + `unmet-outcomes`, `whitespace-canvas`, `future-capability-map` (5 total) | 加 unmet + 白地 + 未来能力 (决策依据 + 押注根据) |
 | `deep` / `deep_evidence_pack` | + `disruption-defensibility`, `pre-mortem-top3`, `build-cost-feasibility` (**8 total**) | 加颠覆/可防御性 + pre-mortem (三死因强制) + build-cost; 段8 TM-11 hard gate 全 tier 启用 |
 
+> Per-tier counts: quick = 2, standard = 5, deep = 8 — all 8 segments are expanded in Deep. Deep `max_agents=8` / `max_concurrent_agents=3` / `total_timeout_ms=1800000` (3 waves), per-aspect `timeout_ms=600000`. 详 [`task-decomposition-innovation-direction.md`](task-decomposition-innovation-direction.md) Step 4.
 >
+> Quick 段1+段8 跳过中间段 6 个看似激进, 但 quick 短路径本就是 "headline + bet收敛" 的最小可决策；中间 6 段属 standard+ 的"为什么这么押"展开.
 
 ## Budget per aspect (hand off to `task-decomposition-innovation-direction.md` Step 4)
 
-每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `budget` 同 plan §3 : deep `max_total_model_calls=50` / `max_total_search_calls=40` (从 实测 40/30 上调 1.25× 因 8 段比 6 段多). 实测撞 budget → 顺序重试 + prior_sources baseline (M5 段5 路径).
+每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `budget`: deep `max_total_model_calls=50` / `max_total_search_calls=40`. If an aspect reaches budget, retry sequentially once with `shared_context.prior_sources`; do not raise the search cap.
 
 ## Provider selection per aspect
 
@@ -86,4 +88,4 @@ One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 pro
 5. Downstream `Evidence.source_type` 用 Lapis 7-value 集; 4-tier credibility 是 Skill 后处理, never an engine enum.
 6. **Strategist-heavy invariant**: 8 aspects 中 7 个 (段1/3/4/5/6/7/8) 由 strategist 拥有; 1 个 (段2) 由 EA 拥有. 若某课题 strategist-load 不平衡 (如 subject_domain 已知不需 trend scan), 先合段 (如段1 折叠进段4), 不要切给 EA.
 7. **段6 + 段8 是 hard floor aspect** — 缺 (3 死因 / falsifiability) → 整段 0 分, 拒绝软化.
-8. 段7 build-cost-feasibility 的 changelog 证据可从段1 trend-scan / 段4 future-capability-map 的 prior evidence_index 借用, 减少独立 search 消耗 (与 段5 ODI 借 EA prior 同模式).
+8. 段7 build-cost-feasibility 的 changelog 证据可从段1 trend-scan / 段4 future-capability-map 的 prior evidence_index 借用, 减少独立 search 消耗。
