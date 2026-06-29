@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -139,16 +140,13 @@ impl<'a> AgentRuntime<'a> {
         let mut state = RuntimeState::new(self.initial_input());
 
         loop {
-            let model_response = match self
-                .complete_model_turn(&mut state, &mut budget, &tool_policy)
+            let model_response = match deadline
+                .run(self.complete_model_turn(&mut state, &mut budget, &tool_policy))
                 .await
             {
                 Ok(response) => response,
                 Err(error) => return Err(self.failure(error, &state, &budget)),
             };
-            if let Err(error) = deadline.ensure_not_elapsed() {
-                return Err(self.failure(error, &state, &budget));
-            }
             if model_response.tool_calls.is_empty() {
                 let content = match model_response.content.as_deref().ok_or_else(|| {
                     Error::SchemaValidationFailed {
@@ -169,23 +167,20 @@ impl<'a> AgentRuntime<'a> {
 
             let mut tool_outputs = Vec::new();
             for tool_call in &model_response.tool_calls {
-                let output = match self
-                    .execute_tool_call(
+                let output = match deadline
+                    .run(self.execute_tool_call(
                         tool_call,
                         &tool_policy,
                         &mut budget,
                         &search_policy,
                         search_provider.as_deref(),
                         &mut state,
-                    )
+                    ))
                     .await
                 {
                     Ok(output) => output,
                     Err(error) => return Err(self.failure(error, &state, &budget)),
                 };
-                if let Err(error) = deadline.ensure_not_elapsed() {
-                    return Err(self.failure(error, &state, &budget));
-                }
                 tool_outputs.push(output);
             }
             state.append_model_output_and_tool_outputs(&model_response, tool_outputs);
@@ -747,16 +742,33 @@ impl RuntimeDeadline {
         }
     }
 
-    fn ensure_not_elapsed(&self) -> Result<()> {
-        if self
-            .timeout_ms
-            .is_elapsed(elapsed_ms(self.started.elapsed()))
-        {
-            return Err(Error::BudgetExceeded {
-                message: "agent runtime budget timeout exhausted".to_owned(),
-            });
+    fn remaining(&self) -> Result<Option<Duration>> {
+        match self.timeout_ms {
+            Limit::Unlimited => Ok(None),
+            Limit::Limited(limit_ms) => {
+                let elapsed = elapsed_ms(self.started.elapsed());
+                if elapsed >= limit_ms {
+                    return Err(Error::BudgetExceeded {
+                        message: "agent runtime budget timeout exhausted".to_owned(),
+                    });
+                }
+                Ok(Some(Duration::from_millis(limit_ms - elapsed)))
+            }
         }
-        Ok(())
+    }
+
+    async fn run<F, T>(&self, future: F) -> Result<T>
+    where
+        F: Future<Output = Result<T>>,
+    {
+        match self.remaining()? {
+            None => future.await,
+            Some(remaining) => tokio::time::timeout(remaining, future).await.map_err(|_| {
+                Error::BudgetExceeded {
+                    message: "agent runtime budget timeout exhausted".to_owned(),
+                }
+            })?,
+        }
     }
 }
 

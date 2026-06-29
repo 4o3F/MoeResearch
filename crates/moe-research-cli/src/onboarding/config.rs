@@ -21,7 +21,7 @@ impl ProviderSelections {
 
 #[derive(Clone, Debug)]
 pub struct ConfigPlan {
-    pub network_timeout_ms: u64,
+    pub network_inactivity_timeout_ms: u64,
     pub openai: ProviderPlan,
     pub grok: ProviderPlan,
     pub exa: ProviderPlan,
@@ -53,7 +53,7 @@ impl ConfigPlan {
 impl Default for ConfigPlan {
     fn default() -> Self {
         Self {
-            network_timeout_ms: 120_000,
+            network_inactivity_timeout_ms: 120_000,
             openai: ProviderPlan::new(
                 false,
                 "https://api.openai.com/v1",
@@ -85,7 +85,7 @@ pub struct ProviderPlan {
     pub enabled: bool,
     pub base_url: String,
     pub api_key_env: String,
-    pub timeout_ms: u64,
+    pub inactivity_timeout_ms: u64,
     pub model: Option<String>,
 }
 
@@ -95,14 +95,14 @@ impl ProviderPlan {
         enabled: bool,
         base_url: &str,
         api_key_env: &str,
-        timeout_ms: u64,
+        inactivity_timeout_ms: u64,
         model: Option<&str>,
     ) -> Self {
         Self {
             enabled,
             base_url: base_url.to_owned(),
             api_key_env: api_key_env.to_owned(),
-            timeout_ms,
+            inactivity_timeout_ms,
             model: model.map(str::to_owned),
         }
     }
@@ -147,7 +147,7 @@ pub fn render_config(plan: &ConfigPlan) -> String {
 format = "json"
 
 [network]
-timeout_ms = {network_timeout_ms}
+inactivity_timeout_ms = {network_inactivity_timeout_ms}
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "moeresearch/0.1.0"
@@ -156,26 +156,26 @@ user_agent = "moeresearch/0.1.0"
 enabled = {}
 base_url = {}
 api_key_env = {}
-timeout_ms = {exa_timeout_ms}
+inactivity_timeout_ms = {exa_timeout_ms}
 
 [search.providers.tavily]
 enabled = {}
 base_url = {}
 api_key_env = {}
-timeout_ms = {tavily_timeout_ms}
+inactivity_timeout_ms = {tavily_timeout_ms}
 
 [search.providers.grok]
 enabled = {}
 base_url = {}
 api_key_env = {}
-timeout_ms = {grok_timeout_ms}
+inactivity_timeout_ms = {grok_timeout_ms}
 model = {}
 
 [model.providers.openai]
 enabled = {}
 base_url = {}
 api_key_env = {}
-timeout_ms = {openai_timeout_ms}
+inactivity_timeout_ms = {openai_timeout_ms}
 model = {}
 
 [budget.research]
@@ -206,11 +206,11 @@ timeout_ms = -1
         toml_string(&plan.openai.base_url),
         toml_string(&plan.openai.api_key_env),
         toml_string(plan.openai.model.as_deref().unwrap_or("gpt-5.5")),
-        network_timeout_ms = plan.network_timeout_ms,
-        exa_timeout_ms = plan.exa.timeout_ms,
-        tavily_timeout_ms = plan.tavily.timeout_ms,
-        grok_timeout_ms = plan.grok.timeout_ms,
-        openai_timeout_ms = plan.openai.timeout_ms,
+        network_inactivity_timeout_ms = plan.network_inactivity_timeout_ms,
+        exa_timeout_ms = plan.exa.inactivity_timeout_ms,
+        tavily_timeout_ms = plan.tavily.inactivity_timeout_ms,
+        grok_timeout_ms = plan.grok.inactivity_timeout_ms,
+        openai_timeout_ms = plan.openai.inactivity_timeout_ms,
     )
 }
 

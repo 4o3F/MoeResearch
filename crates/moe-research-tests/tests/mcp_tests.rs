@@ -736,7 +736,7 @@ fn cli_serve_writes_startup_logs_to_stderr_not_stdout() {
 format = "json"
 
 [network]
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "moeresearch/0.1.0"
@@ -745,20 +745,20 @@ user_agent = "moeresearch/0.1.0"
 enabled = false
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 
 [search.providers.grok]
 enabled = false
 base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 model = "grok-4.3"
 
 [model.providers.openai]
 enabled = false
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 model = "gpt-5.5"
 
 [budget.research]

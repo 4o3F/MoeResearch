@@ -66,7 +66,7 @@ impl ReqwestNetworkClient {
         retry_backoff_ms: u64,
         user_agent: &str,
     ) -> Result<Self> {
-        validate_timeout("network.timeout_ms", default_timeout_ms)?;
+        validate_timeout("network.inactivity_timeout_ms", default_timeout_ms)?;
         let header_value =
             HeaderValue::from_str(user_agent).map_err(|source| Error::ConfigInvalid {
                 message: format!("invalid network.user_agent header: {source}"),
@@ -95,8 +95,10 @@ impl ReqwestNetworkClient {
         let url = Url::parse(&request.url).map_err(|_| Error::InvalidInput {
             message: "invalid outbound URL".to_owned(),
         })?;
-        let timeout_ms = request.timeout_ms.unwrap_or(self.default_timeout_ms);
-        validate_timeout("request.timeout_ms", timeout_ms)?;
+        let timeout_ms = request
+            .inactivity_timeout_ms
+            .unwrap_or(self.default_timeout_ms);
+        validate_timeout("request.inactivity_timeout_ms", timeout_ms)?;
         let host = url.host_str().unwrap_or("unknown").to_owned();
         let path = url.path().to_owned();
         let correlation_id = Uuid::new_v4();
@@ -115,10 +117,7 @@ impl ReqwestNetworkClient {
             emit_outbound_wire_trace(correlation_id, attempt, &method, &host, &path, body);
         }
 
-        let mut builder = self
-            .client
-            .request(method.clone(), url)
-            .timeout(Duration::from_millis(timeout_ms));
+        let mut builder = self.client.request(method.clone(), url);
         builder = apply_headers(builder, &request.headers)?;
 
         if let Some(body) = request.body {
@@ -272,15 +271,22 @@ impl ReqwestNetworkClient {
         let mut stream = response.bytes_stream().eventsource();
         let mut event_count = 0usize;
         let mut total_data_bytes = 0usize;
-        let first_event = match stream.next().await {
-            Some(Ok(event)) => event,
-            Some(Err(source)) => return Err(sse_stream_error(&source, true)),
-            None => {
-                return Err(Error::NetworkFailed {
-                    message: "SSE stream ended without events".to_owned(),
-                });
-            }
-        };
+        let first_event =
+            match tokio::time::timeout(Duration::from_millis(timeout_ms), stream.next()).await {
+                Ok(Some(Ok(event))) => event,
+                Ok(Some(Err(source))) => return Err(sse_stream_error(&source, true)),
+                Ok(None) => {
+                    return Err(Error::NetworkFailed {
+                        message: "SSE stream ended without events".to_owned(),
+                    });
+                }
+                Err(_) => {
+                    return Err(Error::HttpTransport {
+                        message: "SSE stream idle timeout before first event".to_owned(),
+                        retryable: true,
+                    });
+                }
+            };
         tracing::trace!(
             target: "moe_research_net::reqwest_client",
             correlation_id = %correlation_id,
@@ -316,6 +322,7 @@ impl ReqwestNetworkClient {
                 host,
                 path,
                 status: status.as_u16(),
+                timeout_ms,
             },
             event_count,
             total_data_bytes,
@@ -386,6 +393,7 @@ struct SsePumpContext {
     host: String,
     path: String,
     status: u16,
+    timeout_ms: u64,
 }
 
 fn validate_accept_header(headers: &[Header], expected: &str) -> Result<()> {
@@ -492,14 +500,12 @@ async fn pump_sse_events<S, E>(
                 );
                 return;
             }
-            next = stream.next() => {
-                let Some(next) = next else {
-                    break;
-                };
+            next = next_sse_event_with_idle_timeout(&mut stream, context.timeout_ms) => {
                 let event = match next {
-                    Ok(event) => event,
-                    Err(source) => {
-                        let _ = sender.send(Err(sse_stream_error(&source, false))).await;
+                    Ok(Some(event)) => event,
+                    Ok(None) => break,
+                    Err(error) => {
+                        let _ = sender.send(Err(error)).await;
                         return;
                     }
                 };
@@ -546,6 +552,25 @@ async fn pump_sse_events<S, E>(
     );
 }
 
+async fn next_sse_event_with_idle_timeout<S, E>(
+    stream: &mut S,
+    timeout_ms: u64,
+) -> Result<Option<eventsource_stream::Event>>
+where
+    S: Stream<Item = std::result::Result<eventsource_stream::Event, E>> + Unpin,
+    E: Display,
+{
+    match tokio::time::timeout(Duration::from_millis(timeout_ms), stream.next()).await {
+        Ok(Some(Ok(event))) => Ok(Some(event)),
+        Ok(Some(Err(source))) => Err(sse_stream_error(&source, false)),
+        Ok(None) => Ok(None),
+        Err(_) => Err(Error::HttpTransport {
+            message: "SSE stream idle timeout waiting for next event".to_owned(),
+            retryable: true,
+        }),
+    }
+}
+
 fn enforce_sse_caps(
     data_len: usize,
     event_count: &mut usize,
@@ -579,9 +604,13 @@ async fn send_request(
     builder: RequestBuilder,
     context: &TransportErrorLogContext<'_>,
 ) -> Result<Response> {
-    match builder.send().await {
-        Ok(response) => Ok(response),
-        Err(source) => Err(logged_transport_error(&source, context)),
+    match tokio::time::timeout(Duration::from_millis(context.timeout_ms), builder.send()).await {
+        Ok(Ok(response)) => Ok(response),
+        Ok(Err(source)) => Err(logged_transport_error(&source, context)),
+        Err(_) => Err(Error::HttpTransport {
+            message: "network inactivity timeout while sending request".to_owned(),
+            retryable: true,
+        }),
     }
 }
 
@@ -590,9 +619,13 @@ async fn read_response_body(
     response: Response,
     context: &TransportErrorLogContext<'_>,
 ) -> Result<String> {
-    match response.text().await {
-        Ok(text) => Ok(text),
-        Err(source) => Err(logged_transport_error(&source, context)),
+    match tokio::time::timeout(Duration::from_millis(context.timeout_ms), response.text()).await {
+        Ok(Ok(text)) => Ok(text),
+        Ok(Err(source)) => Err(logged_transport_error(&source, context)),
+        Err(_) => Err(Error::HttpTransport {
+            message: "network inactivity timeout while reading response body".to_owned(),
+            retryable: true,
+        }),
     }
 }
 

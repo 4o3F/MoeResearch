@@ -74,7 +74,7 @@ pub struct LoggingConfig {
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NetworkConfig {
-    pub timeout_ms: u64,
+    pub inactivity_timeout_ms: u64,
     pub max_retries: usize,
     pub retry_backoff_ms: u64,
     pub user_agent: String,
@@ -82,9 +82,9 @@ pub struct NetworkConfig {
 
 impl NetworkConfig {
     fn validate(&self) -> Result<()> {
-        if self.timeout_ms == 0 {
+        if self.inactivity_timeout_ms == 0 {
             return Err(Error::ConfigInvalid {
-                message: "network.timeout_ms must not be zero".to_owned(),
+                message: "network.inactivity_timeout_ms must not be zero".to_owned(),
             });
         }
 
@@ -153,7 +153,7 @@ pub struct ModelProviderEndpoint {
     pub enabled: bool,
     pub base_url: String,
     pub api_key_env: Option<String>,
-    pub timeout_ms: Option<u64>,
+    pub inactivity_timeout_ms: Option<u64>,
     pub model: Option<String>,
 }
 
@@ -165,7 +165,7 @@ impl ModelProviderEndpoint {
             });
         }
 
-        validate_timeout("model", name, self.timeout_ms)?;
+        validate_inactivity_timeout("model", name, self.inactivity_timeout_ms)?;
         validate_api_key_env_name("model", name, self.api_key_env.as_ref())?;
         validate_model("model", name, self.enabled, self.model.as_ref())
     }
@@ -177,7 +177,7 @@ pub struct SearchProviderEndpoint {
     pub enabled: bool,
     pub base_url: String,
     pub api_key_env: Option<String>,
-    pub timeout_ms: Option<u64>,
+    pub inactivity_timeout_ms: Option<u64>,
     pub model: Option<String>,
     pub reasoning_effort: Option<GrokReasoningEffort>,
     #[serde(default)]
@@ -186,7 +186,7 @@ pub struct SearchProviderEndpoint {
 
 impl SearchProviderEndpoint {
     fn validate_structure(&self, name: &str) -> Result<()> {
-        validate_timeout("search", name, self.timeout_ms)?;
+        validate_inactivity_timeout("search", name, self.inactivity_timeout_ms)?;
         validate_api_key_env_name("search", name, self.api_key_env.as_ref())?;
         search_provider_spec(name)?.validate(name, self)
     }
@@ -361,10 +361,14 @@ pub struct AgentBudgetConfig {
     pub timeout_ms: DurationLimitMs,
 }
 
-fn validate_timeout(kind: &str, name: &str, timeout_ms: Option<u64>) -> Result<()> {
-    if timeout_ms == Some(0) {
+fn validate_inactivity_timeout(
+    kind: &str,
+    name: &str,
+    inactivity_timeout_ms: Option<u64>,
+) -> Result<()> {
+    if inactivity_timeout_ms == Some(0) {
         return Err(Error::ConfigInvalid {
-            message: format!("{kind}.providers.{name}.timeout_ms must not be zero"),
+            message: format!("{kind}.providers.{name}.inactivity_timeout_ms must not be zero"),
         });
     }
     Ok(())

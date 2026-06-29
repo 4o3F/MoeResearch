@@ -325,6 +325,89 @@ async fn start_open_sse(body: impl Into<String>) -> (String, oneshot::Sender<()>
     (format!("http://127.0.0.1:{port}"), stop_tx)
 }
 
+async fn start_delayed_sse(chunks: Vec<(Duration, String)>, keep_open: Duration) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind loopback");
+    let port = listener.local_addr().expect("local_addr").port();
+
+    tokio::spawn(async move {
+        let (mut socket, _) = match listener.accept().await {
+            Ok(pair) => pair,
+            Err(_) => return,
+        };
+        drain_request_headers(&mut socket).await;
+        let headers =
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\n\r\n";
+        let _ = socket.write_all(headers.as_bytes()).await;
+        for (delay, chunk) in chunks {
+            tokio::time::sleep(delay).await;
+            if socket.write_all(chunk.as_bytes()).await.is_err() {
+                return;
+            }
+        }
+        tokio::time::sleep(keep_open).await;
+        let _ = socket.shutdown().await;
+    });
+
+    tokio::task::yield_now().await;
+    format!("http://127.0.0.1:{port}")
+}
+
+async fn start_delayed_json_body(delay: Duration, body: impl Into<String>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind loopback");
+    let port = listener.local_addr().expect("local_addr").port();
+    let body = body.into();
+
+    tokio::spawn(async move {
+        let (mut socket, _) = match listener.accept().await {
+            Ok(pair) => pair,
+            Err(_) => return,
+        };
+        drain_request_headers(&mut socket).await;
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let _ = socket.write_all(headers.as_bytes()).await;
+        tokio::time::sleep(delay).await;
+        let _ = socket.write_all(body.as_bytes()).await;
+        let _ = socket.shutdown().await;
+    });
+
+    tokio::task::yield_now().await;
+    format!("http://127.0.0.1:{port}")
+}
+
+async fn drain_request_headers(socket: &mut tokio::net::TcpStream) {
+    let mut head = Vec::with_capacity(512);
+    let mut byte = [0u8; 1];
+    while socket.read_exact(&mut byte).await.is_ok() {
+        head.push(byte[0]);
+        if head.ends_with(b"\r\n\r\n") {
+            break;
+        }
+    }
+
+    let head_str = String::from_utf8_lossy(&head);
+    let content_length: usize = head_str
+        .lines()
+        .find_map(|line| {
+            let lower = line.to_ascii_lowercase();
+            lower
+                .strip_prefix("content-length:")
+                .map(|rest| rest.trim().parse::<usize>().ok())
+                .unwrap_or(None)
+        })
+        .unwrap_or(0);
+    if content_length > 0 {
+        let mut body = vec![0u8; content_length];
+        let _ = socket.read_exact(&mut body).await;
+    }
+}
+
 fn build_client() -> ReqwestNetworkClient {
     // `max_retries = 0` for tests that do not exercise retry; the retry
     // test overrides this via a dedicated constructor call.
@@ -352,7 +435,7 @@ fn request_to(url: String) -> NetworkRequest {
             },
         ],
         body: Some(serde_json::json!({ "input": "hello" })),
-        timeout_ms: Some(5_000),
+        inactivity_timeout_ms: Some(5_000),
     }
 }
 
@@ -653,6 +736,121 @@ async fn wire_trace_truncates_oversized_inbound_body() {
         "truncated wire body leaked secret: {head}"
     );
     assert!(head.contains("[REDACTED]"));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn network_timeout_is_sse_event_inactivity_not_total_stream_duration() {
+    let _trace_lock = lock_tracing_capture().await;
+    let base_url = start_delayed_sse(
+        vec![
+            (
+                Duration::ZERO,
+                "event: response.created\ndata: {\"type\":\"response.created\"}\n\n".to_owned(),
+            ),
+            (
+                Duration::from_millis(60),
+                "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\"}\n\n"
+                    .to_owned(),
+            ),
+            (
+                Duration::from_millis(60),
+                "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n"
+                    .to_owned(),
+            ),
+        ],
+        Duration::ZERO,
+    )
+    .await;
+
+    let client = ReqwestNetworkClient::new(100, 0, 50, "moe-research-tests/0.0.0")
+        .expect("ReqwestNetworkClient::new");
+    let mut request = sse_request_to(format!("{base_url}/responses"));
+    request.inactivity_timeout_ms = Some(100);
+    let mut stream = client
+        .send_sse(request)
+        .await
+        .expect("SSE request starts with first event");
+
+    let created = stream
+        .next_event()
+        .await
+        .expect("created event read")
+        .expect("created event present");
+    let delta = stream
+        .next_event()
+        .await
+        .expect("delta event read")
+        .expect("delta event present");
+    let completed = stream
+        .next_event()
+        .await
+        .expect("completed event read")
+        .expect("completed event present");
+
+    assert_eq!(created.event, "response.created");
+    assert_eq!(delta.event, "response.output_text.delta");
+    assert_eq!(completed.event, "response.completed");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sse_stream_times_out_when_next_event_is_idle() {
+    let _trace_lock = lock_tracing_capture().await;
+    let base_url = start_delayed_sse(
+        vec![(
+            Duration::ZERO,
+            "event: response.created\ndata: {\"type\":\"response.created\"}\n\n".to_owned(),
+        )],
+        Duration::from_millis(200),
+    )
+    .await;
+
+    let client = ReqwestNetworkClient::new(50, 0, 50, "moe-research-tests/0.0.0")
+        .expect("ReqwestNetworkClient::new");
+    let mut request = sse_request_to(format!("{base_url}/responses"));
+    request.inactivity_timeout_ms = Some(50);
+    let mut stream = client
+        .send_sse(request)
+        .await
+        .expect("SSE request starts with first event");
+    let event = stream
+        .next_event()
+        .await
+        .expect("first event read")
+        .expect("first event present");
+    let error = stream
+        .next_event()
+        .await
+        .expect_err("idle stream should time out before EOF");
+
+    assert_eq!(event.event, "response.created");
+    assert!(error.retryable());
+    assert!(
+        error
+            .to_string()
+            .contains("SSE stream idle timeout waiting for next event")
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn non_sse_body_read_uses_network_inactivity_timeout() {
+    let _trace_lock = lock_tracing_capture().await;
+    let base_url = start_delayed_json_body(Duration::from_millis(200), r#"{"ok":true}"#).await;
+    let client = ReqwestNetworkClient::new(50, 0, 50, "moe-research-tests/0.0.0")
+        .expect("ReqwestNetworkClient::new");
+    let mut request = request_to(format!("{base_url}/responses"));
+    request.inactivity_timeout_ms = Some(50);
+
+    let error = client
+        .send_json(request)
+        .await
+        .expect_err("body read should hit inactivity timeout");
+
+    assert!(error.retryable());
+    assert!(
+        error
+            .to_string()
+            .contains("network inactivity timeout while reading response body")
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]

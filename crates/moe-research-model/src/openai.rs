@@ -18,7 +18,7 @@ pub struct OpenAiProvider {
     network: Arc<dyn NetworkClient>,
     base_url: String,
     api_key: String,
-    timeout_ms: Option<u64>,
+    inactivity_timeout_ms: Option<u64>,
     model: String,
 }
 
@@ -27,14 +27,14 @@ impl OpenAiProvider {
         network: Arc<dyn NetworkClient>,
         base_url: String,
         api_key: String,
-        timeout_ms: Option<u64>,
+        inactivity_timeout_ms: Option<u64>,
         model: String,
     ) -> Self {
         Self {
             network,
             base_url,
             api_key,
-            timeout_ms,
+            inactivity_timeout_ms,
             model,
         }
     }
@@ -89,7 +89,7 @@ impl OpenAiProvider {
             "responses",
             &self.api_key,
             body,
-            self.timeout_ms,
+            self.inactivity_timeout_ms,
         ))
     }
 
