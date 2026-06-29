@@ -1,6 +1,6 @@
-# PM DeepResearch with Lapis
+# PM DeepResearch with MoeResearch
 
-PM DeepResearch is a product-manager deep research workflow built on top of the Lapis MCP engine. Lapis runs the structured research tools; the PM DeepResearch skill provides product methodology, aspect decomposition, evidence checks, and report synthesis prompts.
+PM DeepResearch is a product-manager deep research workflow built on top of the MoeResearch MCP engine. MoeResearch runs the structured research tools; the PM DeepResearch skill provides product methodology, aspect decomposition, evidence checks, and report synthesis prompts.
 
 Use this guide when you want to produce a product research report such as:
 
@@ -9,9 +9,9 @@ Use this guide when you want to produce a product research report such as:
 - innovation direction / future-bet research;
 - product-requirements research using an 8-section PR-FAQ template.
 
-## What Lapis Provides
+## What MoeResearch Provides
 
-Lapis provides the MCP tools:
+MoeResearch provides the MCP tools:
 
 | Tool | Use |
 | --- | --- |
@@ -26,36 +26,36 @@ PM DeepResearch adds the skill and prompt assets:
 | Layer 1 orchestration prompts | `prompts/layer1/pm-deep-research/` |
 | Layer 2 persona prompts | `prompts/layer2/pm-deep-research/` |
 
-Rust/Lapis owns provider calls, search, budgets, agent loops, schema validation, and byte-equal evidence provenance. The skill layer owns product methodology, report assembly, host-side fact verification, and writing quality.
+Rust/MoeResearch owns provider calls, search, budgets, agent loops, schema validation, and byte-equal evidence provenance. The skill layer owns product methodology, report assembly, host-side fact verification, and writing quality.
 
 ## Current Installation Model
 
 The current public delivery path is a binary install plus a repository checkout for skill assets:
 
-1. Install or build the `lapis` binary.
+1. Install or build the `moeresearch` binary.
 2. Keep a checkout of this repository available so your MCP client can load `skills/pm-deep-research.md` and the prompt assets under `prompts/`.
-3. Register the Lapis MCP server with your MCP client.
+3. Register the MoeResearch MCP server with your MCP client.
 4. Load the PM DeepResearch skill through your client's skill or instruction mechanism.
 
 Current release packaging configuration declares binary installers and package-manager metadata, but it does not declare a PM DeepResearch skill/prompt asset installation or discovery path. If you install only the binary from a release, Homebrew, npm, or MSI package, keep a repository checkout for the skill and prompt files.
 
-## 1. Install Lapis
+## 1. Install MoeResearch
 
 Install from a release artifact, package manager, or source as described in the repository README. A source build looks like:
 
 ```bash
 cargo build --release
-./target/release/lapis --help
+./target/release/moeresearch --help
 ```
 
-If you use a source build, replace `lapis` below with `./target/release/lapis`.
+If you use a source build, replace `moeresearch` below with `./target/release/moeresearch`.
 
 ## 2. Configure Providers
 
 Create a user-level config:
 
 ```bash
-lapis init --config ~/.config/lapis/lapis.toml
+moeresearch init --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 Enable at least one model provider and at least one search provider. For example, a common setup is:
@@ -72,22 +72,22 @@ export EXA_API_KEY="..."
 export TAVILY_API_KEY="..."
 ```
 
-Only enabled providers require environment variables. Lapis stores environment variable names in `lapis.toml`; it does not store raw provider keys.
+Only enabled providers require environment variables. MoeResearch stores environment variable names in `moeresearch.toml`; it does not store raw provider keys.
 
 Check local readiness:
 
 ```bash
-lapis check --config ~/.config/lapis/lapis.toml
+moeresearch check --config ~/.config/moeresearch/moeresearch.toml
 ```
 
-`lapis check --live` does not prove API key correctness in the current release; provider reachability checks are deferred.
+`moeresearch check --live` does not prove API key correctness in the current release; provider reachability checks are deferred.
 
 ## 3. Register the MCP Server
 
 For Claude Code:
 
 ```bash
-lapis mcp register --scope local --config ~/.config/lapis/lapis.toml
+moeresearch mcp register --scope local --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 For other MCP clients, configure an equivalent stdio server:
@@ -95,10 +95,10 @@ For other MCP clients, configure an equivalent stdio server:
 ```json
 {
   "mcpServers": {
-    "lapis": {
+    "moeresearch": {
       "type": "stdio",
-      "command": "lapis",
-      "args": ["serve", "--config", "/absolute/path/to/lapis.toml"],
+      "command": "moeresearch",
+      "args": ["serve", "--config", "/absolute/path/to/moeresearch.toml"],
       "env": {
         "OPENAI_API_KEY": "<redacted>",
         "XAI_API_KEY": "<redacted>",
@@ -115,7 +115,7 @@ Include only the environment variables for providers you enabled.
 You can also start the server manually for debugging:
 
 ```bash
-RUST_LOG=lapis=debug lapis serve --config ~/.config/lapis/lapis.toml --log-format pretty
+RUST_LOG=moe_research=debug moeresearch serve --config ~/.config/moeresearch/moeresearch.toml --log-format pretty
 ```
 
 MCP protocol messages use stdin/stdout. Logs are written to stderr.
@@ -152,7 +152,7 @@ Keep the prompt paths consistent with the instructions in the skill file. Do not
 Start with a concrete PM decision. Example:
 
 ```text
-Use PM DeepResearch with Lapis.
+Use PM DeepResearch with MoeResearch.
 
 Topic: Zone 2 anti-aging theory in commercial fitness products. If we consider a smart hardware + software product, is there a real opportunity?
 
@@ -161,14 +161,14 @@ Depth: deep
 Output language: Chinese
 Special requirements:
 - verify health, fitness, and academic claims carefully;
-- separate Lapis evidence from host WebSearch/WebFetch verification;
+- separate MoeResearch evidence from host WebSearch/WebFetch verification;
 - include safety boundaries, no-go claims, and metrics guardrails.
 ```
 
 The skill should:
 
 1. choose the `product-requirements` capability;
-2. decompose the request into Lapis aspect tasks;
+2. decompose the request into MoeResearch aspect tasks;
 3. call `deep_research`;
 4. retry failed aspects once when useful;
 5. post-process evidence;
@@ -193,11 +193,11 @@ For competitive, product-capability, and innovation-direction reports, expect a 
 
 ## Evidence and Fact Verification
 
-Lapis evidence and host-side verification must stay separate.
+MoeResearch evidence and host-side verification must stay separate.
 
 | Source origin | Meaning |
 | --- | --- |
-| Lapis evidence | Frozen `DeepResearchResult.evidence_index` and aspect findings. |
+| MoeResearch evidence | Frozen `DeepResearchResult.evidence_index` and aspect findings. |
 | Skill-side WebSearch/WebFetch backfill | Host-native verification rows for load-bearing facts that need original-source checks. |
 | Manual/host verification | Browser captures, local logs, screenshots, or direct artifact inspection. |
 
@@ -210,7 +210,7 @@ Host WebSearch/WebFetch is mandatory when triggered by:
 - weak-source evidence used for P0/P1 decisions;
 - contradictions between sources.
 
-Host-found sources use `HV-*` references. They must not be inserted into Lapis `evidence_index` or represented as Lapis evidence.
+Host-found sources use `HV-*` references. They must not be inserted into MoeResearch `evidence_index` or represented as MoeResearch evidence.
 
 If WebSearch/WebFetch is unavailable, the report must disclose the limitation, lower confidence, and move unresolved high-impact claims to open questions or the Action Pack.
 
@@ -227,15 +227,15 @@ The final report must disclose failed aspects in open questions or Annex A. It m
 Run:
 
 ```bash
-lapis check --config ~/.config/lapis/lapis.toml
-lapis serve --config ~/.config/lapis/lapis.toml --log-format pretty
+moeresearch check --config ~/.config/moeresearch/moeresearch.toml
+moeresearch serve --config ~/.config/moeresearch/moeresearch.toml --log-format pretty
 ```
 
-Confirm that the MCP client launches the same `lapis` binary and passes the intended config path. Check stderr logs for provider, config, or panic messages.
+Confirm that the MCP client launches the same `moeresearch` binary and passes the intended config path. Check stderr logs for provider, config, or panic messages.
 
 ### Missing provider environment variables
 
-`lapis check` validates that enabled providers reference environment variables that are set. Export the variables in the environment where the MCP client launches Lapis, not only in your shell.
+`moeresearch check` validates that enabled providers reference environment variables that are set. Export the variables in the environment where the MCP client launches MoeResearch, not only in your shell.
 
 ### HTTP 429 or provider rate limits
 
@@ -243,11 +243,11 @@ Reduce concurrency or depth. Use a smaller PM DeepResearch tier (`quick` or `sta
 
 ### `schema_validation_failed: mutated_evidence_provenance`
 
-The aspect agent changed a frozen evidence field. Evidence fields copied from Lapis search results must be byte-equal. Retry the failed aspect with a smaller evidence set and avoid copying all search results.
+The aspect agent changed a frozen evidence field. Evidence fields copied from MoeResearch search results must be byte-equal. Retry the failed aspect with a smaller evidence set and avoid copying all search results.
 
 ### WebSearch/WebFetch unavailable
 
-Continue with Lapis results only when claims can be supported by Lapis evidence. For claims that require original-source checks, lower confidence, disclose the limitation in Annex A.8, and move high-impact unresolved claims to open questions or validation tests.
+Continue with MoeResearch results only when claims can be supported by MoeResearch evidence. For claims that require original-source checks, lower confidence, disclose the limitation in Annex A.8, and move high-impact unresolved claims to open questions or validation tests.
 
 ### Skill asset path mismatch
 
@@ -263,7 +263,7 @@ If your client copies the skill into another directory, copy the prompt assets t
 
 ## What This Does Not Do
 
-- It does not add native WebFetch to the Lapis Rust engine.
-- It does not make host WebSearch/WebFetch part of Lapis provenance.
+- It does not add native WebFetch to the MoeResearch Rust engine.
+- It does not make host WebSearch/WebFetch part of MoeResearch provenance.
 - It does not install PM DeepResearch skill assets through the current release, Homebrew, npm, or MSI packages.
 - It does not replace source verification for high-risk health, fitness, safety, regulatory, or academic claims.

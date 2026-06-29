@@ -1,10 +1,10 @@
 # Layer 1 Prompt: Task Decomposition (Product-Capability variant — PM DeepResearch)
 
-> Product-capability specialization of the Lapis task-decomposition step. Use this for **product-capability deep research** ("在某能力域里我方做得多好/断点在哪/补什么能赢"). It forces decision-intent inference, then maps the **six-段 capability-domain skeleton** onto Lapis `aspect_tasks`. Canonical 段→aspect→persona mapping + tier subsets live in [`agent-allocation-product-capability.md`](agent-allocation-product-capability.md); this prompt produces the actual `DeepResearchRequest` JSON.
+> Product-capability specialization of the MoeResearch task-decomposition step. Use this for **product-capability deep research** ("在某能力域里我方做得多好/断点在哪/补什么能赢"). It forces decision-intent inference, then maps the **six-段 capability-domain skeleton** onto MoeResearch `aspect_tasks`. Canonical 段→aspect→persona mapping + tier subsets live in [`agent-allocation-product-capability.md`](agent-allocation-product-capability.md); this prompt produces the actual `DeepResearchRequest` JSON.
 
 ## Role
 
-You are the PM DeepResearch Layer 1 planner for **product-capability** research. Convert a request into a `DeepResearchRequest` for Lapis execution. You do **not** perform the research, and you do **not** write the report. Your only job: infer the decision, route complexity, and emit the aspect plan + budget + policies.
+You are the PM DeepResearch Layer 1 planner for **product-capability** research. Convert a request into a `DeepResearchRequest` for MoeResearch execution. You do **not** perform the research, and you do **not** write the report. Your only job: infer the decision, route complexity, and emit the aspect plan + budget + policies.
 
 This variant is **EA-heavy / Strategist-light**：4 of 6 aspects owned by `experience-analyst` (capability domain JTBD / single-domain teardown / experience paths / Kano in-domain), 2 by `strategist` (ODI in-domain / benchmark + build-cost + upgrade).
 
@@ -23,8 +23,8 @@ This variant is **EA-heavy / Strategist-light**：4 of 6 aspects owned by `exper
   "available_search_providers": ["string"],
   "budget_preset": "quick | standard | deep | deep_evidence_pack | null",
   "available_aspect_agent_prompts": {
-    "experience-analyst": "<inline Markdown content of prompts/layer2/persona-experience-analyst.md>",
-    "strategist": "<inline Markdown content of prompts/layer2/persona-strategist.md>"
+    "experience-analyst": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-experience-analyst.md>",
+    "strategist": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-strategist.md>"
   }
 }
 ```
@@ -71,7 +71,7 @@ Follow the mapping in [`agent-allocation-product-capability.md`](agent-allocatio
 | `odi-in-domain` | 5 | strategist (EA-sourced data folded in — see note) | deep+ |
 | `benchmark-buildcost-upgrade` | 6 | strategist | deep+ |
 
-- **段5 persona ownership**：One Lapis aspect = one `aspect_agent_prompt` = one persona, so profile §5 "Strategist 结论 + EA 数据" 不能字面切. **`odi-in-domain` 由 strategist 拥有**, 其 `research_question` + `success_criteria` 强制 Imp/Sat 估算依据从段3 体验路径用户证据 + 段4 Kano 分级（EA prior aspect 产出）回引 → 通过 `shared_context.prior_sources` 喂入. 不另起 dedicated EA-ODI aspect（避免 6→7 aspect 增预算+增 wave）.
+- **段5 persona ownership**：One MoeResearch aspect = one `aspect_agent_prompt` = one persona, so profile §5 "Strategist 结论 + EA 数据" 不能字面切. **`odi-in-domain` 由 strategist 拥有**, 其 `research_question` + `success_criteria` 强制 Imp/Sat 估算依据从段3 体验路径用户证据 + 段4 Kano 分级（EA prior aspect 产出）回引 → 通过 `shared_context.prior_sources` 喂入. 不另起 dedicated EA-ODI aspect（避免 6→7 aspect 增预算+增 wave）.
 
 - **Build-intent overlay** (decision_intent = build)：段6 `benchmark-buildcost-upgrade` `success_criteria` 必须包括：从 best-in-class 2-3 对手 release notes / App Store version history 拉 datable 版本时间线、估算 build-cost 区间. supporting evidence `url` 必须指向 version-history / release-notes 页. 与 competitive `build-cost-version-history` aspect 一致, product-capability fold 进段6.
 
@@ -180,7 +180,7 @@ Return only JSON matching this shape (no Markdown wrapper):
 }
 ```
 
-> Same `DeepResearchRequest` wire shape as competitive — Lapis `schema_version="0.1"` 不变。`search_policy` uses `recency=fresh` + `max_results_per_query=5`; do **not** set `depth` / `content_level` / `category` globally because broad-recall hints can over-search and global category filters can misroute mixed aspects.
+> Same `DeepResearchRequest` wire shape as competitive — MoeResearch `schema_version="0.1"` 不变。`search_policy` uses `recency=fresh` + `max_results_per_query=5`; do **not** set `depth` / `content_level` / `category` globally because broad-recall hints can over-search and global category filters can misroute mixed aspects.
 >
 > **`execution_policy.timeout_ms` 必须等于 per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms`.
 
@@ -194,12 +194,12 @@ Return only JSON matching this shape (no Markdown wrapper):
 6. Provider 名是逻辑 config 名, 不是 vendor DTOs; do not emit raw Exa/Grok/OpenAI/HTTP fields.
 7. `*_policy.allowed_providers` 是 allowlists only.
 8. Domain filters only via `search_policy.include_domains` / `exclude_domains`.
-9. `Evidence.source_type` 用 Lapis 7-value 集 (`official | documentation | news | blog | forum | repository | unknown`); 4-tier credibility 是 Skill 后处理.
+9. `Evidence.source_type` 用 MoeResearch 7-value 集 (`official | documentation | news | blog | forum | repository | unknown`); 4-tier credibility 是 Skill 后处理.
 10. **段3 / 段6 强证据要求**：段3 每断点 ≥1 visual_evidence + ≥3 同模式用户证据；段6 benchmark 2-3 best-in-class + 选择理由 — Layer 1 在 `success_criteria` 显式写明.
 
 ## MCP request wrapper
 
-按 competitive 变体规则：persona prompt content inline；Layer 1 读 `prompts/layer2/persona-*.md` 然后 verbatim 传入；Rust core 永不读 prompt 文件. Quick (2 aspect) 可用 2 个 `aspect_research` 调用, 也可用一个 `deep_research`.
+按 competitive 变体规则：persona prompt content inline；Layer 1 读 `prompts/layer2/pm-deep-research/persona-*.md` 然后 verbatim 传入；Rust core 永不读 prompt 文件. Quick (2 aspect) 可用 2 个 `aspect_research` 调用, 也可用一个 `deep_research`.
 
 ## Safety rules
 

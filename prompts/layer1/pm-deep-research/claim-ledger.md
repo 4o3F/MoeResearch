@@ -1,6 +1,6 @@
 # Layer 1 Module: Claim Ledger (PM DeepResearch)
 
-> Skill-layer module. Do not require a Rust/Lapis schema change. Build this ledger from `DeepResearchResult`, `evidence_index`, draft report text, and the evidence post-processing output.
+> Skill-layer module. Do not require a Rust/MoeResearch schema change. Build this ledger from `DeepResearchResult`, `evidence_index`, draft report text, and the evidence post-processing output.
 
 ## Purpose
 
@@ -45,7 +45,7 @@ Create a compact audit trail for claims that affect product decisions. The ledge
   "appears_in": ["body:segment-1", "annex:a1"],
   "evidence_refs": ["E1"],
   "host_verification_refs": ["HV-001"],
-  "source_origin": "lapis_only|host_verified|mixed|manual_host_verified",
+  "source_origin": "moe_research_only|host_verified|mixed|manual_host_verified",
   "source_tiers": ["Tier 1-2"],
   "support_status": "supported|partial|unsupported|not_checked",
   "contradiction_status": "no_conflict_found|conflict_resolved|conflict_unresolved|not_checked",
@@ -67,7 +67,7 @@ Create a compact audit trail for claims that affect product decisions. The ledge
 5. Mark product-requirements P0/P1 functional requirements as load-bearing.
 6. Mark sports, fitness, health, regulatory, safety, injury, recovery, nutrition, REDs, return-to-play, and medical-like claims as load-bearing unless clearly trivial.
 7. Claims supported only by community evidence can stay as sentiment or hypotheses, not facts.
-8. `evidence_refs` can only contain frozen Lapis evidence IDs. Host WebSearch/WebFetch rows use `host_verification_refs` (`HV-*`) and never replace Lapis evidence IDs.
+8. `evidence_refs` can only contain frozen MoeResearch evidence IDs. Host WebSearch/WebFetch rows use `host_verification_refs` (`HV-*`) and never replace MoeResearch evidence IDs.
 9. If a host verification row changes confidence or wording, preserve the original claim meaning in `claim_text` and reflect the change through `confidence`, `confidence_reason`, and `action`.
 
 ## Output Placement

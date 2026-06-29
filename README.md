@@ -1,21 +1,21 @@
-# Lapis
+# MoeResearch
 
-Lapis is a Rust-based deep research MCP core service. It exposes structured research tools over MCP stdio for Claude Code Skills and other MCP clients.
+MoeResearch is a Rust-based deep research MCP core service. It exposes structured research tools over MCP stdio for Claude Code Skills and other MCP clients.
 
-Lapis is not a general-purpose chatbot and does not provide a Web UI. Its role is to act as a local, configurable research backend with structured request and response schemas.
+MoeResearch is not a general-purpose chatbot and does not provide a Web UI. Its role is to act as a local, configurable research backend with structured request and response schemas.
 
 ## Features
 
-- **MCP stdio server**: starts with `lapis serve` and exposes research tools to MCP clients.
+- **MCP stdio server**: starts with `moeresearch serve` and exposes research tools to MCP clients.
 - **Structured research tools**: supports single-aspect and multi-aspect research workflows.
-- **Config-driven providers**: model and search providers are enabled through `lapis.toml`.
+- **Config-driven providers**: model and search providers are enabled through `moeresearch.toml`.
 - **No secrets in config**: API keys are read from environment variables referenced by config.
 - **Budget enforcement**: supports research-level and per-aspect limits.
 - **Stable envelopes**: tool outputs use public-safe `ToolEnvelope<T>` responses.
 
 ## Quick Start
 
-Install Lapis from a tagged release first. `cargo-dist` is configured to generate GitHub Release installers, Homebrew and npm publishing metadata, MSI packages, and updater support.
+Install MoeResearch from a tagged release first. `cargo-dist` is configured to generate GitHub Release installers, Homebrew and npm publishing metadata, MSI packages, and updater support.
 
 ### Install
 
@@ -26,10 +26,10 @@ Install Lapis from a tagged release first. `cargo-dist` is configured to generat
   ```
 
 - **GitHub Releases, Windows**: run the generated PowerShell installer from the release assets, or download and run the generated `.msi` package.
-- **Homebrew**: download the generated `lapis.rb` formula from the tagged release assets, then install it locally:
+- **Homebrew**: download the generated `moeresearch.rb` formula from the tagged release assets, then install it locally:
 
   ```bash
-  brew install ./lapis.rb
+  brew install ./moeresearch.rb
   ```
 
   Automatic Homebrew tap publishing is not configured, so no separate tap repository is required.
@@ -37,7 +37,7 @@ Install Lapis from a tagged release first. `cargo-dist` is configured to generat
 - **npm**: once the package is published, install the configured CLI package globally:
 
   ```bash
-  npm install -g @4o3f/lapis
+  npm install -g @4o3f/moeresearch
   ```
 
   `cargo-dist` also prints a version-pinned npm install hint in release notes for project-local installs.
@@ -46,18 +46,18 @@ Install Lapis from a tagged release first. `cargo-dist` is configured to generat
 
   ```bash
   cargo build --release
-  ./target/release/lapis --help
+  ./target/release/moeresearch --help
   ```
 
-If you built from source, replace `lapis` in the commands below with `./target/release/lapis`.
+If you built from source, replace `moeresearch` in the commands below with `./target/release/moeresearch`.
 
 Create a starter configuration and follow the provider prompts:
 
 ```bash
-lapis init --config ~/.config/lapis/lapis.toml
+moeresearch init --config ~/.config/moeresearch/moeresearch.toml
 ```
 
-For scripted setup, pass provider flags such as `--enable-openai` with `--non-interactive`. Lapis keeps secrets out of config; provider entries use `api_key_env`.
+For scripted setup, pass provider flags such as `--enable-openai` with `--non-interactive`. MoeResearch keeps secrets out of config; provider entries use `api_key_env`.
 
 ```bash
 export OPENAI_API_KEY="..."
@@ -69,30 +69,30 @@ export TAVILY_API_KEY="..."
 Check local readiness:
 
 ```bash
-lapis check --config ~/.config/lapis/lapis.toml
+moeresearch check --config ~/.config/moeresearch/moeresearch.toml
 ```
 
-`lapis check --live` reports provider reachability probes as deferred in v1; it does not validate real API key correctness.
+`moeresearch check --live` reports provider reachability probes as deferred in v1; it does not validate real API key correctness.
 
-Register Lapis with Claude Code:
+Register MoeResearch with Claude Code:
 
 ```bash
-lapis mcp register --scope local --config ~/.config/lapis/lapis.toml
+moeresearch mcp register --scope local --config ~/.config/moeresearch/moeresearch.toml
 ```
 
-By default, registration records the current `lapis` executable path. Pass `--lapis-bin` only when Claude Code should launch a different binary. Registration validates enabled-provider environment variables before invoking `claude` and forwards their current values into Claude Code registration with redacted dry-run output.
+By default, registration records the current `moeresearch` executable path. Pass `--moeresearch-bin` only when Claude Code should launch a different binary. Registration validates enabled-provider environment variables before invoking `claude` and forwards their current values into Claude Code registration with redacted dry-run output.
 
 Start the MCP server manually when needed:
 
 ```bash
-lapis serve --config ~/.config/lapis/lapis.toml
+moeresearch serve --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 Or run through Cargo during development:
 
 ```bash
-cargo run -- onboard --config ~/.config/lapis/lapis.toml --dry-run
-cargo run -- serve --config ~/.config/lapis/lapis.toml
+cargo run -- onboard --config ~/.config/moeresearch/moeresearch.toml --dry-run
+cargo run -- serve --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 Logs are written to stderr. MCP protocol messages are exchanged over stdin and stdout.
@@ -101,8 +101,8 @@ Logs are written to stderr. MCP protocol messages are exchanged over stdin and s
 
 Before creating a release tag:
 
-- Ensure the npm scope/package for `@4o3f/lapis` is available to publish.
-- Configure `NPM_TOKEN` as a GitHub secret with publish access to `@4o3f/lapis`.
+- Ensure the npm scope/package for `@4o3f/moeresearch` is available to publish.
+- Configure `NPM_TOKEN` as a GitHub secret with publish access to `@4o3f/moeresearch`.
 - Homebrew formula generation is enabled, but automatic tap publishing is intentionally disabled to avoid requiring a separate tap repository.
 - `cargo-dist` generates the MSI package with a license sidecar. Windows code signing is a later hardening step unless configured separately.
 

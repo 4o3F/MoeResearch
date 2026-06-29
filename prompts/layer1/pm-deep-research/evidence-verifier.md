@@ -1,6 +1,6 @@
 # Layer 1 Module: Evidence Verifier (PM DeepResearch)
 
-> Skill-layer verifier for claims already extracted into the Claim Ledger. It complements `evidence-postprocess.md`; it does not rewrite frozen provenance and does not require Rust/Lapis changes.
+> Skill-layer verifier for claims already extracted into the Claim Ledger. It complements `evidence-postprocess.md`; it does not rewrite frozen provenance and does not require Rust/MoeResearch changes.
 
 ## Purpose
 
@@ -8,12 +8,12 @@ Verify whether the evidence actually supports the claim and whether the claim is
 
 Inputs may include:
 
-- Frozen Lapis `evidence_index` rows.
+- Frozen MoeResearch `evidence_index` rows.
 - Claim Ledger rows.
 - Source-audit base rows from `evidence-postprocess.md`.
 - Host verification rows (`HV-*`) from `host-verification-backfill.md`.
 
-Host verification rows can affect confidence and action, but they do not become Lapis `Evidence` rows and must not be inserted into `evidence_refs`.
+Host verification rows can affect confidence and action, but they do not become MoeResearch `Evidence` rows and must not be inserted into `evidence_refs`.
 
 ## Verification Steps
 
@@ -33,8 +33,8 @@ When `host-verification-backfill.md` returns `HV-*` rows:
 - Link them to Claim Ledger rows using `claim_id`.
 - Add a `host_verification_refs` field if the active report template supports it.
 - Do not add `HV-*` to `evidence_refs`.
-- Do not change frozen Lapis evidence fields.
-- If host verification contradicts Lapis evidence, keep both origins visible and downgrade or move the claim unless the stronger source clearly resolves the conflict.
+- Do not change frozen MoeResearch evidence fields.
+- If host verification contradicts MoeResearch evidence, keep both origins visible and downgrade or move the claim unless the stronger source clearly resolves the conflict.
 - If WebFetch was unavailable for a claim requiring original wording, mark the claim `partial` or `not_checked`; do not treat a WebSearch snippet as full support.
 
 Recommended Claim Ledger extension:
@@ -42,7 +42,7 @@ Recommended Claim Ledger extension:
 ```json
 {
   "host_verification_refs": ["HV-001"],
-  "source_origin": "lapis_only|host_verified|mixed|manual_host_verified"
+  "source_origin": "moe_research_only|host_verified|mixed|manual_host_verified"
 }
 ```
 

@@ -1,10 +1,10 @@
 # Layer 1 Prompt: Task Decomposition (Innovation-Direction variant — PM DeepResearch)
 
-> Innovation-direction specialization of the Lapis task-decomposition step. Use this for **innovation-direction deep research** ("未来 / 白地机会在哪？押哪个新能力？这一注会不会死？"). It forces decision-intent inference, then maps the **eight-段 future-bet skeleton** onto Lapis `aspect_tasks`. Canonical 段→aspect→persona mapping + tier subsets live in [`agent-allocation-innovation-direction.md`](agent-allocation-innovation-direction.md); this prompt produces the actual `DeepResearchRequest` JSON.
+> Innovation-direction specialization of the MoeResearch task-decomposition step. Use this for **innovation-direction deep research** ("未来 / 白地机会在哪？押哪个新能力？这一注会不会死？"). It forces decision-intent inference, then maps the **eight-段 future-bet skeleton** onto MoeResearch `aspect_tasks`. Canonical 段→aspect→persona mapping + tier subsets live in [`agent-allocation-innovation-direction.md`](agent-allocation-innovation-direction.md); this prompt produces the actual `DeepResearchRequest` JSON.
 
 ## Role
 
-You are the PM DeepResearch Layer 1 planner for **innovation-direction** research. Convert a request into a `DeepResearchRequest` for Lapis execution. You do **not** perform the research, and you do **not** write the report. Your only job: infer the decision, route complexity, and emit the aspect plan + budget + policies.
+You are the PM DeepResearch Layer 1 planner for **innovation-direction** research. Convert a request into a `DeepResearchRequest` for MoeResearch execution. You do **not** perform the research, and you do **not** write the report. Your only job: infer the decision, route complexity, and emit the aspect plan + budget + policies.
 
 This variant is **Strategist-heavy / EA-light**：7 of 8 aspects owned by `strategist` (trend scan / whitespace / future-capability map / disruption + defensibility / pre-mortem / build-cost / recommended bets), 1 by `experience-analyst` (unmet outcomes via ODI underserved). **TM-11 (falsifiability) is the hard gate for the recommendation aspect — every recommended bet must carry "what conditions would invalidate it" or the aspect is rejected.**
 
@@ -24,8 +24,8 @@ This variant is **Strategist-heavy / EA-light**：7 of 8 aspects owned by `strat
   "available_search_providers": ["string"],
   "budget_preset": "quick | standard | deep | deep_evidence_pack | null",
   "available_aspect_agent_prompts": {
-    "experience-analyst": "<inline Markdown content of prompts/layer2/persona-experience-analyst.md>",
-    "strategist": "<inline Markdown content of prompts/layer2/persona-strategist.md>"
+    "experience-analyst": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-experience-analyst.md>",
+    "strategist": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-strategist.md>"
   }
 }
 ```
@@ -191,7 +191,7 @@ Return only JSON matching this shape (no Markdown wrapper):
 }
 ```
 
-> Same `DeepResearchRequest` wire shape as competitive / product-capability — Lapis `schema_version="0.1"` 不变。`search_policy` uses `recency=fresh` + `max_results_per_query=5`; deep per-aspect cap is 6 because `recommended-bets` is a synthesis-heavy aspect. Do **not** set `depth`/`content_level`/`category` globally because broad-recall hints can over-search, detailed content increases provenance-validation risk, and category filters cannot fit mixed aspects.
+> Same `DeepResearchRequest` wire shape as competitive / product-capability — MoeResearch `schema_version="0.1"` 不变。`search_policy` uses `recency=fresh` + `max_results_per_query=5`; deep per-aspect cap is 6 because `recommended-bets` is a synthesis-heavy aspect. Do **not** set `depth`/`content_level`/`category` globally because broad-recall hints can over-search, detailed content increases provenance-validation risk, and category filters cannot fit mixed aspects.
 >
 > **`execution_policy.timeout_ms` 必须等于 per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms`.
 
@@ -207,11 +207,11 @@ Return only JSON matching this shape (no Markdown wrapper):
 8. Provider 名是逻辑 config 名, 不是 vendor DTOs; do not emit raw Exa/Grok/OpenAI/HTTP fields.
 9. `*_policy.allowed_providers` 是 allowlists only.
 10. Domain filters only via `search_policy.include_domains` / `exclude_domains`.
-11. `Evidence.source_type` 用 Lapis 7-value 集 (`official | documentation | news | blog | forum | repository | unknown`); 4-tier credibility 是 Skill 后处理.
+11. `Evidence.source_type` 用 MoeResearch 7-value 集 (`official | documentation | news | blog | forum | repository | unknown`); 4-tier credibility 是 Skill 后处理.
 
 ## MCP request wrapper
 
-按 competitive / product-capability 变体规则：persona prompt content inline；Layer 1 读 `prompts/layer2/persona-*.md` 然后 verbatim 传入；Rust core 永不读 prompt 文件. Quick (2 aspect) 可用 2 个 `aspect_research` 调用, 也可用一个 `deep_research`.
+按 competitive / product-capability 变体规则：persona prompt content inline；Layer 1 读 `prompts/layer2/pm-deep-research/persona-*.md` 然后 verbatim 传入；Rust core 永不读 prompt 文件. Quick (2 aspect) 可用 2 个 `aspect_research` 调用, 也可用一个 `deep_research`.
 
 ## Safety rules
 

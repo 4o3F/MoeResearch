@@ -1,23 +1,23 @@
 [workspace]
 members = [
-    "crates/lapis-error",
-    "crates/lapis-config",
-    "crates/lapis-net",
-    "crates/lapis-model",
-    "crates/lapis-search",
-    "crates/lapis-workflow",
-    "crates/lapis-mcp",
-    "crates/lapis-cli",
-    "crates/lapis-tests",
+    "crates/moe-research-error",
+    "crates/moe-research-config",
+    "crates/moe-research-net",
+    "crates/moe-research-model",
+    "crates/moe-research-search",
+    "crates/moe-research-workflow",
+    "crates/moe-research-mcp",
+    "crates/moe-research-cli",
+    "crates/moe-research-tests",
 ]
-default-members = ["crates/lapis-cli"]
+default-members = ["crates/moe-research-cli"]
 resolver = "3"
 
 [workspace.package]
 edition = "2024"
 version = "0.2.0"
-repository = "https://github.com/4o3F/Lapis"
-homepage = "https://github.com/4o3F/Lapis"
+repository = "https://github.com/4o3F/MoeResearch"
+homepage = "https://github.com/4o3F/MoeResearch"
 license = "AGPL-3.0-only"
 authors = ["4o3F", "Heye"]
 description = "Rust-based deep research MCP core service"

@@ -1,0 +1,19 @@
+[package]
+name = "moe-research-mcp"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "moe_research_mcp"
+path = "src/lib.rs"
+
+[dependencies]
+moe-research-error = { path = "../moe-research-error" }
+moe-research-model = { path = "../moe-research-model" }
+moe-research-search = { path = "../moe-research-search" }
+moe-research-workflow = { path = "../moe-research-workflow" }
+rmcp = { workspace = true, features = ["server", "transport-io", "schemars"] }
+schemars.workspace = true
+serde.workspace = true
+tracing.workspace = true

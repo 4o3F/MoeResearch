@@ -16,13 +16,13 @@ targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-
 # Whether to install an updater program
 install-updater = true
 # Custom display name to use for this app in release bodies
-display-name = "Lapis"
+display-name = "MoeResearch"
 # Customize the Homebrew formula name
-formula = "lapis"
+formula = "moeresearch"
 # A namespace to use when publishing this package to the npm registry
 npm-scope = "@4o3f"
 # The npm package should have this name
-npm-package = "lapis"
+npm-package = "moeresearch"
 # Publish jobs to run in CI
 publish-jobs = ["npm"]
 # Path that installers should place binaries in

@@ -1,0 +1,21 @@
+[package]
+name = "moe-research-workflow"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "moe_research_workflow"
+path = "src/lib.rs"
+
+[dependencies]
+futures.workspace = true
+moe-research-error = { path = "../moe-research-error" }
+moe-research-model = { path = "../moe-research-model" }
+moe-research-search = { path = "../moe-research-search" }
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+tracing.workspace = true
+uuid.workspace = true

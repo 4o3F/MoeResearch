@@ -20,7 +20,7 @@ The reader should understand within 3-5 minutes:
 | Layer | Reader Job | Content Boundary |
 |---|---|---|
 | Decision Memo Body | Decide whether to accept the recommendation. | Conclusion, evidence summary, trade-offs, risks, action. No long method exposition. |
-| Annex A Evidence Pack | Audit facts and evidence quality. | Lapis Evidence Index, Claim Ledger, host verification backfill, source audit, contradiction log, academic audit, self-verification. |
+| Annex A Evidence Pack | Audit facts and evidence quality. | MoeResearch Evidence Index, Claim Ledger, host verification backfill, source audit, contradiction log, academic audit, self-verification. |
 | Action Pack | Start validation or iteration. | Assumptions, cheapest tests, kill criteria, metrics, guardrails, owner, cadence. |
 
 For `product-requirements`, keep the existing 8-segment PR-FAQ skeleton. This module changes writing quality and section emphasis; it does not replace the skeleton.
@@ -38,7 +38,7 @@ Integrate de-AI writing rules directly into PM DeepResearch. Do not ask the user
 - Keep uncertainty, but make it specific: "缺少独立 validation study" is better than "仍需进一步观察".
 - Use PM verbs: verify, downgrade, pause, pivot, narrow scope, change claim wording, add guardrail.
 - Do not remove honesty markers: confidence, estimates, abstain, source gaps, visual-evidence gaps, contradiction, and tool provenance.
-- Do not merge source origins for smoother prose. Keep Lapis evidence, Skill-side WebSearch/WebFetch backfill, and manual/host verification visibly separate in Annex A.
+- Do not merge source origins for smoother prose. Keep MoeResearch evidence, Skill-side WebSearch/WebFetch backfill, and manual/host verification visibly separate in Annex A.
 
 ## Product Report Tone
 

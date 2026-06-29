@@ -4,12 +4,12 @@
 
 ## Two personas (each = one inline `aspect_agent_prompt`)
 
-Same two persona prompts as competitive (Lapis has no persona concept; persona = prompt). Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both:
+Same two persona prompts as competitive (MoeResearch has no persona concept; persona = prompt). Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both:
 
 | key | file | angle | owns (in this profile) | TM weighting |
 |---|---|---|---|---|
-| `experience-analyst` | [`../layer2/persona-experience-analyst.md`](../layer2/persona-experience-analyst.md) | user / experience / evidence | **段1-4** (capability domain JTBD / single-domain teardown / experience paths / Kano in-domain) | **重** — TM-1 / TM-2 / TM-6 / TM-10 / TM-12 |
-| `strategist` | [`../layer2/persona-strategist.md`](../layer2/persona-strategist.md) | strategy / trade-off / foresight | **段5-6** (ODI in-domain / benchmark + build-cost + upgrade) | **轻** — TM-9 (杠杆点) + TM-13 (前瞻) |
+| `experience-analyst` | [`../../layer2/pm-deep-research/persona-experience-analyst.md`](../../layer2/pm-deep-research/persona-experience-analyst.md) | user / experience / evidence | **段1-4** (capability domain JTBD / single-domain teardown / experience paths / Kano in-domain) | **重** — TM-1 / TM-2 / TM-6 / TM-10 / TM-12 |
+| `strategist` | [`../../layer2/pm-deep-research/persona-strategist.md`](../../layer2/pm-deep-research/persona-strategist.md) | strategy / trade-off / foresight | **段5-6** (ODI in-domain / benchmark + build-cost + upgrade) | **轻** — TM-9 (杠杆点) + TM-13 (前瞻) |
 
 > EA-heavy 是本 profile 的关键差异 (vs. competitive 的均衡分配)：product-capability 关心"某能力域的成熟度与体验" — 4 段 (域定义 / teardown / 体验路径 / Kano) 全是 EA 的本职. Strategist 只在 ODI 评分 + benchmark 选择 + 升级方向出场. **不写 EA-deep variant** — 复用通用 EA persona。
 
@@ -26,7 +26,7 @@ Same two persona prompts as competitive (Lapis has no persona concept; persona =
 
 ### 段5 persona ownership note
 
-One Lapis aspect = one persona, 所以 profile §5 标段5 "Strategist + EA"（Strategist 结论 + EA 数据）不能字面切. **`odi-in-domain` 由 `strategist` 拥有**, 其 `research_question` + `success_criteria` 强制要求 Imp/Sat 估算依据从段3 体验路径用户证据 + 段4 Kano 分级 (EA prior aspect 已产出) 回引 → 通过 `shared_context.prior_sources` 喂入. **不另起 dedicated EA-ODI aspect**（避免拆 6→7 aspect 增预算 + 增 wave）.
+One MoeResearch aspect = one persona, 所以 profile §5 标段5 "Strategist + EA"（Strategist 结论 + EA 数据）不能字面切. **`odi-in-domain` 由 `strategist` 拥有**, 其 `research_question` + `success_criteria` 强制要求 Imp/Sat 估算依据从段3 体验路径用户证据 + 段4 Kano 分级 (EA prior aspect 已产出) 回引 → 通过 `shared_context.prior_sources` 喂入. **不另起 dedicated EA-ODI aspect**（避免拆 6→7 aspect 增预算 + 增 wave）.
 
 ### Build-intent overlay (decision_intent = build)
 
@@ -60,5 +60,5 @@ One Lapis aspect = one persona, 所以 profile §5 标段5 "Strategist + EA"（S
 2. Aspects MECE across the 6 段 — 不重叠.
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `capability_domain` 写在 `shared_context.summary` (aspect agents 读 it).
-5. Downstream `Evidence.source_type` 用 Lapis 7-value 集; 4-tier credibility 是 Skill 后处理, never an engine enum.
+5. Downstream `Evidence.source_type` 用 MoeResearch 7-value 集; 4-tier credibility 是 Skill 后处理, never an engine enum.
 6. EA-heavy invariant: 6 aspects 中 4 个（段1-4）由 EA 拥有; 2 个（段5-6）由 Strategist 拥有. 若某课题 EA-load 不平衡（如能力域已知不需找 jobs）, 先合段（如段1 折叠进段2）, 不要切给 Strategist.
