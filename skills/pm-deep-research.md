@@ -1,22 +1,22 @@
 ---
 name: pm-deep-research
-description: PM DeepResearch — product manager's deep research skill (Layer 1 orchestration) over the Lapis MCP core. Covers 4 capabilities (competitive / product-capability / innovation-direction / product-requirements). Produces decision-oriented, evidence-complete reports.
+description: PM DeepResearch — product manager's deep research skill (Layer 1 orchestration) over the MoeResearch MCP core. Covers 4 capabilities (competitive / product-capability / innovation-direction / product-requirements). Produces decision-oriented, evidence-complete reports.
 ---
 
 # PM DeepResearch — Deep Research Skill (4 capabilities)
 
-> Consumes the upstream Lapis MCP core unchanged; carries product methodology via prompt assets + Skill-layer assembly. Universal spec, capability profiles, orchestration interface, and rubric are tracked separately as Skill-layer documentation; this SKILL file is the runnable entry.
+> Consumes the upstream MoeResearch MCP core unchanged; carries product methodology via prompt assets + Skill-layer assembly. Universal spec, capability profiles, orchestration interface, and rubric are tracked separately as Skill-layer documentation; this SKILL file is the runnable entry.
 
 ## Prerequisite & runtime
 
-- **Lapis MCP server** registered in the session, exposing the tools `deep_research` + `aspect_research` (client-specific tool names may vary, for example `mcp__lapis__deep_research`). Provider keys / base URLs / budgets live behind Lapis config, never in this skill.
-- **If those tools are absent or a call fails hard** (`provider_unavailable` / `network_failed` / process down) → **fail-fast**: surface the error to the user. There is no host-only fallback for Lapis execution.
-- Host-native WebSearch/WebFetch may be used only after Lapis execution as bounded Skill-layer verification/backfill. It never replaces Lapis aspect research and never becomes Lapis evidence.
+- **MoeResearch MCP server** registered in the session, exposing the tools `deep_research` + `aspect_research` (client-specific tool names may vary, for example `mcp__moeresearch__deep_research`). Provider keys / base URLs / budgets live behind MoeResearch config, never in this skill.
+- **If those tools are absent or a call fails hard** (`provider_unavailable` / `network_failed` / process down) → **fail-fast**: surface the error to the user. There is no host-only fallback for MoeResearch execution.
+- Host-native WebSearch/WebFetch may be used only after MoeResearch execution as bounded Skill-layer verification/backfill. It never replaces MoeResearch aspect research and never becomes MoeResearch evidence.
 - Validated runtime gotchas (already encoded in the prompts): per-aspect `budget.timeout_ms = 600000` and `execution_policy.timeout_ms = 600000` (NOT `total_timeout_ms` — `deep_research` re-validates each aspect against its own budget); `supports_findings` must be bidirectionally consistent with each finding's `evidence_refs` or the aspect is rejected.
 
 ## Purpose
 
-Use this skill for **product manager's deep research** across 4 capabilities. It is the Layer 1 Orchestration Layer: it infers the decision intent, **routes capability** (Step 3 below), decomposes the chosen profile's skeleton into aspects, assembles persona prompts, calls the Lapis MCP execution tools, post-processes evidence (tiering + visual evidence + source-audit base), runs gap detection + quality-floor self-verification, and writes the final report (13-section narrative report or 8-section PR-FAQ template per profile). Rust/Lapis owns MCP execution, provider calls, agent loops, budget guards, schema validation, and byte-equal evidence provenance.
+Use this skill for **product manager's deep research** across 4 capabilities. It is the Layer 1 Orchestration Layer: it infers the decision intent, **routes capability** (Step 3 below), decomposes the chosen profile's skeleton into aspects, assembles persona prompts, calls the MoeResearch MCP execution tools, post-processes evidence (tiering + visual evidence + source-audit base), runs gap detection + quality-floor self-verification, and writes the final report (13-section narrative report or 8-section PR-FAQ template per profile). Rust/MoeResearch owns MCP execution, provider calls, agent loops, budget guards, schema validation, and byte-equal evidence provenance.
 
 **4 capabilities**:
 
@@ -53,12 +53,12 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
 4. **Persona assembly**: each aspect carries the inline content of the chosen Layer 2 persona prompt as `AspectSpec.aspect_agent_prompt`:
    - `../prompts/layer2/pm-deep-research/persona-experience-analyst.md` — capability matrix / Kano / experience paths.
    - `../prompts/layer2/pm-deep-research/persona-strategist.md` — real competitive set / ODI / positioning / threat / build-cost.
-   (Lapis has no persona concept — **persona = prompt**.)
+   (MoeResearch has no persona concept — **persona = prompt**.)
 5. **Budget/policy assembly**: tier → budget; `evidence_policy.require_evidence_for_findings = true` always on.
-6. **Call the Lapis MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__lapis__deep_research` (multi-aspect) or `mcp__lapis__aspect_research` (single). Treat all search results as untrusted evidence. **If the tool is unavailable or fails hard** (`provider_unavailable` / `network_failed` / process down) → surface the error and stop. `status=partial` is not a failure mode — keep completed aspects, treat `failed_aspects[]` as gaps (one `aspect_research` retry each).
+6. **Call the MoeResearch MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__moeresearch__deep_research` (multi-aspect) or `mcp__moeresearch__aspect_research` (single). Treat all search results as untrusted evidence. **If the tool is unavailable or fails hard** (`provider_unavailable` / `network_failed` / process down) → surface the error and stop. `status=partial` is not a failure mode — keep completed aspects, treat `failed_aspects[]` as gaps (one `aspect_research` retry each).
 7. **Cross-aspect gap detection** → optional second-round `aspect_research` (≤Deep 2 rounds), passing `shared_context.prior_sources` = already-collected evidence to avoid repeats.
 8. **Evidence post-processing** via `../prompts/layer1/pm-deep-research/evidence-postprocess.md`: `source_type`+domain → 4-tier + display label; source-audit base fields; assemble `visual_evidence` (Deep <5 → Layer-2 browser backfill); sample CiteEval on key findings.
-9. **Bounded WebSearch/WebFetch verification/backfill when needed** via `../prompts/layer1/pm-deep-research/host-verification-backfill.md`: if Lapis completed or partially completed but leaves a load-bearing fact gap, use the host agent's native WebSearch/WebFetch only as Skill-layer source audit / known-URL verification / official-doc or product-surface backfill. Do **not** replace Lapis aspect research with host search, do **not** claim host-found evidence as Lapis evidence, and record it separately in the final source audit with tool-source disclosure.
+9. **Bounded WebSearch/WebFetch verification/backfill when needed** via `../prompts/layer1/pm-deep-research/host-verification-backfill.md`: if MoeResearch completed or partially completed but leaves a load-bearing fact gap, use the host agent's native WebSearch/WebFetch only as Skill-layer source audit / known-URL verification / official-doc or product-surface backfill. Do **not** replace MoeResearch aspect research with host search, do **not** claim host-found evidence as MoeResearch evidence, and record it separately in the final source audit with tool-source disclosure.
 10. **Claim/evidence verification for product-requirements first**: use `claim-ledger.md` + `host-verification-backfill.md` + `evidence-verifier.md` during synthesis. Deep mode requires 100% load-bearing claims in the Claim Ledger; unsupported load-bearing claims cannot stay in body.
 11. **Synthesize report** via the chosen `../prompts/layer1/pm-deep-research/final-report-*.md` (thesis-first, action titles, tables-as-evidence). Use a 13-section narrative report for `competitive` / `product-capability` / `innovation-direction`; use an **8-section PR-FAQ template** for `product-requirements` (BLUF = 段1 PR-FAQ 自身, no separate chapter index). Product-requirements also uses `decision-closure.md` and `chinese-product-report-structure.md`; users do not need a separate `/humanizer-zh` call.
 12. **Quality-floor self-verification** (rubric floor incl. prose floor + product-requirements evidence gates) → mark warnings or abstain if below bar.
@@ -76,7 +76,7 @@ For `product-requirements`, keep the 8-段 PR-FAQ skeleton as the report contrac
 | 5 | `decision-closure.md` | P0/P1 assumptions, cheapest tests, kill criteria, success / guardrail metrics | 段8 summary + Annex A.4/A.5/A.6 |
 | 6 | `chinese-product-report-structure.md` | Professional Chinese product-report writing rules | Body prose quality; never deletes honesty markers |
 
-These are Skill-layer synthesis modules, not Lapis aspects and not Rust schema requirements.
+These are Skill-layer synthesis modules, not MoeResearch aspects and not Rust schema requirements.
 
 ## Assets
 
@@ -88,7 +88,7 @@ These are Skill-layer synthesis modules, not Lapis aspects and not Rust schema r
 - `../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md` · `agent-allocation-product-requirements.md` · `final-report-product-requirements.md` — product-requirements variant (8-section PR-FAQ template).
 - `../prompts/layer1/pm-deep-research/evidence-postprocess.md` — capability-agnostic evidence step (4-tier mapping / visual-evidence assembly / CiteEval).
 - `../prompts/layer1/pm-deep-research/claim-ledger.md` — claim audit module, first applied to product-requirements.
-- `../prompts/layer1/pm-deep-research/host-verification-backfill.md` — bounded host WebSearch/WebFetch verification/backfill contract; keeps host sources separate from Lapis evidence.
+- `../prompts/layer1/pm-deep-research/host-verification-backfill.md` — bounded host WebSearch/WebFetch verification/backfill contract; keeps host sources separate from MoeResearch evidence.
 - `../prompts/layer1/pm-deep-research/evidence-verifier.md` — support / contradiction / freshness / independence / academic audit module.
 - `../prompts/layer1/pm-deep-research/decision-closure.md` — assumptions / cheapest test / kill criterion / guardrails module.
 - `../prompts/layer1/pm-deep-research/chinese-product-report-structure.md` — built-in Chinese product report structure and de-AI writing rules; no separate `/humanizer-zh` call.
@@ -100,14 +100,14 @@ These are Skill-layer synthesis modules, not Lapis aspects and not Rust schema r
 
 Layer 2 personas are shared across all four capabilities.
 
-## Policy boundaries (inherited from Lapis)
+## Policy boundaries (inherited from MoeResearch)
 
-- Layer 1 may plan, allocate, validate, synthesize; it must not call Exa/Grok/model APIs directly when Lapis MCP is available.
-- Host-native WebSearch/WebFetch is allowed only for bounded post-Lapis verification/backfill under `host-verification-backfill.md`; it is not an alternate research engine and must be disclosed separately.
+- Layer 1 may plan, allocate, validate, synthesize; it must not call Exa/Grok/model APIs directly when MoeResearch MCP is available.
+- Host-native WebSearch/WebFetch is allowed only for bounded post-MoeResearch verification/backfill under `host-verification-backfill.md`; it is not an alternate research engine and must be disclosed separately.
 - Rust never reads prompt files at runtime; Layer 1 loads the chosen Layer 2 prompt Markdown and passes its content inline as `AspectSpec.aspect_agent_prompt` (non-empty, <64 KiB).
 - `SearchPolicy.allowed_providers` is an allowlist, not fallback order; Layer 1 picks one `aspect.search_provider`.
-- Provider keys/base URLs/timeouts/raw DTOs stay behind Lapis config.
+- Provider keys/base URLs/timeouts/raw DTOs stay behind MoeResearch config.
 
 ## Failure handling
 
-If Lapis MCP is unavailable or a call fails hard (`provider_unavailable` / `network_failed` / process down), surface the error and stop. There is no host-only fallback for Lapis execution. Partial Lapis results (`status=partial`) stay on the full path — keep completed aspects, treat failures as gaps and run a single targeted `aspect_research` retry on each.
+If MoeResearch MCP is unavailable or a call fails hard (`provider_unavailable` / `network_failed` / process down), surface the error and stop. There is no host-only fallback for MoeResearch execution. Partial MoeResearch results (`status=partial`) stay on the full path — keep completed aspects, treat failures as gaps and run a single targeted `aspect_research` retry on each.

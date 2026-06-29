@@ -1,0 +1,22 @@
+[package]
+name = "moe-research-tests"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+moe-research-config = { path = "../moe-research-config" }
+moe-research-error = { path = "../moe-research-error" }
+moe-research-mcp = { path = "../moe-research-mcp" }
+moe-research-model = { path = "../moe-research-model" }
+moe-research-net = { path = "../moe-research-net" }
+moe-research-search = { path = "../moe-research-search" }
+moe-research-workflow = { path = "../moe-research-workflow" }
+rmcp.workspace = true
+schemars.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

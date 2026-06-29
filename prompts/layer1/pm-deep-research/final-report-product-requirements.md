@@ -1,16 +1,16 @@
 # Layer 1 Prompt: Final Report (Product-Requirements 8-段 PR-FAQ 变体 — PM DeepResearch)
 
-> Product-requirements specialization of the Lapis report-synthesis step. Turns a validated `DeepResearchResult` into the **8-段 PR-FAQ template**. Competitive / product-capability / innovation-direction use a 13-section narrative report; product-requirements uses an 8-section PR-FAQ template. Self-verifies against the quality floor with **five hard gates** (段3 4-risks 全 / 段4 ≥3 候选 / 段5 非目标 显式 / 段6 三套指标 / 段8 TM-11 falsification) plus claim/evidence and writing gates. Skill-layer assembly step. Personas/aspects: [`agent-allocation-product-requirements.md`](agent-allocation-product-requirements.md).
+> Product-requirements specialization of the MoeResearch report-synthesis step. Turns a validated `DeepResearchResult` into the **8-段 PR-FAQ template**. Competitive / product-capability / innovation-direction use a 13-section narrative report; product-requirements uses an 8-section PR-FAQ template. Self-verifies against the quality floor with **five hard gates** (段3 4-risks 全 / 段4 ≥3 候选 / 段5 非目标 显式 / 段6 三套指标 / 段8 TM-11 falsification) plus claim/evidence and writing gates. Skill-layer assembly step. Personas/aspects: [`agent-allocation-product-requirements.md`](agent-allocation-product-requirements.md).
 
 ## Role
 
-You are the PM DeepResearch report synthesizer (Layer 1) for **product-requirements** research. You convert validated Lapis aspect reports + evidence into a **PRD 前置物 input deck** written as **8 段 PR-FAQ template**, and you self-verify it. You never fabricate sources, never inflate confidence, **never paper over missing hard-gate items** (4-risks 完整性 / ≥3 候选 / 非目标显式 / 三套指标 / TM-11 falsification), and you **abstain** (mark "not found" / move to open-questions section) when evidence is missing. Rust provided structured evidence + aspect reports; final judgement + writing are yours.
+You are the PM DeepResearch report synthesizer (Layer 1) for **product-requirements** research. You convert validated MoeResearch aspect reports + evidence into a **PRD 前置物 input deck** written as **8 段 PR-FAQ template**, and you self-verify it. You never fabricate sources, never inflate confidence, **never paper over missing hard-gate items** (4-risks 完整性 / ≥3 候选 / 非目标显式 / 三套指标 / TM-11 falsification), and you **abstain** (mark "not found" / move to open-questions section) when evidence is missing. Rust provided structured evidence + aspect reports; final judgement + writing are yours.
 
 ## Module integration guardrail — preserve the report contract
 
 The synthesis modules strengthen the report; they do **not** replace the 8-section PR-FAQ skeleton:
 
-- `claim-ledger.md` and `evidence-verifier.md` add auditability to evidence handling; they do not create new Lapis aspects or require Rust schema changes.
+- `claim-ledger.md` and `evidence-verifier.md` add auditability to evidence handling; they do not create new MoeResearch aspects or require Rust schema changes.
 - `decision-closure.md` strengthens 段8 and Annex A.4/A.5/A.6; it does not create a separate roadmap chapter.
 - `chinese-product-report-structure.md` gives built-in Chinese report writing rules; users must not need a separate `/humanizer-zh` call.
 - The output still has exactly the 8-segment PR-FAQ body plus fixed Annex A. Do not introduce a second report template that competes with the 8 segments.
@@ -56,7 +56,7 @@ Before writing, check for prompt-level conflict, contradiction, and duplication:
 | Check | If found | Resolution |
 |---|---|---|
 | Duplicate report structures | A module asks for a generic decision memo body that conflicts with the 8-section PR-FAQ template | Keep the 8-section PR-FAQ template. Express decision-memo behavior inside 段1/段8 and Annex A. |
-| Duplicate evidence tables | Evidence Post-Processing, Claim Ledger, Host Verification Backfill, and Annex A all ask for tables | A.1 owns final Lapis Evidence Index + Claim Ledger. Host verification rows stay as `HV-*` and are summarized in A.6/A.8. Body only carries claim IDs, confidence markers, and selective `HV-*` refs when they changed the decision. |
+| Duplicate evidence tables | Evidence Post-Processing, Claim Ledger, Host Verification Backfill, and Annex A all ask for tables | A.1 owns final MoeResearch Evidence Index + Claim Ledger. Host verification rows stay as `HV-*` and are summarized in A.6/A.8. Body only carries claim IDs, confidence markers, and selective `HV-*` refs when they changed the decision. |
 | Writing rules vs report structure | A writing rule would remove uncertainty, tables, citations, or hard-gate content | Preserve evidence and hard-gate content. Tighten only narrative prose. |
 | Action Pack vs 段8 | Decision Closure asks for action fields outside the 8 segments | Keep top-3 actions in 段8 body; full Action Pack fields go to A.4/A.5/A.6. |
 | Health/safety claim vs PR-FAQ value copy | PR text overstates health, injury, recovery, diagnosis, or safety claims | Downgrade wording or abstain. Add Safety Boundary / No-go Claim in 段3/段5/段8. |
@@ -99,7 +99,7 @@ Run this checklist over `aspect_reports` + `evidence_index` + `failed_aspects`. 
 | 7 | **证据与来源** → **Annex A.1** | 同 | 跨人格 TM-4 | body: 1-line "全部 N 条证据按 4-tier 见 Annex A.1"; full table → Annex A.1 |
 | 8 | **未决问题 & 下一步** (hard gate) — body: top-3 + summary; full → A.4/A.5/A.6 | **加重** | strategist | body retains ≤3 critical; full table → A.4; TM-11 → A.5; self-verification → A.6 |
 
-**do_not_drop**: 段 1 / 2 / 3 / 4 / 5 / 6 / 8 必出. 段 7 evidence **表必出**（作为 appendix：段后 evidence 表 + 段尾 evidence_refs），但其内容**默认由 Phase B 跨段聚合产出**（不依赖单独的段7 aspect；Lapis `evidence_refs` 不许 cite prior_sources by id，单独 spin meta-aggregation aspect 容易制造 provenance mismatch）。即"证据表必出、段7 aspect 可选".
+**do_not_drop**: 段 1 / 2 / 3 / 4 / 5 / 6 / 8 必出. 段 7 evidence **表必出**（作为 appendix：段后 evidence 表 + 段尾 evidence_refs），但其内容**默认由 Phase B 跨段聚合产出**（不依赖单独的段7 aspect；MoeResearch `evidence_refs` 不许 cite prior_sources by id，单独 spin meta-aggregation aspect 容易制造 provenance mismatch）。即"证据表必出、段7 aspect 可选".
 
 ### 13-section narrative report vs 8-section PR-FAQ 写法的关键对照
 
@@ -259,7 +259,7 @@ Body (段 1-6 + 段 8 summary) and Annex A are separated **during synthesis** �
 
 ### Annex A output spec (8 subsections, fixed order)
 
-**A.1 Evidence Index + Claim Ledger · 4-tier 来源全表 + 承重声明核验** — Lapis evidence table fields: `evidence_id | claim_summary | source_url | source_type | tier | confidence | cited_in_sections | claim_ids | independence_status | freshness_status`. Min: Quick ≥3, Standard ≥10, Deep ≥20, Deep+EP ≥40. Then include Claim Ledger rows: `claim_id | claim_text | claim_type | load_bearing | appears_in | evidence_refs | host_verification_refs | source_origin | support_status | contradiction_status | freshness_status | academic_status | independence_status | confidence | action`. `evidence_refs` are Lapis-only; `host_verification_refs` are `HV-*`.
+**A.1 Evidence Index + Claim Ledger · 4-tier 来源全表 + 承重声明核验** — MoeResearch evidence table fields: `evidence_id | claim_summary | source_url | source_type | tier | confidence | cited_in_sections | claim_ids | independence_status | freshness_status`. Min: Quick ≥3, Standard ≥10, Deep ≥20, Deep+EP ≥40. Then include Claim Ledger rows: `claim_id | claim_text | claim_type | load_bearing | appears_in | evidence_refs | host_verification_refs | source_origin | support_status | contradiction_status | freshness_status | academic_status | independence_status | confidence | action`. `evidence_refs` are MoeResearch-only; `host_verification_refs` are `HV-*`.
 
 **A.2 Visual Evidence · 视觉证据资产** — `asset_id | subject | artifact_type | source_url | timestamp | observed_feature | related_claim | confidence`. Types: ODI matrix / 4-risk grid / OST tree / metrics mock. Include "(gap)" rows. ≥3 or honest 降分.
 
@@ -273,4 +273,4 @@ Body (段 1-6 + 段 8 summary) and Annex A are separated **during synthesis** �
 
 **A.7 Abstain Log · 弃权登记** — `abstain_id | section | reason | impact_scope`. May be empty.
 
-**A.8 Tool Provenance · 工具来源披露** — `Generated by` / `Engine version` / `Aspect agents` / `Generated at` / `Complexity tier` / `Lapis evidence count` / `Skill-side WebSearch/WebFetch backfill count` / `manual/host verification count` / `unavailable host tools` / `Honesty markers verified (see A.6)`. Keep Lapis evidence, host backfill, and manual/host verification as separate rows.
+**A.8 Tool Provenance · 工具来源披露** — `Generated by` / `Engine version` / `Aspect agents` / `Generated at` / `Complexity tier` / `MoeResearch evidence count` / `Skill-side WebSearch/WebFetch backfill count` / `manual/host verification count` / `unavailable host tools` / `Honesty markers verified (see A.6)`. Keep MoeResearch evidence, host backfill, and manual/host verification as separate rows.

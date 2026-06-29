@@ -7,23 +7,23 @@ This guide contains repository layout and local development commands for contrib
 ```text
 .
 ├── Cargo.toml                 # Cargo workspace configuration
-├── lapis.example.toml         # Example runtime configuration
+├── moeresearch.example.toml         # Example runtime configuration
 ├── crates/
-│   ├── lapis-cli/             # CLI binary entrypoint and composition root
-│   ├── lapis-config/          # TOML configuration DTOs and loader
-│   ├── lapis-error/           # Transport-neutral error API
-│   ├── lapis-mcp/             # MCP envelope, server, and tool adapter
-│   ├── lapis-model/           # Model provider boundary and OpenAI adapter
-│   ├── lapis-net/             # Network client, redaction, retry, and wire tracing
-│   ├── lapis-search/          # Search provider boundary and Exa/Grok/Tavily adapters
-│   ├── lapis-workflow/        # Research workflow, policies, budgets, and reports
-│   └── lapis-tests/           # Integration tests
+│   ├── moe-research-cli/             # CLI binary entrypoint and composition root
+│   ├── moe-research-config/          # TOML configuration DTOs and loader
+│   ├── moe-research-error/           # Transport-neutral error API
+│   ├── moe-research-mcp/             # MCP envelope, server, and tool adapter
+│   ├── moe-research-model/           # Model provider boundary and OpenAI adapter
+│   ├── moe-research-net/             # Network client, redaction, retry, and wire tracing
+│   ├── moe-research-search/          # Search provider boundary and Exa/Grok/Tavily adapters
+│   ├── moe-research-workflow/        # Research workflow, policies, budgets, and reports
+│   └── moe-research-tests/           # Integration tests
 ├── docs/                      # Product and user documentation
 ├── prompts/                   # Prompt assets
 └── skills/                    # Claude Code Skill examples
 ```
 
-The workspace default member is `crates/lapis-cli`, and the binary name is `lapis`.
+The workspace default member is `crates/moe-research-cli`, and the binary name is `moeresearch`.
 
 ## 2. Requirements
 
@@ -48,7 +48,7 @@ cargo build --release
 Install locally through Cargo:
 
 ```bash
-cargo install --path crates/lapis-cli --locked
+cargo install --path crates/moe-research-cli --locked
 ```
 
 ## 4. Run locally
@@ -56,32 +56,32 @@ cargo install --path crates/lapis-cli --locked
 Generate a local config with one model provider enabled:
 
 ```bash
-cargo run -- init --config lapis.toml --non-interactive --enable-openai --force
+cargo run -- init --config moeresearch.toml --non-interactive --enable-openai --force
 export OPENAI_API_KEY="..."
 ```
 
 Check config and MCP readiness:
 
 ```bash
-cargo run -- check --config lapis.toml
+cargo run -- check --config moeresearch.toml
 ```
 
 Preview Claude Code MCP registration:
 
 ```bash
-cargo run -- mcp register --config lapis.toml --dry-run
+cargo run -- mcp register --config moeresearch.toml --dry-run
 ```
 
 Start the MCP server manually:
 
 ```bash
-cargo run -- serve --config lapis.toml
+cargo run -- serve --config moeresearch.toml
 ```
 
 With explicit log format:
 
 ```bash
-cargo run -- serve --config lapis.toml --log-format compact
+cargo run -- serve --config moeresearch.toml --log-format compact
 ```
 
 ## 5. Checks
@@ -107,7 +107,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 Run only the integration test crate:
 
 ```bash
-cargo test -p lapis-tests
+cargo test -p moe-research-tests
 ```
 
 ## 6. Documentation map

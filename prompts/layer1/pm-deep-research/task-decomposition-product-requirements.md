@@ -1,10 +1,10 @@
 # Layer 1 Prompt: Task Decomposition (Product-Requirements variant — PM DeepResearch)
 
-> Product-requirements specialization of the Lapis task-decomposition step. Use this for **product-requirements deep research** ("决策已定，把需求写好；下游接 PRD / 开发 / 实验，不是接战略讨论"). It forces decision-intent inference, then maps the **eight-段 PR-FAQ skeleton** onto Lapis `aspect_tasks`. Canonical 段→aspect→persona mapping + tier subsets live in [`agent-allocation-product-requirements.md`](agent-allocation-product-requirements.md); this prompt produces the actual `DeepResearchRequest` JSON.
+> Product-requirements specialization of the MoeResearch task-decomposition step. Use this for **product-requirements deep research** ("决策已定，把需求写好；下游接 PRD / 开发 / 实验，不是接战略讨论"). It forces decision-intent inference, then maps the **eight-段 PR-FAQ skeleton** onto MoeResearch `aspect_tasks`. Canonical 段→aspect→persona mapping + tier subsets live in [`agent-allocation-product-requirements.md`](agent-allocation-product-requirements.md); this prompt produces the actual `DeepResearchRequest` JSON.
 
 ## Role
 
-You are the PM DeepResearch Layer 1 planner for **product-requirements** research. Convert a request into a `DeepResearchRequest` for Lapis execution. You do **not** perform the research, and you do **not** write the report. Your only job: infer the decision, route complexity, and emit the aspect plan + budget + policies.
+You are the PM DeepResearch Layer 1 planner for **product-requirements** research. Convert a request into a `DeepResearchRequest` for MoeResearch execution. You do **not** perform the research, and you do **not** write the report. Your only job: infer the decision, route complexity, and emit the aspect plan + budget + policies.
 
 This variant is **EA + Strategist balanced**: EA owns 段2 (JTBD/ODI/Kano), 段4 (OST solution space, co-owned), 段5 (requirements, co-owned); Strategist owns 段3 (Cagan 4-risks), 段6 (metrics-tree), 段8 (open-questions, **TM-11 hard gate**). 段1 (PR-FAQ) is double-signed. 段7 (evidence-table) is cross-persona TM-4. **Multiple hard gates** apply: 段3 (4-risks 全覆盖), 段4 (≥3 候选), 段5 (非目标 显式), 段6 (三套指标), 段8 (TM-11 falsification). This is the highest hard-gate density across the four capabilities because PRD 前置物 is build-input, not discussion-input.
 
@@ -25,8 +25,8 @@ This variant is **EA + Strategist balanced**: EA owns 段2 (JTBD/ODI/Kano), 段4
   "available_search_providers": ["string"],
   "budget_preset": "quick | standard | deep | deep_evidence_pack | null",
   "available_aspect_agent_prompts": {
-    "experience-analyst": "<inline Markdown content of prompts/layer2/persona-experience-analyst.md>",
-    "strategist": "<inline Markdown content of prompts/layer2/persona-strategist.md>"
+    "experience-analyst": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-experience-analyst.md>",
+    "strategist": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-strategist.md>"
   }
 }
 ```
@@ -92,7 +92,7 @@ Follow the mapping in [`agent-allocation-product-requirements.md`](agent-allocat
 
 - **段8 TM-11 hard gate**: 每未决问题必须含 "靠什么会决"（discovery sprint / prototype / A/B test 等可执行实验设计），不可写 "需要更多研究" 此类空话. 缺 falsification → aspect 整段 0 分。
 
-- **段7 evidence-table 是 optional**: **默认不单独 spin 一个 evidence-table aspect**。理由：Lapis `evidence_refs` 限定在 aspect 自己的 search 输出、**不许 cite prior_sources by id**；evidence-table 本质是 meta-aggregation 任务（汇总 段1-6+8 的跨段证据），让它自己再 search 一遍既浪费 budget 又容易制造 provenance mismatch。**默认 fallback**：4-tier 全套证据表由 [`final-report-product-requirements.md`](final-report-product-requirements.md) Phase B 跨段聚合产出。**仅当**用户显式要求一份 standalone evidence appendix（`deep_evidence_pack` preset 或显式 "evidence pack" 意图）时才 spin 段7 aspect；此时它的 `success_criteria` 须显式声明 "聚合 prior aspects 的 findings，不重复 search"。deep tier 因此默认 10 mandatory aspect（段1,2 + 段3×4 cagan micro + 段4,5,6,8），`max_agents=11` 仍预留 1 位给可选段7、不破预算包络。
+- **段7 evidence-table 是 optional**: **默认不单独 spin 一个 evidence-table aspect**。理由：MoeResearch `evidence_refs` 限定在 aspect 自己的 search 输出、**不许 cite prior_sources by id**；evidence-table 本质是 meta-aggregation 任务（汇总 段1-6+8 的跨段证据），让它自己再 search 一遍既浪费 budget 又容易制造 provenance mismatch。**默认 fallback**：4-tier 全套证据表由 [`final-report-product-requirements.md`](final-report-product-requirements.md) Phase B 跨段聚合产出。**仅当**用户显式要求一份 standalone evidence appendix（`deep_evidence_pack` preset 或显式 "evidence pack" 意图）时才 spin 段7 aspect；此时它的 `success_criteria` 须显式声明 "聚合 prior aspects 的 findings，不重复 search"。deep tier 因此默认 10 mandatory aspect（段1,2 + 段3×4 cagan micro + 段4,5,6,8），`max_agents=11` 仍预留 1 位给可选段7、不破预算包络。
 
 - **Intent overlay**：
   - `build` (本期 default): 段1 PR-FAQ 强制"新产品上线日"风格; 段4 OST 强制 ≥1 "新建 vs 复用既有平台" 对比; 段6 metrics 主指标含激活/留存 leading metric; per-aspect 段1 `max_search_calls` +1 (PR-FAQ 借鉴需多查 Amazon-style 范例).
@@ -220,7 +220,7 @@ Return only JSON matching this shape (no Markdown wrapper):
 }
 ```
 
-> Same `DeepResearchRequest` wire shape as competitive / product-capability / innovation-direction — Lapis `schema_version="0.1"` 不变；`search_policy` **不挂** `depth`/`content_level`/`recency`/`category` globally. Product-requirements contains synthesis-heavy aspects; global broad-recall hints can push narrow aspects to over-search and fail. Use host-side WebSearch/WebFetch after Lapis when a load-bearing fact needs freshness or original-source verification.
+> Same `DeepResearchRequest` wire shape as competitive / product-capability / innovation-direction — MoeResearch `schema_version="0.1"` 不变；`search_policy` **不挂** `depth`/`content_level`/`recency`/`category` globally. Product-requirements contains synthesis-heavy aspects; global broad-recall hints can push narrow aspects to over-search and fail. Use host-side WebSearch/WebFetch after MoeResearch when a load-bearing fact needs freshness or original-source verification.
 >
 > **`execution_policy.timeout_ms` 必须等于 per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms`.
 
@@ -237,11 +237,11 @@ Return only JSON matching this shape (no Markdown wrapper):
 9. Provider 名是逻辑 config 名, 不是 vendor DTOs; do not emit raw Exa/Grok/OpenAI/HTTP fields.
 10. `*_policy.allowed_providers` 是 allowlists only.
 11. Domain filters only via `search_policy.include_domains` / `exclude_domains`.
-12. `Evidence.source_type` 用 Lapis 7-value 集 (`official | documentation | news | blog | forum | repository | unknown`); 4-tier credibility 是 Skill 后处理.
+12. `Evidence.source_type` 用 MoeResearch 7-value 集 (`official | documentation | news | blog | forum | repository | unknown`); 4-tier credibility 是 Skill 后处理.
 
 ## MCP request wrapper
 
-按 competitive / product-capability / innovation-direction 变体规则：persona prompt content inline；Layer 1 读 `prompts/layer2/persona-*.md` 然后 verbatim 传入；Rust core 永不读 prompt 文件. Quick (2 aspect) 可用 2 个 `aspect_research` 调用, 也可用一个 `deep_research`.
+按 competitive / product-capability / innovation-direction 变体规则：persona prompt content inline；Layer 1 读 `prompts/layer2/pm-deep-research/persona-*.md` 然后 verbatim 传入；Rust core 永不读 prompt 文件. Quick (2 aspect) 可用 2 个 `aspect_research` 调用, 也可用一个 `deep_research`.
 
 ## Safety rules
 

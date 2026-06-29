@@ -1,0 +1,22 @@
+[package]
+name = "moe-research-net"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "moe_research_net"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait.workspace = true
+eventsource-stream.workspace = true
+futures.workspace = true
+moe-research-error = { path = "../moe-research-error" }
+reqwest.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true

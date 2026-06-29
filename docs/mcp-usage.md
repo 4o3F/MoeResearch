@@ -1,12 +1,12 @@
 # MCP Usage Guide
 
-This document is for clients that call Lapis only through MCP. It describes the MCP transport, lifecycle messages, tool names, request payloads, response envelopes, and error formats.
+This document is for clients that call MoeResearch only through MCP. It describes the MCP transport, lifecycle messages, tool names, request payloads, response envelopes, and error formats.
 
 It documents only the MCP surface that clients send and receive.
 
 ## 1. Transport
 
-Lapis exposes an MCP server over stdio.
+MoeResearch exposes an MCP server over stdio.
 
 Protocol rules:
 
@@ -22,21 +22,21 @@ Protocol rules:
 Prefer the official Claude Code MCP CLI instead of editing Claude settings by hand:
 
 ```bash
-lapis mcp register --scope local --config ~/.config/lapis/lapis.toml
+moeresearch mcp register --scope local --config ~/.config/moeresearch/moeresearch.toml
 ```
 
-The command invokes `claude mcp add` with the current `lapis` executable path by default:
+The command invokes `claude mcp add` with the current `moeresearch` executable path by default:
 
 ```bash
-claude mcp add --transport stdio --scope local --env OPENAI_API_KEY=<redacted> lapis -- /absolute/path/to/lapis serve --config /absolute/path/to/lapis.toml
+claude mcp add --transport stdio --scope local --env OPENAI_API_KEY=<redacted> moeresearch -- /absolute/path/to/moeresearch serve --config /absolute/path/to/moeresearch.toml
 ```
 
-Use `--lapis-bin` when Claude Code should launch a different binary.
+Use `--moeresearch-bin` when Claude Code should launch a different binary.
 
 The registration command validates the config file and the environment variables for enabled providers before invoking `claude`. It copies current enabled-provider environment values into Claude Code registration with `--env`; use `--dry-run` to print the command and JSON example without calling `claude`, with values redacted:
 
 ```bash
-lapis mcp register --scope local --config ~/.config/lapis/lapis.toml --dry-run
+moeresearch mcp register --scope local --config ~/.config/moeresearch/moeresearch.toml --dry-run
 ```
 
 For project-scoped configs, the equivalent `mcpServers` shape is:
@@ -44,10 +44,10 @@ For project-scoped configs, the equivalent `mcpServers` shape is:
 ```json
 {
   "mcpServers": {
-    "lapis": {
+    "moeresearch": {
       "type": "stdio",
-      "command": "lapis",
-      "args": ["serve", "--config", "/absolute/path/to/lapis.toml"],
+      "command": "moeresearch",
+      "args": ["serve", "--config", "/absolute/path/to/moeresearch.toml"],
       "env": {
         "OPENAI_API_KEY": "<redacted>"
       }
@@ -56,7 +56,7 @@ For project-scoped configs, the equivalent `mcpServers` shape is:
 }
 ```
 
-Do not put provider API keys in `lapis.toml`. Lapis config stores only environment variable names in `api_key_env`; `lapis mcp register` reads current values for enabled providers and copies them into Claude Code registration. Dry-run output redacts the values.
+Do not put provider API keys in `moeresearch.toml`. MoeResearch config stores only environment variable names in `api_key_env`; `moeresearch mcp register` reads current values for enabled providers and copies them into Claude Code registration. Dry-run output redacts the values.
 
 ## 2. MCP lifecycle
 
@@ -749,7 +749,7 @@ Use `deep_research` when the client wants the MCP server to run multiple aspect 
 
 ## 8. MCP response envelope
 
-The MCP response is a standard `CallToolResult`. The stable Lapis payload is in `result.structuredContent`.
+The MCP response is a standard `CallToolResult`. The stable MoeResearch payload is in `result.structuredContent`.
 
 ```json
 {
@@ -1002,7 +1002,7 @@ import json
 import subprocess
 
 proc = subprocess.Popen(
-    ["lapis", "serve", "--config", "/absolute/path/to/lapis.toml"],
+    ["moeresearch", "serve", "--config", "/absolute/path/to/moeresearch.toml"],
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,

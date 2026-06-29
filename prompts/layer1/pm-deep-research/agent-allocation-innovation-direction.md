@@ -4,12 +4,12 @@
 
 ## Two personas (each = one inline `aspect_agent_prompt`)
 
-Same two persona prompts as competitive / product-capability (Lapis has no persona concept; persona = prompt). Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both; **TM-11 is the recommended-bets aspect's hard gate** under innovation-direction:
+Same two persona prompts as competitive / product-capability (MoeResearch has no persona concept; persona = prompt). Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both; **TM-11 is the recommended-bets aspect's hard gate** under innovation-direction:
 
 | key | file | angle | owns (in this profile) | TM weighting |
 |---|---|---|---|---|
-| `experience-analyst` | [`../layer2/persona-experience-analyst.md`](../layer2/persona-experience-analyst.md) | user / experience / evidence | **段2 only** (unmet outcomes via ODI underserved) | **轻** — TM-1 / TM-6 only |
-| `strategist` | [`../layer2/persona-strategist.md`](../layer2/persona-strategist.md) | strategy / trade-off / foresight | **段1, 3, 4, 5, 6, 7, 8** (7 of 8) | **重** — TM-3 / TM-5 / TM-7 / TM-8 / TM-9 / TM-13；段8 强制 TM-11 |
+| `experience-analyst` | [`../../layer2/pm-deep-research/persona-experience-analyst.md`](../../layer2/pm-deep-research/persona-experience-analyst.md) | user / experience / evidence | **段2 only** (unmet outcomes via ODI underserved) | **轻** — TM-1 / TM-6 only |
+| `strategist` | [`../../layer2/pm-deep-research/persona-strategist.md`](../../layer2/pm-deep-research/persona-strategist.md) | strategy / trade-off / foresight | **段1, 3, 4, 5, 6, 7, 8** (7 of 8) | **重** — TM-3 / TM-5 / TM-7 / TM-8 / TM-9 / TM-13；段8 强制 TM-11 |
 
 > Strategist-heavy 是本 profile 的关键差异：innovation-direction 关心"跨现状看未来 12-36 月" — 7 段全部需要 strategist 的 trade-off / foresight / falsifiability 思维. EA 仅在段2 unmet outcomes 出场 (用户视角找 underserved). **不写 Strategist-futurist variant** — 复用通用 strategist persona。
 
@@ -28,7 +28,7 @@ Same two persona prompts as competitive / product-capability (Lapis has no perso
 
 ### 段2 sole-EA persona ownership note
 
-One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 profile 收敛到段2 一个 aspect. 段4 中 "对位" 维度 (能力候选 vs unmet) 由 `future-capability-map` (strategist) 通过 `shared_context.prior_sources` 引用段2 EA aspect 输出 fold-in. **不另起 dedicated EA aspect for 段4 对位** (避免 8→9 aspect 增预算 + 增 wave).
+One MoeResearch aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 profile 收敛到段2 一个 aspect. 段4 中 "对位" 维度 (能力候选 vs unmet) 由 `future-capability-map` (strategist) 通过 `shared_context.prior_sources` 引用段2 EA aspect 输出 fold-in. **不另起 dedicated EA aspect for 段4 对位** (避免 8→9 aspect 增预算 + 增 wave).
 
 ### 段6 pre-mortem 强制三死因 hard rule
 
@@ -85,7 +85,7 @@ One Lapis aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在本 pro
 2. Aspects MECE across the 8 段 — 不重叠.
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `subject_domain` + `time_window_months` 写在 `shared_context.summary` (aspect agents 读 it).
-5. Downstream `Evidence.source_type` 用 Lapis 7-value 集; 4-tier credibility 是 Skill 后处理, never an engine enum.
+5. Downstream `Evidence.source_type` 用 MoeResearch 7-value 集; 4-tier credibility 是 Skill 后处理, never an engine enum.
 6. **Strategist-heavy invariant**: 8 aspects 中 7 个 (段1/3/4/5/6/7/8) 由 strategist 拥有; 1 个 (段2) 由 EA 拥有. 若某课题 strategist-load 不平衡 (如 subject_domain 已知不需 trend scan), 先合段 (如段1 折叠进段4), 不要切给 EA.
 7. **段6 + 段8 是 hard floor aspect** — 缺 (3 死因 / falsifiability) → 整段 0 分, 拒绝软化.
 8. 段7 build-cost-feasibility 的 changelog 证据可从段1 trend-scan / 段4 future-capability-map 的 prior evidence_index 借用, 减少独立 search 消耗。

@@ -1,0 +1,14 @@
+[package]
+name = "moe-research-error"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "moe_research_error"
+path = "src/lib.rs"
+
+[dependencies]
+serde_json.workspace = true
+snafu.workspace = true
+toml.workspace = true

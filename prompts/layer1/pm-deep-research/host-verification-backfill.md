@@ -1,22 +1,22 @@
 # Layer 1 Module: Host Verification Backfill (PM DeepResearch)
 
-> Skill-layer module for bounded host-side WebSearch/WebFetch verification after Lapis has produced structured research. It does not replace Lapis aspect research, does not write into `DeepResearchResult.evidence_index`, and does not require Rust/Lapis schema changes.
+> Skill-layer module for bounded host-side WebSearch/WebFetch verification after MoeResearch has produced structured research. It does not replace MoeResearch aspect research, does not write into `DeepResearchResult.evidence_index`, and does not require Rust/MoeResearch schema changes.
 
 ## Purpose
 
-Use the host agent's native WebSearch/WebFetch capabilities to verify load-bearing facts that Lapis search results cannot safely prove from snippets or summaries alone.
+Use the host agent's native WebSearch/WebFetch capabilities to verify load-bearing facts that MoeResearch search results cannot safely prove from snippets or summaries alone.
 
 This module exists because production product research needs original-source checks for facts that affect decisions, especially current product facts, pricing, policy, release state, health/safety claims, academic claims, and commercial recommendations.
 
 ## Non-Negotiable Boundary
 
-- Lapis remains the structured research engine.
+- MoeResearch remains the structured research engine.
 - Host WebSearch/WebFetch is a Skill-layer verification and backfill step.
-- Host-found sources are **not** Lapis evidence.
+- Host-found sources are **not** MoeResearch evidence.
 - Do not insert host-found sources into `evidence_index`.
 - Do not create fake `Evidence.id` values for host sources.
-- Do not claim Rust/Lapis fetched or verified host-only sources.
-- Host verification can change claim confidence, action, and report wording; it cannot mutate frozen Lapis provenance.
+- Do not claim Rust/MoeResearch fetched or verified host-only sources.
+- Host verification can change claim confidence, action, and report wording; it cannot mutate frozen MoeResearch provenance.
 
 ## Mandatory Triggers
 
@@ -29,13 +29,13 @@ Run bounded host verification when any load-bearing claim depends on:
 5. Quantitative claims: percentages, thresholds, ROI, performance gains, prevalence, market size, retention, conversion, benchmark numbers.
 6. Claims supported only by summaries/snippets where the exact wording matters.
 7. Claims supported by weak, vendor-owned, community, or single-source evidence but used for P0/P1 recommendations.
-8. Contradictions between Lapis sources or between source tiers.
+8. Contradictions between MoeResearch sources or between source tiers.
 
 ## Tool Use Rules
 
 Use host tools in this order:
 
-1. **WebSearch** to discover candidate official / primary / independent sources when Lapis did not surface them.
+1. **WebSearch** to discover candidate official / primary / independent sources when MoeResearch did not surface them.
 2. **WebFetch** to read the original page for any load-bearing source discovered by WebSearch or already known by URL.
 3. **Manual/host inspection** only when the host has direct access to an artifact that WebFetch cannot read, such as a browser screenshot, local log, app-store page capture, or downloaded PDF.
 
@@ -63,7 +63,7 @@ Prefer sources in this order:
 
 ## Output Schema
 
-Return a host verification table separate from Lapis evidence:
+Return a host verification table separate from MoeResearch evidence:
 
 ```json
 {
@@ -99,7 +99,7 @@ Return a host verification table separate from Lapis evidence:
 
 Final reports must separate source origins:
 
-- **Lapis evidence**: frozen `DeepResearchResult.evidence_index` and aspect findings.
+- **MoeResearch evidence**: frozen `DeepResearchResult.evidence_index` and aspect findings.
 - **Skill-side WebSearch/WebFetch backfill**: host verification rows (`HV-*`) and their effect on claim confidence/action.
 - **Manual/host verification**: browser captures, local logs, screenshots, or direct artifact inspection.
 
@@ -117,7 +117,7 @@ If WebSearch/WebFetch or browser/manual inspection is unavailable:
 2. Do not keep unsupported load-bearing claims as facts.
 3. Lower confidence for claims requiring original-source verification.
 4. Move unresolved high-impact claims to open questions / Action Pack.
-5. Do not compensate by broadening Lapis search after the fact unless the missing item belongs to a specific aspect and can be retried via `aspect_research`.
+5. Do not compensate by broadening MoeResearch search after the fact unless the missing item belongs to a specific aspect and can be retried via `aspect_research`.
 
 ## Safety
 

@@ -1,6 +1,6 @@
 # Layer 1 Prompt: Evidence Post-Processing (PM DeepResearch — Skill evidence step)
 
-> The Skill-layer evidence step between Lapis execution and report synthesis. Turns a validated `DeepResearchResult.evidence_index` (+ the visual-annotation blocks inside each `Finding.claim`) into reusable structures — a **tiered source list**, a **source-audit base table**, a **visual-evidence table**, and a **CiteEval sample** — that final-report prompts place into Annex A and use to calibrate confidence. Claim Ledger / Evidence Verifier modules consume these structures.
+> The Skill-layer evidence step between MoeResearch execution and report synthesis. Turns a validated `DeepResearchResult.evidence_index` (+ the visual-annotation blocks inside each `Finding.claim`) into reusable structures — a **tiered source list**, a **source-audit base table**, a **visual-evidence table**, and a **CiteEval sample** — that final-report prompts place into Annex A and use to calibrate confidence. Claim Ledger / Evidence Verifier modules consume these structures.
 
 ## Role
 
@@ -52,9 +52,9 @@ These fields are interpretive and may be wrong; final report synthesis must stil
 2. For each, build a row: `product / screen_or_flow / media_type / source_url / timestamp / observed_feature / related_claim / confidence`. `source_url` = the `Evidence.url`; the descriptive fields come from the claim block. **Do not** synthesize descriptions from rewritten provenance.
 3. **Count check (Deep / Deep+Evidence-Pack)**: if visual items `< 5`, this is a gap. Trigger the Layer-2 browser-capture procedure (Step B′) **once**; if still `< 5`, record the gap explicitly and forbid strong UI conclusions downstream (the report must abstain on UI breakpoints, not invent them).
 
-### Step C′ — Layer-2 browser capture (Skill-side, NOT a Lapis aspect agent)
+### Step C′ — Layer-2 browser capture (Skill-side, NOT a MoeResearch aspect agent)
 
-Lapis aspect agents only expose `search`; they cannot screenshot. Visual backfill is a **host-agent-side capability**:
+MoeResearch aspect agents only expose `search`; they cannot screenshot. Visual backfill is a **host-agent-side capability**:
 
 - Use the host agent's available browser automation (for example a browser MCP/tool, Playwright, or a CDP-backed browser session) to inspect official pages, screenshots, app-store pages, or product surfaces.
 - Target the missing surfaces (e.g. the target product's onboarding / plan-setup / daily-workout / post-run screens) — exactly the gaps named in the experience-paths aspect's `open_questions`.

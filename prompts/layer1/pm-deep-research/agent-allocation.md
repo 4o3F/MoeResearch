@@ -4,12 +4,12 @@
 
 ## Two personas (each = one inline `aspect_agent_prompt`)
 
-Lapis has no persona concept; a persona is realised purely as the inline prompt passed on `aspect.aspect_agent_prompt`. There are exactly two persona prompts, both carrying the cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability):
+MoeResearch has no persona concept; a persona is realised purely as the inline prompt passed on `aspect.aspect_agent_prompt`. There are exactly two persona prompts, both carrying the cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability):
 
 | key | file | angle | owns dims | TM |
 |---|---|---|---|---|
-| `experience-analyst` | [`../layer2/persona-experience-analyst.md`](../layer2/persona-experience-analyst.md) | user / experience / evidence | 2, 3, experience paths, JTBD half | TM-1/2/6/10/12 |
-| `strategist` | [`../layer2/persona-strategist.md`](../layer2/persona-strategist.md) | strategy / trade-off / foresight | 1 (framing), 4, 5, threat, build-cost | TM-3/5/7/8/9/13 (+ TM-12 borrowed for build-cost) |
+| `experience-analyst` | [`../../layer2/pm-deep-research/persona-experience-analyst.md`](../../layer2/pm-deep-research/persona-experience-analyst.md) | user / experience / evidence | 2, 3, experience paths, JTBD half | TM-1/2/6/10/12 |
+| `strategist` | [`../../layer2/pm-deep-research/persona-strategist.md`](../../layer2/pm-deep-research/persona-strategist.md) | strategy / trade-off / foresight | 1 (framing), 4, 5, threat, build-cost | TM-3/5/7/8/9/13 (+ TM-12 borrowed for build-cost) |
 
 > CI/Market absorption: there is no separate Competitive-Intelligence or Market analyst. CI work (competitive map, feature matrix) lands in the experience-analyst teardown + strategist positioning/threat; market context is a strategist input (Porter at industry layer only). Add a separate CI/Market persona only after validating the need.
 
@@ -26,7 +26,7 @@ Lapis has no persona concept; a persona is realised purely as the inline prompt 
 
 ### W3 — dim-1 persona ownership (do not re-litigate)
 
-One Lapis aspect carries exactly one `aspect_agent_prompt` = one persona, so the "Strategist frames + Experience does JTBD" split cannot be literally applied inside one aspect. **`job-and-competitive-set` is owned by the `strategist` persona, with the JTBD job-statement work folded into its `research_question` + `success_criteria`.** Only split a dedicated `jtbd-jobs` aspect (owned by `experience-analyst`) when a study genuinely needs a standalone JTBD teardown — otherwise keep the single strategist-owned aspect.
+One MoeResearch aspect carries exactly one `aspect_agent_prompt` = one persona, so the "Strategist frames + Experience does JTBD" split cannot be literally applied inside one aspect. **`job-and-competitive-set` is owned by the `strategist` persona, with the JTBD job-statement work folded into its `research_question` + `success_criteria`.** Only split a dedicated `jtbd-jobs` aspect (owned by `experience-analyst`) when a study genuinely needs a standalone JTBD teardown — otherwise keep the single strategist-owned aspect.
 
 ## Per-tier aspect subsets
 
@@ -55,4 +55,4 @@ Each aspect carries its own `budget { max_turns, max_tool_calls, max_search_call
 2. Aspects are MECE across the spine — no dimension covered twice.
 3. `success_criteria` carries the dimension's evidence standard so the engine enforces our evidence bar.
 4. `decision_intent` lives in `shared_context.summary` (the aspect agents read it there).
-5. Downstream `Evidence.source_type` uses only the 7 legal Lapis values; the 4-tier credibility labels are Skill post-processing, never an engine enum.
+5. Downstream `Evidence.source_type` uses only the 7 legal MoeResearch values; the 4-tier credibility labels are Skill post-processing, never an engine enum.

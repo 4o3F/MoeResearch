@@ -1,13 +1,13 @@
 # Configuration Guide
 
-This guide describes the Lapis configuration file used by `lapis serve`.
+This guide describes the MoeResearch configuration file used by `moeresearch serve`.
 
 ## 1. Configuration file location
 
 For new users, generate a user-level starter config and follow the provider prompts:
 
 ```bash
-lapis init --config ~/.config/lapis/lapis.toml
+moeresearch init --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 For automation, use `--non-interactive` plus explicit provider flags such as `--enable-openai`.
@@ -15,28 +15,28 @@ For automation, use `--non-interactive` plus explicit provider flags such as `--
 Then validate it:
 
 ```bash
-lapis check --config ~/.config/lapis/lapis.toml
+moeresearch check --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 You can also copy the example configuration before running the server:
 
 ```bash
-cp lapis.example.toml lapis.toml
+cp moeresearch.example.toml moeresearch.toml
 ```
 
-By default, `lapis serve` reads `lapis.toml` from the current working directory. You can pass an explicit path:
+By default, `moeresearch serve` reads `moeresearch.toml` from the current working directory. You can pass an explicit path:
 
 ```bash
-lapis serve --config /absolute/path/to/lapis.toml
+moeresearch serve --config /absolute/path/to/moeresearch.toml
 ```
 
 ## 2. Secret handling
 
-Lapis onboarding preserves the `api_key_env` secret model. The CLI does not accept raw provider keys and does not write keys to config.
+MoeResearch onboarding preserves the `api_key_env` secret model. The CLI does not accept raw provider keys and does not write keys to config.
 
-Do not put real API keys in `lapis.toml`.
+Do not put real API keys in `moeresearch.toml`.
 
-Provider entries store environment variable names in `api_key_env`; the server reads the corresponding environment variable at startup. `lapis mcp register` copies current values for enabled provider environment variables into Claude Code registration, while dry-run output redacts those values.
+Provider entries store environment variable names in `api_key_env`; the server reads the corresponding environment variable at startup. `moeresearch mcp register` copies current values for enabled provider environment variables into Claude Code registration, while dry-run output redacts those values.
 
 ```toml
 [model.providers.openai]
@@ -52,9 +52,9 @@ export OPENAI_API_KEY="..."
 
 ## 3. Basic shape
 
-`lapis init` generates this same shape. Without provider flags it asks which providers to enable and which environment variable names to reference. With `--non-interactive`, all providers stay disabled unless enable flags are passed.
+`moeresearch init` generates this same shape. Without provider flags it asks which providers to enable and which environment variable names to reference. With `--non-interactive`, all providers stay disabled unless enable flags are passed.
 
-`lapis check` uses the same config validation as `lapis serve`: the TOML shape must be valid, and enabled providers must reference environment variables that are set. It then performs local MCP checks when requested. `lapis check --live` does not call provider APIs in v1; provider key correctness and endpoint reachability probes are explicitly deferred.
+`moeresearch check` uses the same config validation as `moeresearch serve`: the TOML shape must be valid, and enabled providers must reference environment variables that are set. It then performs local MCP checks when requested. `moeresearch check --live` does not call provider APIs in v1; provider key correctness and endpoint reachability probes are explicitly deferred.
 
 ```toml
 [logging]
@@ -64,7 +64,7 @@ format = "json"
 timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
-user_agent = "lapis/0.1.0"
+user_agent = "moeresearch/0.1.0"
 
 [search.providers.exa]
 enabled = false
@@ -137,7 +137,7 @@ export TAVILY_API_KEY="..."
 
 Only enabled providers require their environment variables to be set.
 
-Search provider configuration is infrastructure-only: endpoint URL, credentials, timeout, model where supported, and provider-specific response knobs. Among search providers, only `[search.providers.grok]` accepts `model`; Exa and Tavily reject it even when disabled. Grok supports optional `max_output_tokens` and `reasoning_effort`; `reasoning_effort` must be one of `none`, `low`, `medium`, or `high`. Set `none` to disable Grok reasoning, or omit the field to leave the provider default in effect. Per-query search tuning belongs in MCP request policy or the model-facing search tool call, not in `lapis.toml`.
+Search provider configuration is infrastructure-only: endpoint URL, credentials, timeout, model where supported, and provider-specific response knobs. Among search providers, only `[search.providers.grok]` accepts `model`; Exa and Tavily reject it even when disabled. Grok supports optional `max_output_tokens` and `reasoning_effort`; `reasoning_effort` must be one of `none`, `low`, `medium`, or `high`. Set `none` to disable Grok reasoning, or omit the field to leave the provider default in effect. Per-query search tuning belongs in MCP request policy or the model-facing search tool call, not in `moeresearch.toml`.
 
 Do not configure search `depth`, `content_level`, `recency`, `category`, Exa-native request fields such as `type`, `contents`, `highlights`, `text`, or `maxAgeHours`, or Tavily-native request fields such as `search_depth`, `topic`, `time_range`, `include_answer`, or `include_raw_content` under `[search.providers.*]`; unknown fields fail configuration validation.
 
@@ -148,7 +148,7 @@ Do not configure search `depth`, `content_level`, `recency`, `category`, Exa-nat
 timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
-user_agent = "lapis/0.1.0"
+user_agent = "moeresearch/0.1.0"
 ```
 
 Fields:
@@ -162,7 +162,7 @@ Fields:
 
 ## 6. Budget settings
 
-`lapis.example.toml` defines budget limits at two levels: global research and per-agent execution.
+`moeresearch.example.toml` defines budget limits at two levels: global research and per-agent execution.
 
 ```toml
 [budget.research]
@@ -193,20 +193,20 @@ Rules:
 The default CLI log format is JSON:
 
 ```bash
-lapis serve --config lapis.toml --log-format json
+moeresearch serve --config moeresearch.toml --log-format json
 ```
 
 Other supported formats:
 
 ```bash
-lapis serve --config lapis.toml --log-format compact
-lapis serve --config lapis.toml --log-format pretty
+moeresearch serve --config moeresearch.toml --log-format compact
+moeresearch serve --config moeresearch.toml --log-format pretty
 ```
 
 Use `RUST_LOG` to adjust log levels:
 
 ```bash
-RUST_LOG=lapis=debug lapis serve --config lapis.toml --log-format pretty
+RUST_LOG=moe_research=debug moeresearch serve --config moeresearch.toml --log-format pretty
 ```
 
 Logs are written to stderr so stdout remains available for MCP protocol messages.
@@ -218,8 +218,8 @@ Logs are written to stderr so stdout remains available for MCP protocol messages
 Fix it by copying the example file or passing an explicit path:
 
 ```bash
-cp lapis.example.toml lapis.toml
-lapis serve --config /absolute/path/to/lapis.toml
+cp moeresearch.example.toml moeresearch.toml
+moeresearch serve --config /absolute/path/to/moeresearch.toml
 ```
 
 ### `environment variable ... is not set`

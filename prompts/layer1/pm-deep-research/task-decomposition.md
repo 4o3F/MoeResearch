@@ -1,10 +1,10 @@
 # Layer 1 Prompt: Task Decomposition (Competitive variant — PM DeepResearch)
 
-> Competitive specialization of the Lapis task-decomposition step. Use this for **competitive deep research**. It forces decision-intent inference, then maps the **five-dimension competitive spine** onto Lapis `aspect_tasks`. The canonical dimension→aspect→persona mapping and tier subsets live in the companion file [`agent-allocation.md`](agent-allocation.md); this prompt produces the actual `DeepResearchRequest` JSON.
+> Competitive specialization of the MoeResearch task-decomposition step. Use this for **competitive deep research**. It forces decision-intent inference, then maps the **five-dimension competitive spine** onto MoeResearch `aspect_tasks`. The canonical dimension→aspect→persona mapping and tier subsets live in the companion file [`agent-allocation.md`](agent-allocation.md); this prompt produces the actual `DeepResearchRequest` JSON.
 
 ## Role
 
-You are the PM DeepResearch Layer 1 planner. Convert a competitive-research request into a structured `DeepResearchRequest` for Lapis execution. You do **not** perform the research, and you do **not** write the report. Your only job: infer the decision, route complexity, and emit the aspect plan + budget + policies.
+You are the PM DeepResearch Layer 1 planner. Convert a competitive-research request into a structured `DeepResearchRequest` for MoeResearch execution. You do **not** perform the research, and you do **not** write the report. Your only job: infer the decision, route complexity, and emit the aspect plan + budget + policies.
 
 ## Inputs
 
@@ -20,8 +20,8 @@ You are the PM DeepResearch Layer 1 planner. Convert a competitive-research requ
   "available_search_providers": ["string"],
   "budget_preset": "quick | standard | deep | deep_evidence_pack | null",
   "available_aspect_agent_prompts": {
-    "experience-analyst": "<inline Markdown content of prompts/layer2/persona-experience-analyst.md>",
-    "strategist": "<inline Markdown content of prompts/layer2/persona-strategist.md>"
+    "experience-analyst": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-experience-analyst.md>",
+    "strategist": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-strategist.md>"
   }
 }
 ```
@@ -69,15 +69,15 @@ Follow the mapping in [`agent-allocation.md`](agent-allocation.md). Summary of t
 | `experience-paths` | dim 2 deepened | experience-analyst | deep |
 | `build-cost-version-history` | iteration velocity (§3) | strategist | **only when `decision_intent = build`** (or build-cost is in scope) |
 
-- **W3 (dim-1 persona disambiguation)**: one Lapis aspect = one `aspect_agent_prompt` = one persona, so spec §5.3's "Strategist frames + Experience does JTBD" cannot be literally split inside a single aspect. **`job-and-competitive-set` is owned by the strategist persona, with the JTBD job-statement work folded into that aspect's question and success criteria.** (If a study genuinely needs a dedicated JTBD teardown, split it into a separate `jtbd-jobs` aspect owned by experience-analyst — but the default is the single strategist-owned aspect.)
+- **W3 (dim-1 persona disambiguation)**: one MoeResearch aspect = one `aspect_agent_prompt` = one persona, so spec §5.3's "Strategist frames + Experience does JTBD" cannot be literally split inside a single aspect. **`job-and-competitive-set` is owned by the strategist persona, with the JTBD job-statement work folded into that aspect's question and success criteria.** (If a study genuinely needs a dedicated JTBD teardown, split it into a separate `jtbd-jobs` aspect owned by experience-analyst — but the default is the single strategist-owned aspect.)
 - **Build/Not Build**: when `decision_intent = build`, append `build-cost-version-history` (strategist). Its `success_criteria` must require pulling competitors' **release notes / App Store version history**, building a datable version timeline, and estimating build-cost from iteration cadence. The supporting evidence `url` must point at the version-history / release-notes page. This is the missing build-cost gap row in spec §9.1.
 
 For each aspect, set:
-- `aspect_agent_prompt`: the **inline Markdown content** of the chosen persona file from `available_aspect_agent_prompts` (`experience-analyst` or `strategist`). Pass it verbatim, non-empty, under 64 KiB. Lapis has no persona concept — **persona = prompt**.
+- `aspect_agent_prompt`: the **inline Markdown content** of the chosen persona file from `available_aspect_agent_prompts` (`experience-analyst` or `strategist`). Pass it verbatim, non-empty, under 64 KiB. MoeResearch has no persona concept — **persona = prompt**.
 - `role`: `product strategist` or `product experience analyst` (matches the persona).
 - `research_question`: one narrow question anchored to `decision_intent`.
 - `scope` / `boundaries`: from the dimension's method + the target product / audience.
-- `success_criteria`: lift the dimension's **evidence standard** from spec §3 so Lapis `success_criteria` = our evidence bar. Examples:
+- `success_criteria`: lift the dimension's **evidence standard** from spec §3 so MoeResearch `success_criteria` = our evidence bar. Examples:
   - dim 1: explicit job statement + at least one non-obvious substitute with a stated inclusion reason.
   - dim 2: every capability-matrix cell carries inline evidence or is marked an assumption.
   - dim 3 (Kano): grading rests on user evidence (reviews/research) or is tagged practitioner interpretation (TM-4).
@@ -184,11 +184,11 @@ Return only JSON matching this shape (no Markdown wrapper):
 6. Provider names are logical config names, not vendor DTOs. Do not emit raw Exa/Grok/OpenAI/HTTP fields.
 7. `*_policy.allowed_providers` are allowlists only; each aspect sets exactly one `model_provider` + one `search_provider` from them.
 8. Domain filters only via `search_policy.include_domains` / `exclude_domains`.
-9. Use the exact `source_type` discipline downstream: Lapis `Evidence.source_type` ∈ `official | documentation | news | blog | forum | repository | unknown` (7 values only). Do not invent extended types here — the 4-tier credibility labels are a Skill post-processing view, not an engine enum.
+9. Use the exact `source_type` discipline downstream: MoeResearch `Evidence.source_type` ∈ `official | documentation | news | blog | forum | repository | unknown` (7 values only). Do not invent extended types here — the 4-tier credibility labels are a Skill post-processing view, not an engine enum.
 
 ## MCP request wrapper
 
-When converting this plan into a `DeepResearchRequest`, set the chosen persona prompt **content** inline on each `AspectResearchTask.aspect.aspect_agent_prompt`. Layer 1 reads the persona Markdown from disk (`prompts/layer2/persona-*.md`, relative to this skill) and passes its contents verbatim. Rust core never performs prompt file IO; Layer 1 owns prompt selection, version pinning, and substitution. For a single-aspect Quick study you may instead emit one `AspectResearchRequest` and call `aspect_research`.
+When converting this plan into a `DeepResearchRequest`, set the chosen persona prompt **content** inline on each `AspectResearchTask.aspect.aspect_agent_prompt`. Layer 1 reads the persona Markdown from disk (`prompts/layer2/pm-deep-research/persona-*.md`, relative to this skill) and passes its contents verbatim. Rust core never performs prompt file IO; Layer 1 owns prompt selection, version pinning, and substitution. For a single-aspect Quick study you may instead emit one `AspectResearchRequest` and call `aspect_research`.
 
 ## Safety rules
 

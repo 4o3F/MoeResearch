@@ -950,141 +950,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lapis-cli"
-version = "0.2.0"
-dependencies = [
- "clap",
- "inquire",
- "lapis-config",
- "lapis-error",
- "lapis-mcp",
- "lapis-model",
- "lapis-net",
- "lapis-search",
- "lapis-workflow",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "lapis-config"
-version = "0.2.0"
-dependencies = [
- "lapis-error",
- "reqwest",
- "schemars",
- "serde",
- "snafu",
- "toml",
-]
-
-[[package]]
-name = "lapis-error"
-version = "0.2.0"
-dependencies = [
- "serde_json",
- "snafu",
- "toml",
-]
-
-[[package]]
-name = "lapis-mcp"
-version = "0.2.0"
-dependencies = [
- "lapis-error",
- "lapis-model",
- "lapis-search",
- "lapis-workflow",
- "rmcp",
- "schemars",
- "serde",
- "tracing",
-]
-
-[[package]]
-name = "lapis-model"
-version = "0.2.0"
-dependencies = [
- "async-trait",
- "lapis-error",
- "lapis-net",
- "schemars",
- "serde",
- "serde_json",
- "snafu",
- "tracing",
-]
-
-[[package]]
-name = "lapis-net"
-version = "0.2.0"
-dependencies = [
- "async-trait",
- "eventsource-stream",
- "futures",
- "lapis-error",
- "reqwest",
- "schemars",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "lapis-search"
-version = "0.2.0"
-dependencies = [
- "async-trait",
- "lapis-error",
- "lapis-net",
- "schemars",
- "serde",
- "serde_json",
- "snafu",
-]
-
-[[package]]
-name = "lapis-tests"
-version = "0.2.0"
-dependencies = [
- "async-trait",
- "lapis-config",
- "lapis-error",
- "lapis-mcp",
- "lapis-model",
- "lapis-net",
- "lapis-search",
- "lapis-workflow",
- "rmcp",
- "schemars",
- "serde_json",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "lapis-workflow"
-version = "0.2.0"
-dependencies = [
- "futures",
- "lapis-error",
- "lapis-model",
- "lapis-search",
- "schemars",
- "serde",
- "serde_json",
- "time",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1172,6 +1037,141 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "moe-research-cli"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "inquire",
+ "moe-research-config",
+ "moe-research-error",
+ "moe-research-mcp",
+ "moe-research-model",
+ "moe-research-net",
+ "moe-research-search",
+ "moe-research-workflow",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "moe-research-config"
+version = "0.2.0"
+dependencies = [
+ "moe-research-error",
+ "reqwest",
+ "schemars",
+ "serde",
+ "snafu",
+ "toml",
+]
+
+[[package]]
+name = "moe-research-error"
+version = "0.2.0"
+dependencies = [
+ "serde_json",
+ "snafu",
+ "toml",
+]
+
+[[package]]
+name = "moe-research-mcp"
+version = "0.2.0"
+dependencies = [
+ "moe-research-error",
+ "moe-research-model",
+ "moe-research-search",
+ "moe-research-workflow",
+ "rmcp",
+ "schemars",
+ "serde",
+ "tracing",
+]
+
+[[package]]
+name = "moe-research-model"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "moe-research-error",
+ "moe-research-net",
+ "schemars",
+ "serde",
+ "serde_json",
+ "snafu",
+ "tracing",
+]
+
+[[package]]
+name = "moe-research-net"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "eventsource-stream",
+ "futures",
+ "moe-research-error",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "moe-research-search"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "moe-research-error",
+ "moe-research-net",
+ "schemars",
+ "serde",
+ "serde_json",
+ "snafu",
+]
+
+[[package]]
+name = "moe-research-tests"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "moe-research-config",
+ "moe-research-error",
+ "moe-research-mcp",
+ "moe-research-model",
+ "moe-research-net",
+ "moe-research-search",
+ "moe-research-workflow",
+ "rmcp",
+ "schemars",
+ "serde_json",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "moe-research-workflow"
+version = "0.2.0"
+dependencies = [
+ "futures",
+ "moe-research-error",
+ "moe-research-model",
+ "moe-research-search",
+ "schemars",
+ "serde",
+ "serde_json",
+ "time",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
