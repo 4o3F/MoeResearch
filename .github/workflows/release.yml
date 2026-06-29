@@ -294,7 +294,6 @@ jobs:
     runs-on: "ubuntu-22.04"
     permissions:
       contents: read
-      id-token: write
     env:
       PLAN: ${{ needs.plan.outputs.val }}
     if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
@@ -313,7 +312,7 @@ jobs:
       - run: |
           for release in $(echo "$PLAN" | jq --compact-output '.releases[] | select([.artifacts[] | endswith("-npm-package.tar.gz")] | any)'); do
             pkg=$(echo "$release" | jq '.artifacts[] | select(endswith("-npm-package.tar.gz"))' --raw-output)
-            npm publish --provenance --access public "./npm/${pkg}"
+            npm publish --access public "./npm/${pkg}"
           done
 
   announce:
