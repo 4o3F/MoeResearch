@@ -125,6 +125,7 @@ fn help_exposes_onboarding_commands() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    assert!(stdout.contains("assets"));
     assert!(stdout.contains("serve"));
     assert!(stdout.contains("init"));
     assert!(stdout.contains("check"));

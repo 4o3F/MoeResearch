@@ -1,3 +1,4 @@
+pub mod assets;
 pub mod check;
 pub mod init;
 pub mod mcp;

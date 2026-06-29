@@ -1,0 +1,552 @@
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use flate2::Compression;
+use flate2::write::GzEncoder;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+
+const ASSET: &str = "pm-deep-research";
+const SKILL_PATH: &str = "skills/pm-deep-research.md";
+const LAYER1_PATH: &str = "prompts/layer1/pm-deep-research/task-decomposition.md";
+const LAYER2_PATH: &str = "prompts/layer2/pm-deep-research/persona-strategist.md";
+
+struct TestDir {
+    path: PathBuf,
+}
+
+impl TestDir {
+    fn new(name: &str) -> Self {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "moe-research-assets-test-{}-{nanos}-{name}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect("create test dir");
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TestDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+#[derive(Clone)]
+struct FixtureFile {
+    path: String,
+    bytes: Vec<u8>,
+}
+
+struct AssetFixture {
+    _dir: TestDir,
+    base_url: String,
+}
+
+impl AssetFixture {
+    fn new(
+        manifest_override: impl FnOnce(&mut Value),
+        extra_archive_file: Option<FixtureFile>,
+    ) -> Self {
+        let dir = TestDir::new("release");
+        let version = env!("CARGO_PKG_VERSION");
+        let archive_name = format!("{ASSET}-assets-v{version}.tar.gz");
+        let manifest_name = format!("{ASSET}-assets-v{version}.manifest.json");
+        let files = fixture_files();
+        let archive_bytes = archive_bytes(&files, extra_archive_file.as_ref());
+        let mut manifest = json!({
+            "schema_version": 1,
+            "asset": ASSET,
+            "version": version,
+            "archive": archive_name,
+            "sha256": sha256_hex(&archive_bytes),
+            "source_commit": "test",
+            "files": files.iter().map(|file| json!({
+                "path": file.path,
+                "sha256": sha256_hex(&file.bytes),
+                "size": file.bytes.len(),
+            })).collect::<Vec<_>>(),
+        });
+        manifest_override(&mut manifest);
+
+        fs::write(dir.path().join(archive_name), archive_bytes).expect("write archive");
+        fs::write(
+            dir.path().join(manifest_name),
+            serde_json::to_vec(&manifest).expect("serialize manifest"),
+        )
+        .expect("write manifest");
+
+        let base_url = url::Url::from_directory_path(dir.path())
+            .expect("file base url")
+            .to_string();
+        Self {
+            _dir: dir,
+            base_url,
+        }
+    }
+}
+
+#[test]
+fn help_exposes_assets_install_options() {
+    let output = moeresearch_command()
+        .args(["assets", "install", "--help"])
+        .output()
+        .expect("run assets install help");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(stdout.contains("pm-deep-research"));
+    assert!(stdout.contains("--client"));
+    assert!(stdout.contains("--scope"));
+    assert!(stdout.contains("--target"));
+    assert!(stdout.contains("--layout"));
+    assert!(stdout.contains("--force"));
+    assert!(stdout.contains("--dry-run"));
+}
+
+#[test]
+fn assets_install_repo_layout_preserves_skills_and_prompts() {
+    let fixture = AssetFixture::new(|_| {}, None);
+    let target = TestDir::new("target");
+
+    let output = moeresearch_command()
+        .args([
+            "assets",
+            "install",
+            "pm-deep-research",
+            "--target",
+            target.path().to_str().expect("utf8 target"),
+            "--layout",
+            "repo",
+            "--version",
+            env!("CARGO_PKG_VERSION"),
+            "--base-url",
+            &fixture.base_url,
+        ])
+        .output()
+        .expect("run assets install");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        fs::read_to_string(target.path().join(SKILL_PATH)).expect("read skill"),
+        skill_content()
+    );
+    assert!(target.path().join(LAYER1_PATH).is_file());
+    assert!(target.path().join(LAYER2_PATH).is_file());
+}
+
+#[test]
+fn assets_install_default_claude_code_layout_rewrites_skill_prompt_paths() {
+    let fixture = AssetFixture::new(|_| {}, None);
+    let home = TestDir::new("home");
+
+    let output = moeresearch_command()
+        .env("HOME", home.path())
+        .args([
+            "assets",
+            "install",
+            "pm-deep-research",
+            "--version",
+            env!("CARGO_PKG_VERSION"),
+            "--base-url",
+            &fixture.base_url,
+        ])
+        .output()
+        .expect("run assets install");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+
+    let skill_root = home.path().join(".claude/skills/pm-deep-research");
+    let installed_skill = fs::read_to_string(skill_root.join("SKILL.md")).expect("read skill");
+    assert!(installed_skill.contains("./prompts/layer1/pm-deep-research/task-decomposition.md"));
+    assert!(!installed_skill.contains("../prompts/"));
+    assert!(
+        skill_root
+            .join("prompts/layer1/pm-deep-research/task-decomposition.md")
+            .is_file()
+    );
+    assert!(
+        skill_root
+            .join("prompts/layer2/pm-deep-research/persona-strategist.md")
+            .is_file()
+    );
+}
+
+#[test]
+fn assets_install_project_scope_uses_current_project_directory() {
+    let fixture = AssetFixture::new(|_| {}, None);
+    let project = TestDir::new("project");
+
+    let output = moeresearch_command()
+        .current_dir(project.path())
+        .args([
+            "assets",
+            "install",
+            "pm-deep-research",
+            "--scope",
+            "project",
+            "--version",
+            env!("CARGO_PKG_VERSION"),
+            "--base-url",
+            &fixture.base_url,
+        ])
+        .output()
+        .expect("run assets install");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    assert!(
+        project
+            .path()
+            .join(".claude/skills/pm-deep-research/SKILL.md")
+            .is_file()
+    );
+}
+
+#[test]
+fn assets_install_dry_run_does_not_write_target_files() {
+    let fixture = AssetFixture::new(|_| {}, None);
+    let target = TestDir::new("target");
+
+    let output = moeresearch_command()
+        .args([
+            "assets",
+            "install",
+            "pm-deep-research",
+            "--target",
+            target.path().to_str().expect("utf8 target"),
+            "--layout",
+            "repo",
+            "--dry-run",
+            "--version",
+            env!("CARGO_PKG_VERSION"),
+            "--base-url",
+            &fixture.base_url,
+        ])
+        .output()
+        .expect("run assets install");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(output.stdout.is_empty());
+    assert!(!target.path().join(SKILL_PATH).exists());
+    assert!(stderr.contains("would install MoeResearch assets"));
+}
+
+#[test]
+fn assets_install_rejects_archive_checksum_mismatch() {
+    let fixture = AssetFixture::new(
+        |manifest| {
+            manifest["sha256"] = Value::String("0".repeat(64));
+        },
+        None,
+    );
+    let target = TestDir::new("target");
+
+    let output = install_repo_layout(&fixture, &target);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!target.path().join(SKILL_PATH).exists());
+}
+
+#[test]
+fn assets_install_rejects_per_file_checksum_mismatch() {
+    let fixture = AssetFixture::new(
+        |manifest| {
+            manifest["files"][0]["sha256"] = Value::String("0".repeat(64));
+        },
+        None,
+    );
+    let target = TestDir::new("target");
+
+    let output = install_repo_layout(&fixture, &target);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!target.path().join(SKILL_PATH).exists());
+}
+
+#[test]
+fn assets_install_rejects_archive_traversal_entry() {
+    let fixture = AssetFixture::new(
+        |_| {},
+        Some(FixtureFile {
+            path: "../evil.txt".to_owned(),
+            bytes: b"evil".to_vec(),
+        }),
+    );
+    let target = TestDir::new("target");
+
+    let output = install_repo_layout(&fixture, &target);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!target.path().join(SKILL_PATH).exists());
+}
+
+#[test]
+fn assets_install_rejects_archive_unexpected_file() {
+    let fixture = AssetFixture::new(
+        |_| {},
+        Some(FixtureFile {
+            path: "prompts/layer1/pm-deep-research/extra.md".to_owned(),
+            bytes: b"extra".to_vec(),
+        }),
+    );
+    let target = TestDir::new("target");
+
+    let output = install_repo_layout(&fixture, &target);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!target.path().join(SKILL_PATH).exists());
+}
+
+#[test]
+fn assets_install_rejects_manifest_duplicate_path() {
+    let fixture = AssetFixture::new(
+        |manifest| {
+            let duplicate = manifest["files"][0].clone();
+            manifest["files"]
+                .as_array_mut()
+                .expect("files array")
+                .push(duplicate);
+        },
+        None,
+    );
+    let target = TestDir::new("target");
+
+    let output = install_repo_layout(&fixture, &target);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!target.path().join(SKILL_PATH).exists());
+}
+
+#[test]
+fn assets_install_rejects_version_mismatch() {
+    let fixture = AssetFixture::new(
+        |manifest| {
+            manifest["version"] = Value::String("9.9.9".to_owned());
+        },
+        None,
+    );
+    let target = TestDir::new("target");
+
+    let output = install_repo_layout(&fixture, &target);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!target.path().join(SKILL_PATH).exists());
+}
+
+#[test]
+fn assets_install_preserves_conflicting_files_without_force() {
+    let fixture = AssetFixture::new(|_| {}, None);
+    let target = TestDir::new("target");
+    let skill_path = target.path().join(SKILL_PATH);
+    fs::create_dir_all(skill_path.parent().expect("skill parent")).expect("create parent");
+    fs::write(&skill_path, "local edit").expect("write local edit");
+
+    let output = install_repo_layout(&fixture, &target);
+
+    assert!(!output.status.success());
+    assert_eq!(
+        fs::read_to_string(skill_path).expect("read local edit"),
+        "local edit"
+    );
+}
+
+#[test]
+fn assets_install_force_overwrites_manifest_owned_file_only() {
+    let fixture = AssetFixture::new(|_| {}, None);
+    let target = TestDir::new("target");
+    let skill_path = target.path().join(SKILL_PATH);
+    let unknown_path = target.path().join("skills/local.md");
+    fs::create_dir_all(skill_path.parent().expect("skill parent")).expect("create parent");
+    fs::write(&skill_path, "local edit").expect("write local edit");
+    fs::write(&unknown_path, "keep me").expect("write unknown");
+
+    let output = moeresearch_command()
+        .args([
+            "assets",
+            "install",
+            "pm-deep-research",
+            "--target",
+            target.path().to_str().expect("utf8 target"),
+            "--layout",
+            "repo",
+            "--force",
+            "--version",
+            env!("CARGO_PKG_VERSION"),
+            "--base-url",
+            &fixture.base_url,
+        ])
+        .output()
+        .expect("run assets install");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(skill_path).expect("read installed skill"),
+        skill_content()
+    );
+    assert_eq!(
+        fs::read_to_string(unknown_path).expect("read unknown"),
+        "keep me"
+    );
+}
+
+fn install_repo_layout(fixture: &AssetFixture, target: &TestDir) -> std::process::Output {
+    moeresearch_command()
+        .args([
+            "assets",
+            "install",
+            "pm-deep-research",
+            "--target",
+            target.path().to_str().expect("utf8 target"),
+            "--layout",
+            "repo",
+            "--version",
+            env!("CARGO_PKG_VERSION"),
+            "--base-url",
+            &fixture.base_url,
+        ])
+        .output()
+        .expect("run assets install")
+}
+
+fn workspace() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates")
+        .parent()
+        .expect("workspace")
+        .to_path_buf()
+}
+
+fn moeresearch_command() -> Command {
+    let mut command = Command::new(env!("CARGO"));
+    command
+        .current_dir(workspace())
+        .args(["run", "--quiet", "--locked", "--manifest-path"])
+        .arg(workspace().join("Cargo.toml"))
+        .args(["-p", "moe-research-cli", "--"]);
+    command
+}
+
+fn fixture_files() -> Vec<FixtureFile> {
+    vec![
+        FixtureFile {
+            path: SKILL_PATH.to_owned(),
+            bytes: skill_content().into_bytes(),
+        },
+        FixtureFile {
+            path: LAYER1_PATH.to_owned(),
+            bytes: b"layer 1 prompt".to_vec(),
+        },
+        FixtureFile {
+            path: LAYER2_PATH.to_owned(),
+            bytes: b"layer 2 prompt".to_vec(),
+        },
+    ]
+}
+
+fn skill_content() -> String {
+    "Use ../prompts/layer1/pm-deep-research/task-decomposition.md\n".to_owned()
+}
+
+fn archive_bytes(files: &[FixtureFile], extra_file: Option<&FixtureFile>) -> Vec<u8> {
+    let mut tar_bytes = Vec::new();
+    for file in files.iter().chain(extra_file) {
+        append_tar_file(&mut tar_bytes, file);
+    }
+    tar_bytes.extend_from_slice(&[0; 1024]);
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&tar_bytes).expect("write gzip");
+    encoder.finish().expect("finish gzip")
+}
+
+fn append_tar_file(tar_bytes: &mut Vec<u8>, file: &FixtureFile) {
+    let mut header = [0_u8; 512];
+    write_tar_string(&mut header, 0, 100, &file.path);
+    write_tar_octal(&mut header, 100, 8, 0o644);
+    write_tar_octal(&mut header, 108, 8, 0);
+    write_tar_octal(&mut header, 116, 8, 0);
+    write_tar_octal(
+        &mut header,
+        124,
+        12,
+        file.bytes.len().try_into().expect("file size fits"),
+    );
+    write_tar_octal(&mut header, 136, 12, 0);
+    header[148..156].fill(b' ');
+    header[156] = b'0';
+    write_tar_string(&mut header, 257, 6, "ustar");
+    write_tar_string(&mut header, 263, 2, "00");
+
+    let checksum = header.iter().map(|byte| u64::from(*byte)).sum();
+    write_tar_octal(&mut header, 148, 8, checksum);
+
+    tar_bytes.extend_from_slice(&header);
+    tar_bytes.extend_from_slice(&file.bytes);
+    tar_bytes.extend(std::iter::repeat_n(0, tar_padding(file.bytes.len())));
+}
+
+fn write_tar_string(header: &mut [u8; 512], offset: usize, len: usize, value: &str) {
+    let bytes = value.as_bytes();
+    assert!(bytes.len() <= len, "tar value is too long");
+    header[offset..offset + bytes.len()].copy_from_slice(bytes);
+}
+
+fn write_tar_octal(header: &mut [u8; 512], offset: usize, len: usize, value: u64) {
+    let text = format!("{value:0width$o}", width = len - 1);
+    assert!(text.len() < len, "tar octal value is too long");
+    header[offset..offset + text.len()].copy_from_slice(text.as_bytes());
+}
+
+fn tar_padding(size: usize) -> usize {
+    let remainder = size % 512;
+    if remainder == 0 { 0 } else { 512 - remainder }
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let hash = Sha256::digest(bytes);
+    hash.iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+}
