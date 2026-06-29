@@ -114,8 +114,7 @@ cargo test -p moe-research-tests
 发布配置：
 
 - `dist-workspace.toml` 使用 `cargo-dist 0.32.0`。
-- Release workflow 生成 shell、PowerShell、npm、Homebrew、MSI 安装产物。
-- npm scope 为 `@4o3f`，包名为 `moeresearch`。
+- Release workflow 生成 shell 与 PowerShell 安装产物；暂不发布 npm、Homebrew 或 MSI。
 
 ## 测试策略
 

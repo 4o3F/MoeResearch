@@ -7,23 +7,15 @@ members = ["cargo:."]
 cargo-dist-version = "0.32.0"
 # CI backends to support
 ci = "github"
-# Skip checking the generated workflow so npm token publishing customizations are preserved
+# Skip checking the generated workflow when CI is intentionally customized
 allow-dirty = ["ci"]
 # The installers to generate for each app
-installers = ["shell", "powershell", "npm", "homebrew", "msi"]
+installers = ["shell", "powershell"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 # Whether to install an updater program
 install-updater = true
 # Custom display name to use for this app in release bodies
 display-name = "MoeResearch"
-# Customize the Homebrew formula name
-formula = "moeresearch"
-# A namespace to use when publishing this package to the npm registry
-npm-scope = "@4o3f"
-# The npm package should have this name
-npm-package = "moeresearch"
-# Publish jobs to run in CI
-publish-jobs = ["npm"]
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"

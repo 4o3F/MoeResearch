@@ -15,7 +15,7 @@ MoeResearch is not a general-purpose chatbot and does not provide a Web UI. Its 
 
 ## Quick Start
 
-Install MoeResearch from a tagged release first. `cargo-dist` is configured to generate GitHub Release installers, Homebrew and npm publishing metadata, MSI packages, and updater support.
+Install MoeResearch from a tagged release first. `cargo-dist` is configured to generate one GitHub Release installer per supported platform family, plus updater support.
 
 ### Install
 
@@ -25,22 +25,7 @@ Install MoeResearch from a tagged release first. `cargo-dist` is configured to g
   sh ./<downloaded-installer>.sh
   ```
 
-- **GitHub Releases, Windows**: run the generated PowerShell installer from the release assets, or download and run the generated `.msi` package.
-- **Homebrew**: download the generated `moeresearch.rb` formula from the tagged release assets, then install it locally:
-
-  ```bash
-  brew install ./moeresearch.rb
-  ```
-
-  Automatic Homebrew tap publishing is not configured, so no separate tap repository is required.
-
-- **npm**: once the package is published, install the configured CLI package globally:
-
-  ```bash
-  npm install -g @4o3f/moeresearch
-  ```
-
-  `cargo-dist` also prints a version-pinned npm install hint in release notes for project-local installs.
+- **GitHub Releases, Windows**: run the generated PowerShell installer from the release assets.
 
 - **Source fallback**: build locally when release artifacts are not available or when developing:
 
@@ -129,11 +114,8 @@ Logs are written to stderr. MCP protocol messages are exchanged over stdin and s
 
 Before creating a release tag:
 
-- Ensure the npm scope/package for `@4o3f/moeresearch` is available to publish.
-- Configure `NPM_TOKEN` as a GitHub secret with publish access to `@4o3f/moeresearch`.
-- Homebrew formula generation is enabled, but automatic tap publishing is intentionally disabled to avoid requiring a separate tap repository.
 - Release workflow packaging uploads `pm-deep-research-assets-v{version}.tar.gz` and `pm-deep-research-assets-v{version}.manifest.json`; the CLI verifies manifest and SHA-256 checksums before install.
-- `cargo-dist` generates the MSI package with a license sidecar. Windows code signing is a later hardening step unless configured separately.
+- `cargo-dist` generates shell installers for macOS/Linux and a PowerShell installer for Windows.
 
 ## MCP Tools
 
