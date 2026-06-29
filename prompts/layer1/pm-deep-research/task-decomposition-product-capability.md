@@ -12,20 +12,20 @@ This variant is **EA-heavy / Strategist-light**：4 of 6 aspects owned by `exper
 
 ```json
 {
- "schema_version": "string",
- "request_id": "string",
- "user_request": "string",
- "current_date": "YYYY-MM-DD",
- "language": "string",
- "target_product": "string",
- "capability_domain": "string | null",
- "available_model_providers": ["string"],
- "available_search_providers": ["string"],
- "budget_preset": "quick | standard | deep | deep_evidence_pack | null",
- "available_aspect_agent_prompts": {
- "experience-analyst": "<inline Markdown content of prompts/layer2/persona-experience-analyst.md>",
- "strategist": "<inline Markdown content of prompts/layer2/persona-strategist.md>"
- }
+  "schema_version": "string",
+  "request_id": "string",
+  "user_request": "string",
+  "current_date": "YYYY-MM-DD",
+  "language": "string",
+  "target_product": "string",
+  "capability_domain": "string | null",
+  "available_model_providers": ["string"],
+  "available_search_providers": ["string"],
+  "budget_preset": "quick | standard | deep | deep_evidence_pack | null",
+  "available_aspect_agent_prompts": {
+    "experience-analyst": "<inline Markdown content of prompts/layer2/persona-experience-analyst.md>",
+    "strategist": "<inline Markdown content of prompts/layer2/persona-strategist.md>"
+  }
 }
 ```
 
@@ -81,12 +81,12 @@ For each aspect, set:
 - `research_question`: one narrow question anchored to `decision_intent` + `capability_domain`.
 - `scope` / `boundaries`: from the segment's method + target product / capability domain boundary.
 - `success_criteria`: lift segment evidence standard from profile §2 + §3.1 gap checks. Examples:
- - 段1: 能力域 boundary + ≥1 排除理由；≥3 job statement (situation→motivation→outcome).
- - 段2: teardown matrix 每行附 visual_evidence 或操作步数（纯文字 = assumption tag）；≥1 张矩阵.
- - 段3: ≥1 完整路径图；≥3 断点，每断点 ≥1 visual_evidence + ≥3 同模式 Tier-3 用户证据.
- - 段4: Kano 分级有用户证据 or 标 TM-4 practitioner 诠释.
- - 段5: Imp/Sat 估算时标 TM-4；Opp = Imp + max(0, Imp − Sat) 公式正确；underserved (>10) 列 ≥1.
- - 段6: benchmark 选择理由 (why best-in-class)；changelog datable；build-cost 区间 (when build intent)；pre-mortem 三死因.
+  - 段1: 能力域 boundary + ≥1 排除理由；≥3 job statement (situation→motivation→outcome).
+  - 段2: teardown matrix 每行附 visual_evidence 或操作步数（纯文字 = assumption tag）；≥1 张矩阵.
+  - 段3: ≥1 完整路径图；≥3 断点，每断点 ≥1 visual_evidence + ≥3 同模式 Tier-3 用户证据.
+  - 段4: Kano 分级有用户证据 or 标 TM-4 practitioner 诠释.
+  - 段5: Imp/Sat 估算时标 TM-4；Opp = Imp + max(0, Imp − Sat) 公式正确；underserved (>10) 列 ≥1.
+  - 段6: benchmark 选择理由 (why best-in-class)；changelog datable；build-cost 区间 (when build intent)；pre-mortem 三死因.
 
 ## Step 4 — Budget + policies
 
@@ -100,7 +100,7 @@ Top-level `budget`:
 | standard | 4 | 2 | 40 | 28 | null |
 | deep / deep_evidence_pack | **6** | 3 | **40** | **30** | null |
 
-- **Deep 由 5 段 (competitive) 升 6 段 (product-capability)**：每 aspect 实测 ~3 search × 6 aspect = 18，top 30 留 ~67% headroom.
+- **Deep uses 6 product-capability segments**: expected search demand stays below the top-level `max_total_search_calls=30`, leaving headroom for retries and synthesis.
 
 Per-aspect `budget`:
 
@@ -110,8 +110,8 @@ Per-aspect `budget`:
 | standard | 8 | 12 | 4 | **600000** |
 | deep / deep_evidence_pack | 6 | 6 | **3** | **600000** |
 
-- **Deep `max_search_calls` is 3, not higher ** — same execution abort semantics as (`crates/lapis-workflow/src/agent_loop.rs` — search-budget overflow fails the whole aspect with no graceful synthesis). Validated: + golden 三轮都在 cap=3 收敛 6/6（recommended config 加 `recency=fresh` + `max_results=5` 后仍 6/6，无 execution abort）. 的每 aspect 自然搜索 appetite ≈ 2，cap=3 留 1 search headroom 给 synthesis；勿上调到 4+（与 cap=4 不同—— 5 段窄、 6 段更分散，每 aspect 单段更窄、自然 appetite 更低）.
-- **Per-aspect `timeout_ms` 恒 600000 (10 min)** — the LLM backend can be slow；300000 → `budget_exceeded`；偶发 grok 单 search >5min 抖动（ experience-paths 第一次 retry 实测）→ 若 watchdog 超时 700s 杀进程则重试一次即正常.
+- **Deep `max_search_calls` is 3, not higher** — search-budget overflow fails the aspect rather than gracefully forcing synthesis. Product-capability aspects are intentionally narrow; cap=3 gives focused retrieval plus synthesis headroom. Do not raise to 4+ without re-validation.
+- **Per-aspect `timeout_ms` 恒 600000 (10 min)** — slow model/search backends may exceed shorter per-aspect timeouts; retry once on transient provider slowness before changing the plan.
 - **`total_timeout_ms = ceil(max_agents / max_concurrent_agents) × per_aspect_timeout_ms`** — Quick (1 wave) `600000`；Standard (2 waves) `1200000`；Deep (6/3=2 waves) `1200000`.
 
 ### Policies
@@ -119,11 +119,11 @@ Per-aspect `budget`:
 - `evidence_policy.require_evidence_for_findings = true` **恒开**. `min_evidence_per_finding`: standard = 1, deep / deep_evidence_pack = 2, quick = 1.
 - `model_policy.allowed_providers` / `search_policy.allowed_providers`: 用户 allowlist (not fallback order). 每 aspect 选 exactly one `model_provider` + one `search_provider`.
 - Search-provider 指引：
- - **Entity-discovery-heavy** (`capability-domain-jtbd` for 边界论证, `benchmark-buildcost-upgrade` for best-in-class 选择) → semantic-discovery provider (e.g. `exa`).
- - **User-evidence-heavy** (`experience-paths-breakpoints` 找断点同模式评论, `kano-in-domain` 找用户证据) → synthesis provider that surfaces user reviews (e.g. `grok`).
- - **Synthesis** (`capability-teardown-deep`, `odi-in-domain`) → synthesis provider (e.g. `grok`).
- - 单一 provider 时全用之.
-- **Search-tuning**：set `search_policy.recency = "fresh"` + `search_policy.max_results_per_query = 5`. **Global** (engine clones one `search_policy` into every aspect — no per-aspect search field), act as ceiling + default + prompt-hint，提多样性而不增 search count. **不要**设 `depth=high_recall` (怂恿过搜被 execution abort) / `content_level=detailed` (关联 mutated_evidence_provenance) / `category` (exact-match 不能全局).
+  - **Entity-discovery-heavy** (`capability-domain-jtbd` for 边界论证, `benchmark-buildcost-upgrade` for best-in-class 选择) → semantic-discovery provider (e.g. `exa`).
+  - **User-evidence-heavy** (`experience-paths-breakpoints` 找断点同模式评论, `kano-in-domain` 找用户证据) → synthesis provider that surfaces user reviews (e.g. `grok`).
+  - **Synthesis** (`capability-teardown-deep`, `odi-in-domain`) → synthesis provider (e.g. `grok`).
+  - 单一 provider 时全用之.
+- **Search-tuning**：set `search_policy.recency = "fresh"` + `search_policy.max_results_per_query = 5`. **Global** (engine clones one `search_policy` into every aspect — no per-aspect search field), act as ceiling + default + prompt-hint，提多样性而不增 search count. **不要**设 `depth=high_recall` (encourages over-search) / `content_level=detailed` (provenance-validation risk) / `category` (exact-match 不能全局).
 - `output_policy.language` = the request language.
 
 ## Output schema
@@ -132,57 +132,57 @@ Return only JSON matching this shape (no Markdown wrapper):
 
 ```json
 {
- "schema_version": "string",
- "request_id": "string",
- "user_question": "string",
- "aspect_tasks": [
- {
- "aspect": {
- "aspect_id": "kebab-case-string",
- "name": "string",
- "role": "product experience analyst | product strategist",
- "research_question": "string",
- "scope": ["string"],
- "boundaries": ["string"],
- "success_criteria": ["string"],
- "aspect_agent_prompt": "<inline Markdown content of the chosen persona prompt>",
- "allowed_tools": ["search"],
- "model_provider": "string",
- "search_provider": "string"
- },
- "budget": { "max_turns": 6, "max_tool_calls": 6, "max_search_calls": 3, "timeout_ms": 600000 }
- }
- ],
- "budget": {
- "max_agents": 6,
- "max_concurrent_agents": 3,
- "max_total_model_calls": 40,
- "max_total_search_calls": 30,
- "total_timeout_ms": 1200000,
- "max_tokens": null
- },
- "model_policy": { "allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true },
- "search_policy": {
- "allowed_providers": ["string"], "max_results_per_query": 5,
- "recency": "fresh",
- "freshness": null,
- "language": "string | null", "region": "string | null", "include_domains": [], "exclude_domains": []
- },
- "evidence_policy": { "require_evidence_for_findings": true, "min_evidence_per_finding": 2 },
- "output_policy": { "language": "string", "max_findings_per_aspect": null },
- "shared_context": {
- "summary": "decision_intent + capability_domain + boundary + one-line justification + target product",
- "known_facts": ["string"],
- "excluded_assumptions": ["string"],
- "prior_sources": []
- },
- "execution_policy": { "allow_partial_results": true, "fail_fast": false, "timeout_ms": 600000 }
+  "schema_version": "string",
+  "request_id": "string",
+  "user_question": "string",
+  "aspect_tasks": [
+    {
+      "aspect": {
+        "aspect_id": "kebab-case-string",
+        "name": "string",
+        "role": "product experience analyst | product strategist",
+        "research_question": "string",
+        "scope": ["string"],
+        "boundaries": ["string"],
+        "success_criteria": ["string"],
+        "aspect_agent_prompt": "<inline Markdown content of the chosen persona prompt>",
+        "allowed_tools": ["search"],
+        "model_provider": "string",
+        "search_provider": "string"
+      },
+      "budget": { "max_turns": 6, "max_tool_calls": 6, "max_search_calls": 3, "timeout_ms": 600000 }
+    }
+  ],
+  "budget": {
+    "max_agents": 6,
+    "max_concurrent_agents": 3,
+    "max_total_model_calls": 40,
+    "max_total_search_calls": 30,
+    "total_timeout_ms": 1200000,
+    "max_tokens": null
+  },
+  "model_policy": { "allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true },
+  "search_policy": {
+    "allowed_providers": ["string"], "max_results_per_query": 5,
+    "recency": "fresh",
+    "freshness": null,
+    "language": "string | null", "region": "string | null", "include_domains": [], "exclude_domains": []
+  },
+  "evidence_policy": { "require_evidence_for_findings": true, "min_evidence_per_finding": 2 },
+  "output_policy": { "language": "string", "max_findings_per_aspect": null },
+  "shared_context": {
+    "summary": "decision_intent + capability_domain + boundary + one-line justification + target product",
+    "known_facts": ["string"],
+    "excluded_assumptions": ["string"],
+    "prior_sources": []
+  },
+  "execution_policy": { "allow_partial_results": true, "fail_fast": false, "timeout_ms": 600000 }
 }
 ```
 
-> Same `DeepResearchRequest` wire shape as competitive — Lapis `schema_version="0.1"` 不变。`search_policy` **挂 canonical `recency=fresh` + `max_results_per_query=5`**；**不挂** `depth` / `content_level` / `category`（depth 怂恿过搜 execution abort / content_level 关联 mutated_provenance / category exact-match 不能全局）.
+> Same `DeepResearchRequest` wire shape as competitive — Lapis `schema_version="0.1"` 不变。`search_policy` uses `recency=fresh` + `max_results_per_query=5`; do **not** set `depth` / `content_level` / `category` globally because broad-recall hints can over-search and global category filters can misroute mixed aspects.
 >
-> **`execution_policy.timeout_ms` 必须等于 per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms` — 实测每 aspect 被复校 (`budget_exceeded`).
+> **`execution_policy.timeout_ms` 必须等于 per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms`.
 
 ## Decomposition rules
 

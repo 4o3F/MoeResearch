@@ -128,6 +128,7 @@ See [`docs/mcp-usage.md`](docs/mcp-usage.md) for the full MCP client interface, 
 | Document | Purpose |
 | --- | --- |
 | [`docs/mcp-usage.md`](docs/mcp-usage.md) | MCP-only client interface and tool schemas. |
+| [`docs/pm-deep-research.md`](docs/pm-deep-research.md) | End-to-end PM DeepResearch setup and usage guide. |
 | [`docs/configuration.md`](docs/configuration.md) | Runtime configuration, providers, budgets, logging, and troubleshooting. |
 | [`docs/development.md`](docs/development.md) | Repository layout and contributor commands. |
 | [`docs/research-agent-product.md`](docs/research-agent-product.md) | Product and architecture background. |

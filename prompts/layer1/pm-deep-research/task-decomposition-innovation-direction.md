@@ -12,25 +12,25 @@ This variant is **Strategist-heavy / EA-light**：7 of 8 aspects owned by `strat
 
 ```json
 {
- "schema_version": "string",
- "request_id": "string",
- "user_request": "string",
- "current_date": "YYYY-MM-DD",
- "language": "string",
- "subject_domain": "string",
- "target_actor": "string | null",
- "time_window_months": "int",
- "available_model_providers": ["string"],
- "available_search_providers": ["string"],
- "budget_preset": "quick | standard | deep | deep_evidence_pack | null",
- "available_aspect_agent_prompts": {
- "experience-analyst": "<inline Markdown content of prompts/layer2/persona-experience-analyst.md>",
- "strategist": "<inline Markdown content of prompts/layer2/persona-strategist.md>"
- }
+  "schema_version": "string",
+  "request_id": "string",
+  "user_request": "string",
+  "current_date": "YYYY-MM-DD",
+  "language": "string",
+  "subject_domain": "string",
+  "target_actor": "string | null",
+  "time_window_months": "int",
+  "available_model_providers": ["string"],
+  "available_search_providers": ["string"],
+  "budget_preset": "quick | standard | deep | deep_evidence_pack | null",
+  "available_aspect_agent_prompts": {
+    "experience-analyst": "<inline Markdown content of prompts/layer2/persona-experience-analyst.md>",
+    "strategist": "<inline Markdown content of prompts/layer2/persona-strategist.md>"
+  }
 }
 ```
 
-`subject_domain` is required — innovation-direction research is **赛道层级 / 跨现状看未来**, not 单产品纵深 (that's product-capability). `target_actor` is optional incumbent observer used for "现状承载力" baseline; may be omitted. `time_window_months` default 24 (12-36 月窗口), profile §2 段1 强制 < `time_window_months`.
+`subject_domain` is required — innovation-direction research is **赛道层级 / 跨现状看未来**, not 单产品纵深 (that routes to product-capability). `target_actor` is optional incumbent observer used for "现状承载力" baseline; may be omitted. `time_window_months` default 24 (12-36 月窗口), profile §2 段1 强制 < `time_window_months`.
 
 If `budget_preset` is null, infer the tier from §2.
 
@@ -43,7 +43,7 @@ Pick exactly one:
 | `ai-upgrade` | Push the AI / new-tech bet within the existing赛道 | **Most common for current PM AI context** — emphasise 段1 趋势 (技术成熟度) + 段4 future_capability_map (AI / wearable / on-device candidates) + 段8 收敛下注 |
 | `enter` | Entering an entirely new direction within the赛道 | Emphasise 段4 能力承载力 + 段5 颠覆判定 + 段7 build-cost 现实性 |
 | `differentiate` | Future-bet differentiation in a crowded赛道 | Emphasise 段3 白地 canvas + 段5 可防御性 + 段8 TM-11 显性权衡 |
-| `improve` / `grow` / `build` | Out of scope for innovation-direction | Re-route: `improve` → product-capability ; `build` → product-capability 段6 (build-cost only); `grow` → product-requirements |
+| `improve` / `grow` / `build` | Out of scope for innovation-direction | Re-route: `improve` → product-capability; `build` → product-capability 段6 (build-cost only) or product-requirements when writing PRD input; `grow` → product-requirements |
 
 Write the chosen intent + one-line justification into `shared_context.summary`. Carry subject_domain, target_actor (if any), time_window_months, audience, and explicit exclusions into `shared_context.known_facts` / `excluded_assumptions`.
 
@@ -73,16 +73,16 @@ Follow the mapping in [`agent-allocation-innovation-direction.md`](agent-allocat
 | `build-cost-feasibility` | 7 | strategist | deep+ |
 | `recommended-bets` | 8 | strategist (**TM-11 强制门**) | all tiers |
 
-- **段2 sole EA aspect**：未满足 job + outcome (ODI underserved) 是赛道用户视角 — EA 本职. 但本 profile EA 只出场一次, 段4 / 段7 中 "对位" / "我方承载力" 等需要 EA 视角的判断, 由 strategist aspect 通过 `shared_context.prior_sources` 引用段2 EA 输出后 fold-in (与 段5 strategist 用 EA 数据同模式).
+- **段2 sole EA aspect**：未满足 job + outcome (ODI underserved) 是赛道用户视角 — EA 本职. 但本 profile EA 只出场一次, 段4 / 段7 中 "对位" / "我方承载力" 等需要 EA 视角的判断, 由 strategist aspect 通过 `shared_context.prior_sources` 引用段2 EA 输出后 fold-in.
 
-- **段8 TM-11 hard gate**：`recommended-bets` 的 `success_criteria` 必须显式列：每推荐下注 ≥1 "什么条件下错" (leading indicator + 阈值). 缺 falsifiability → aspect 整段 0 分, 触发 Phase A backfill (final-report 报告器执行). 这是 innovation-direction profile 与 最大差异.
+- **段8 TM-11 hard gate**：`recommended-bets` 的 `success_criteria` 必须显式列：每推荐下注 ≥1 "什么条件下错" (leading indicator + 阈值). 缺 falsifiability → aspect 整段 0 分, 触发 Phase A backfill (final-report 报告器执行). Innovation-direction 的核心质量在于每个未来下注都可证伪.
 
 - **段6 pre-mortem 强制三死因**：`pre-mortem-top3` 的 `success_criteria` 强制要求 ≥3 死因, 每死因附 (机制 + 触发条件), 拒绝 hand-wave "市场不接受" 类泛泛风险.
 
 - **Intent overlay**：
- - `ai-upgrade` → 段1 / 段4 / 段8 budget 上调 (`max_search_calls` per-aspect +1)；段4 强制 ≥1 AI capability candidate.
- - `enter` → 段4 / 段5 / 段7 加重；`shared_context.summary` 强调 "新赛道, 现状承载力可能为零".
- - `differentiate` → 段3 / 段5 / 段8 加重；段8 强制显性权衡 (TM-5 "选 X = 放弃 Y").
+  - `ai-upgrade` → 段1 / 段4 / 段8 budget 上调 (`max_search_calls` per-aspect +1)；段4 强制 ≥1 AI capability candidate.
+  - `enter` → 段4 / 段5 / 段7 加重；`shared_context.summary` 强调 "新赛道, 现状承载力可能为零".
+  - `differentiate` → 段3 / 段5 / 段8 加重；段8 强制显性权衡 (TM-5 "选 X = 放弃 Y").
 
 For each aspect, set:
 - `aspect_agent_prompt`: **inline Markdown content** of the chosen persona file from `available_aspect_agent_prompts` (`experience-analyst` for 段2 only, `strategist` for the rest). Verbatim, non-empty, < 64 KiB.
@@ -90,14 +90,14 @@ For each aspect, set:
 - `research_question`: one narrow question anchored to `decision_intent` + `subject_domain` + `time_window_months`.
 - `scope` / `boundaries`: from the segment's method + subject_domain + 时间窗.
 - `success_criteria`: lift segment evidence standard from profile §2 + §3.1 gap checks. Examples:
- - 段1 (trend-scan): ≥3 趋势 across market/tech/competition, 每条 Tier 1/2 + 时间窗 (`time_window_months`).
- - 段2 (unmet-outcomes): ODI Imp/Sat 标 TM-4 practitioner; underserved (>10) ≥3; Opp 公式正确.
- - 段3 (whitespace-canvas): canvas ≥1 张 (markdown table 或 fenced JSON); 白地附 "为何无人占据" + "未来 12-36 月谁可能占据".
- - 段4 (future-capability-map): ≥2 候选能力类型; 每候选 "能干什么" 必须 Tier 1/2 技术依据; 与段2 unmet 对位标注.
- - 段5 (disruption-defensibility): 每威胁 Christensen sustaining/disruptive 判定 + 依据; 防御性维度 (护城河 / 锁定 / 规模效应) 各附依据.
- - 段6 (pre-mortem-top3): **3 死因强制**, 每个 = (机制 + 触发条件); TM-8 强制.
- - 段7 (build-cost-feasibility): build-cost 显式区间 + TM-4 evidence tier; ≥1 changelog 时间线证据 (借段1 / 段4 已采的 evidence ids).
- - 段8 (recommended-bets): **TM-11 强制门** — 每下注 ≥1 falsifiability 条件 (leading indicator + 阈值); TM-5 显性权衡; 4 风险 (TM-3) 评级.
+  - 段1 (trend-scan): ≥3 趋势 across market/tech/competition, 每条 Tier 1/2 + 时间窗 (`time_window_months`).
+  - 段2 (unmet-outcomes): ODI Imp/Sat 标 TM-4 practitioner; underserved (>10) ≥3; Opp 公式正确.
+  - 段3 (whitespace-canvas): canvas ≥1 张 (markdown table 或 fenced JSON); 白地附 "为何无人占据" + "未来 12-36 月谁可能占据".
+  - 段4 (future-capability-map): ≥2 候选能力类型; 每候选 "能干什么" 必须 Tier 1/2 技术依据; 与段2 unmet 对位标注.
+  - 段5 (disruption-defensibility): 每威胁 Christensen sustaining/disruptive 判定 + 依据; 防御性维度 (护城河 / 锁定 / 规模效应) 各附依据.
+  - 段6 (pre-mortem-top3): **3 死因强制**, 每个 = (机制 + 触发条件); TM-8 强制.
+  - 段7 (build-cost-feasibility): build-cost 显式区间 + TM-4 evidence tier; ≥1 changelog 时间线证据 (借段1 / 段4 已采的 evidence ids).
+  - 段8 (recommended-bets): **TM-11 强制门** — 每下注 ≥1 falsifiability 条件 (leading indicator + 阈值); TM-5 显性权衡; 4 风险 (TM-3) 评级.
 
 ## Step 4 — Budget + policies
 
@@ -111,7 +111,7 @@ Top-level `budget`:
 | standard | 5 | 3 | 30 | 25 | null |
 | deep / deep_evidence_pack | **8** | 3 | **60** | **50** | null |
 
-- **Deep 8 段**: per-aspect 实测 max_search 6 × 8 aspect = 48，top 50 留 small headroom（ 验证 cap=6 必须，详见 per-aspect 段）.
+- **Deep 8 段**: per-aspect `max_search_calls=6` × 8 aspects = 48，top-level `max_total_search_calls=50` leaves small headroom.
 
 Per-aspect `budget`:
 
@@ -121,8 +121,8 @@ Per-aspect `budget`:
 | standard | 8 | 12 | 5 | **600000** |
 | deep / deep_evidence_pack | 8 | 8 | **6** | **600000** |
 
-- **Deep `max_search_calls` is 6 — strictly higher than (cap=4) and (cap=3) ** — 同 execution abort 半语义（`crates/lapis-workflow/src/agent_loop.rs`），但 的 `recommended-bets` 是综合下注 aspect（吃前 7 个 aspect 输出做最终下注合成），自然 search appetite ≈ 6；cap=5 历史上稳，但加 `recency=fresh` 后 prompt-hint 把 appetite 推到 6 → cap=5 execution abort 复现（ 验证：cap=5 retry 2 次均 budget_exceeded，cap=6 一次过）. **不要降到 5 以下、也不要拔到 7+**（cap=6 是验证过的稳态）.
-- **Per-aspect `timeout_ms` 恒 600000 (10 min)** — the LLM backend can be slow；300000 → `budget_exceeded`；偶发 grok 单 search 慢抖动 → watchdog 重试即正常（ 实测 trend-scan 第一次 transient timeout）.
+- **Deep `max_search_calls` is 6** because `recommended-bets` is a synthesis-heavy betting aspect that consumes earlier aspect outputs and may need several targeted checks. Do not drop below 5 or raise above 6 without re-validation.
+- **Per-aspect `timeout_ms` 恒 600000 (10 min)** — slow model/search backends may exceed shorter per-aspect timeouts; retry once on transient provider slowness before changing the plan.
 - **`total_timeout_ms = ceil(max_agents / max_concurrent_agents) × per_aspect_timeout_ms`** — Quick (1 wave) `600000`；Standard (5/3=2 waves) `1200000`；Deep (8/3=3 waves) `1800000`.
 
 ### Policies
@@ -130,11 +130,11 @@ Per-aspect `budget`:
 - `evidence_policy.require_evidence_for_findings = true` **恒开**. `min_evidence_per_finding`: standard = 1, deep / deep_evidence_pack = 2, quick = 1.
 - `model_policy.allowed_providers` / `search_policy.allowed_providers`: 用户 allowlist (not fallback order). 每 aspect 选 exactly one `model_provider` + one `search_provider`.
 - Search-provider 指引：
- - **Entity-discovery-heavy** (`trend-scan` 找 emerging 玩家, `future-capability-map` 找新能力玩家, `disruption-defensibility` 找潜在颠覆者) → semantic-discovery provider (e.g. `exa`).
- - **User-evidence-heavy** (`unmet-outcomes` 找 underserved outcome 用户证据) → synthesis provider that surfaces user reviews (e.g. `grok`).
- - **Synthesis** (`whitespace-canvas`, `pre-mortem-top3`, `build-cost-feasibility`, `recommended-bets`) → synthesis provider (e.g. `grok`).
- - 单一 provider 时全用之.
-- **Search-tuning**：set `search_policy.recency = "fresh"` + `search_policy.max_results_per_query = 5`. **Global** field; ceiling + default + prompt-hint. **innovation-direction 关键差异**：必须同时把 deep per-aspect `max_search_calls` 抬到 6——否则 recommended-bets 的 prompt-hint-推动 appetite 撞 cap=5 execution abort (详 per-aspect budget 段). **不要**设 `depth=high_recall` (怂恿过搜，与 cap=6 同时启用一起会再次撞墙) / `content_level=detailed` (mutated_provenance) / `category` (exact-match 不能全局；per-aspect search_policy 是未来工作).
+  - **Entity-discovery-heavy** (`trend-scan` 找 emerging 玩家, `future-capability-map` 找新能力玩家, `disruption-defensibility` 找潜在颠覆者) → semantic-discovery provider (e.g. `exa`).
+  - **User-evidence-heavy** (`unmet-outcomes` 找 underserved outcome 用户证据) → synthesis provider that surfaces user reviews (e.g. `grok`).
+  - **Synthesis** (`whitespace-canvas`, `pre-mortem-top3`, `build-cost-feasibility`, `recommended-bets`) → synthesis provider (e.g. `grok`).
+  - 单一 provider 时全用之.
+- **Search-tuning**：set `search_policy.recency = "fresh"` + `search_policy.max_results_per_query = 5`. **Global** field; ceiling + default + prompt-hint. Innovation-direction uses deep per-aspect `max_search_calls=6` because `recommended-bets` is synthesis-heavy. **不要**设 `depth=high_recall` (encourages over-search) / `content_level=detailed` (provenance-validation risk) / `category` (exact-match cannot be global).
 - `output_policy.language` = the request language.
 
 ## Output schema
@@ -143,56 +143,57 @@ Return only JSON matching this shape (no Markdown wrapper):
 
 ```json
 {
- "schema_version": "string",
- "request_id": "string",
- "user_question": "string",
- "aspect_tasks": [
- {
- "aspect": {
- "aspect_id": "kebab-case-string",
- "name": "string",
- "role": "product strategist | product experience analyst",
- "research_question": "string",
- "scope": ["string"],
- "boundaries": ["string"],
- "success_criteria": ["string"],
- "aspect_agent_prompt": "<inline Markdown content of the chosen persona prompt>",
- "allowed_tools": ["search"],
- "model_provider": "string",
- "search_provider": "string"
- },
- "budget": { "max_turns": 8, "max_tool_calls": 8, "max_search_calls": 6, "timeout_ms": 600000 }
- }
- ],
- "budget": {
- "max_agents": 8,
- "max_concurrent_agents": 3,
- "max_total_model_calls": 60,
- "max_total_search_calls": 50,
- "total_timeout_ms": 1800000,
- "max_tokens": null
- },
- "model_policy": { "allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true },
- "search_policy": {
- "allowed_providers": ["string"], "max_results_per_query": 5,
- "recency": "fresh",
- "freshness": null,
- "language": "string | null", "region": "string | null", "include_domains": [], "exclude_domains": []
- },
- "evidence_policy": { "require_evidence_for_findings": true, "min_evidence_per_finding": 2 },
- "output_policy": { "language": "string", "max_findings_per_aspect": null },
- "shared_context": {
- "summary": "decision_intent + subject_domain + time_window_months + (optional target_actor) + one-line justification",
- "known_facts": ["string"],
- "excluded_assumptions": ["string"],
- "prior_sources": []
- },
- "execution_policy": { "allow_partial_results": true, "fail_fast": false, "timeout_ms": 600000 }
+  "schema_version": "string",
+  "request_id": "string",
+  "user_question": "string",
+  "aspect_tasks": [
+    {
+      "aspect": {
+        "aspect_id": "kebab-case-string",
+        "name": "string",
+        "role": "product strategist | product experience analyst",
+        "research_question": "string",
+        "scope": ["string"],
+        "boundaries": ["string"],
+        "success_criteria": ["string"],
+        "aspect_agent_prompt": "<inline Markdown content of the chosen persona prompt>",
+        "allowed_tools": ["search"],
+        "model_provider": "string",
+        "search_provider": "string"
+      },
+      "budget": { "max_turns": 8, "max_tool_calls": 8, "max_search_calls": 6, "timeout_ms": 600000 }
+    }
+  ],
+  "budget": {
+    "max_agents": 8,
+    "max_concurrent_agents": 3,
+    "max_total_model_calls": 60,
+    "max_total_search_calls": 50,
+    "total_timeout_ms": 1800000,
+    "max_tokens": null
+  },
+  "model_policy": { "allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true },
+  "search_policy": {
+    "allowed_providers": ["string"], "max_results_per_query": 5,
+    "recency": "fresh",
+    "freshness": null,
+    "language": "string | null", "region": "string | null", "include_domains": [], "exclude_domains": []
+  },
+  "evidence_policy": { "require_evidence_for_findings": true, "min_evidence_per_finding": 2 },
+  "output_policy": { "language": "string", "max_findings_per_aspect": null },
+  "shared_context": {
+    "summary": "decision_intent + subject_domain + time_window_months + (optional target_actor) + one-line justification",
+    "known_facts": ["string"],
+    "excluded_assumptions": ["string"],
+    "prior_sources": []
+  },
+  "execution_policy": { "allow_partial_results": true, "fail_fast": false, "timeout_ms": 600000 }
 }
 ```
 
+> Same `DeepResearchRequest` wire shape as competitive / product-capability — Lapis `schema_version="0.1"` 不变。`search_policy` uses `recency=fresh` + `max_results_per_query=5`; deep per-aspect cap is 6 because `recommended-bets` is a synthesis-heavy aspect. Do **not** set `depth`/`content_level`/`category` globally because broad-recall hints can over-search, detailed content increases provenance-validation risk, and category filters cannot fit mixed aspects.
 >
-> **`execution_policy.timeout_ms` 必须等于 per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms` — 每 aspect 被复校 (`budget_exceeded`).
+> **`execution_policy.timeout_ms` 必须等于 per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms`.
 
 ## Decomposition rules
 
