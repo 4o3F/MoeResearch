@@ -458,7 +458,7 @@ async fn tavily_search_uses_json_search_request() {
     let request = &requests[0];
     assert_eq!(request.method, "POST");
     assert_eq!(request.url, "https://api.tavily.com/search");
-    assert_eq!(request.timeout_ms, Some(1000));
+    assert_eq!(request.inactivity_timeout_ms, Some(1000));
     assert!(
         request
             .headers
@@ -662,7 +662,7 @@ async fn grok_search_uses_responses_web_search_request() {
     let request = &requests[0];
     assert_eq!(request.method, "POST");
     assert_eq!(request.url, "https://api.x.ai/v1/responses");
-    assert_eq!(request.timeout_ms, Some(1000));
+    assert_eq!(request.inactivity_timeout_ms, Some(1000));
     assert!(
         request
             .headers

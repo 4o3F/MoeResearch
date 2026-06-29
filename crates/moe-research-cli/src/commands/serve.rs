@@ -47,7 +47,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     );
 
     let network: Arc<dyn NetworkClient> = Arc::new(ReqwestNetworkClient::new(
-        config.network.timeout_ms,
+        config.network.inactivity_timeout_ms,
         config.network.max_retries,
         config.network.retry_backoff_ms,
         &config.network.user_agent,
@@ -104,7 +104,9 @@ fn build_model_service(
                     network.clone(),
                     provider.base_url.clone(),
                     api_key,
-                    provider.timeout_ms.or(Some(config.network.timeout_ms)),
+                    provider
+                        .inactivity_timeout_ms
+                        .or(Some(config.network.inactivity_timeout_ms)),
                     model,
                 ));
             }
@@ -136,13 +138,17 @@ fn build_search_service(
                 network.clone(),
                 provider.base_url.clone(),
                 api_key,
-                provider.timeout_ms.or(Some(config.network.timeout_ms)),
+                provider
+                    .inactivity_timeout_ms
+                    .or(Some(config.network.inactivity_timeout_ms)),
             )),
             "grok" => service.register(GrokSearchProvider::with_request_options(
                 network.clone(),
                 provider.base_url.clone(),
                 api_key,
-                provider.timeout_ms.or(Some(config.network.timeout_ms)),
+                provider
+                    .inactivity_timeout_ms
+                    .or(Some(config.network.inactivity_timeout_ms)),
                 provider_model("search", name, provider.model.as_ref())?,
                 provider.max_output_tokens,
                 provider.reasoning_effort.map(map_grok_reasoning_effort),
@@ -151,7 +157,9 @@ fn build_search_service(
                 network.clone(),
                 provider.base_url.clone(),
                 api_key,
-                provider.timeout_ms.or(Some(config.network.timeout_ms)),
+                provider
+                    .inactivity_timeout_ms
+                    .or(Some(config.network.inactivity_timeout_ms)),
             )),
             other => {
                 return Err(Error::ConfigInvalid {

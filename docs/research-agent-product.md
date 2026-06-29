@@ -157,7 +157,7 @@ Provider 配置能力：
 
 - `base_url`：允许接入官方 API、代理网关或兼容服务。
 - `api_key`：从环境变量、用户配置或 secret provider 注入，不写入仓库。
-- `timeout_ms`：控制 provider 请求超时。
+- `inactivity_timeout_ms`：控制 provider 网络无进展等待上限。
 - `rate_limit`：控制请求频率和并发。
 - `enabled`：允许按环境启用或禁用 provider。
 - `allowed_providers`：作为授权 allowlist；不表达执行顺序或 fallback。
@@ -608,19 +608,19 @@ trait SearchProvider {
 enabled = true
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 
 [search.providers.tavily]
 enabled = true
 base_url = "https://api.tavily.com"
 api_key_env = "TAVILY_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 
 [search.providers.grok]
 enabled = true
 base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 model = "grok-4.3"
 reasoning_effort = "high"
 ```
@@ -645,7 +645,7 @@ enabled = true
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
 model = "gpt-4o"
-timeout_ms = 60000
+inactivity_timeout_ms = 60000
 ```
 
 ## 13. 证据与报告模型

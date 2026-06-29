@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use moe_research_error::{Error, Result};
@@ -1468,6 +1468,7 @@ async fn slow_final_model_call_exhausts_effective_timeout() {
         Some(Duration::from_millis(250)),
     );
 
+    let started = Instant::now();
     let error = AgentRuntime::new(
         &model_service,
         &search_service,
@@ -1477,8 +1478,13 @@ async fn slow_final_model_call_exhausts_effective_timeout() {
     .run()
     .await
     .expect_err("execution timeout error");
+    let elapsed = started.elapsed();
 
     assert!(matches!(error.error, Error::BudgetExceeded { .. }));
+    assert!(
+        elapsed < Duration::from_millis(150),
+        "runtime timeout must cancel in-flight model work, elapsed {elapsed:?}"
+    );
     assert_eq!(model_calls.load(Ordering::SeqCst), 1);
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 }

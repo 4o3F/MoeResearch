@@ -7,7 +7,7 @@ pub fn bearer_json_post(
     path: &str,
     api_key: &str,
     body: Value,
-    timeout_ms: Option<u64>,
+    inactivity_timeout_ms: Option<u64>,
 ) -> NetworkRequest {
     NetworkRequest {
         method: "POST".to_owned(),
@@ -31,7 +31,7 @@ pub fn bearer_json_post(
             },
         ],
         body: Some(body),
-        timeout_ms,
+        inactivity_timeout_ms,
     }
 }
 
@@ -40,9 +40,9 @@ pub fn bearer_sse_post(
     path: &str,
     api_key: &str,
     body: Value,
-    timeout_ms: Option<u64>,
+    inactivity_timeout_ms: Option<u64>,
 ) -> NetworkRequest {
-    let mut request = bearer_json_post(base_url, path, api_key, body, timeout_ms);
+    let mut request = bearer_json_post(base_url, path, api_key, body, inactivity_timeout_ms);
     request
         .headers
         .retain(|header| !header.name.eq_ignore_ascii_case("accept"));

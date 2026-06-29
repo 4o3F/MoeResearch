@@ -54,7 +54,7 @@ fn safe_network_request_debug_masks_nested_json_sensitive_fields() {
                 { "title": "kept" }
             ]
         })),
-        timeout_ms: Some(1_000),
+        inactivity_timeout_ms: Some(1_000),
     };
     let rendered = format!("{request:?}");
 

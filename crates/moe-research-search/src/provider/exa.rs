@@ -17,7 +17,7 @@ pub struct ExaSearchProvider {
     network: Arc<dyn NetworkClient>,
     base_url: String,
     api_key: String,
-    timeout_ms: Option<u64>,
+    inactivity_timeout_ms: Option<u64>,
 }
 
 impl ExaSearchProvider {
@@ -25,13 +25,13 @@ impl ExaSearchProvider {
         network: Arc<dyn NetworkClient>,
         base_url: String,
         api_key: String,
-        timeout_ms: Option<u64>,
+        inactivity_timeout_ms: Option<u64>,
     ) -> Self {
         Self {
             network,
             base_url,
             api_key,
-            timeout_ms,
+            inactivity_timeout_ms,
         }
     }
 }
@@ -53,7 +53,7 @@ impl SearchProvider for ExaSearchProvider {
                 "search",
                 &self.api_key,
                 body,
-                self.timeout_ms,
+                self.inactivity_timeout_ms,
             ))
             .await?;
 

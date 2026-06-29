@@ -61,7 +61,7 @@ export OPENAI_API_KEY="..."
 format = "json"
 
 [network]
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "moeresearch/0.1.0"
@@ -70,26 +70,26 @@ user_agent = "moeresearch/0.1.0"
 enabled = false
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 
 [search.providers.tavily]
 enabled = false
 base_url = "https://api.tavily.com"
 api_key_env = "TAVILY_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 
 [search.providers.grok]
 enabled = false
 base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 model = "grok-4.3"
 
 [model.providers.openai]
 enabled = false
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 model = "gpt-5.5"
 ```
 
@@ -110,20 +110,20 @@ Example:
 enabled = true
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 model = "gpt-5.5"
 
 [search.providers.tavily]
 enabled = true
 base_url = "https://api.tavily.com"
 api_key_env = "TAVILY_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 
 [search.providers.grok]
 enabled = true
 base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 model = "grok-4.3"
 reasoning_effort = "high"
 max_output_tokens = 1024
@@ -145,7 +145,7 @@ Do not configure search `depth`, `content_level`, `recency`, `category`, Exa-nat
 
 ```toml
 [network]
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "moeresearch/0.1.0"
@@ -155,7 +155,7 @@ Fields:
 
 | Field | Meaning |
 | --- | --- |
-| `timeout_ms` | Default request timeout in milliseconds. Generated configs use `120000` for research-safe provider calls. Must be greater than zero. |
+| `inactivity_timeout_ms` | Outbound network inactivity timeout in milliseconds. For SSE responses, this is the maximum gap between events, not the total stream duration. For non-SSE responses, it bounds request dispatch/response header wait and full body read wait. Generated configs use `120000` for research-safe provider calls. Must be greater than zero. |
 | `max_retries` | Number of retry attempts for retryable network failures. |
 | `retry_backoff_ms` | Backoff base in milliseconds. |
 | `user_agent` | HTTP user-agent value. Must be non-empty and valid as a header value. |

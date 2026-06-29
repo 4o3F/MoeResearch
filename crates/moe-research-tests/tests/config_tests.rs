@@ -13,7 +13,7 @@ const VALID_CONFIG: &str = r#"
 format = "json"
 
 [network]
-timeout_ms = 30000
+inactivity_timeout_ms = 30000
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "moeresearch/0.1.0"
@@ -22,26 +22,26 @@ user_agent = "moeresearch/0.1.0"
 enabled = false
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
-timeout_ms = 30000
+inactivity_timeout_ms = 30000
 
 [search.providers.tavily]
 enabled = false
 base_url = "https://api.tavily.com"
 api_key_env = "TAVILY_API_KEY"
-timeout_ms = 30000
+inactivity_timeout_ms = 30000
 
 [search.providers.grok]
 enabled = false
 base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
-timeout_ms = 30000
+inactivity_timeout_ms = 30000
 model = "grok-4.3"
 
 [model.providers.openai]
 enabled = false
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
-timeout_ms = 30000
+inactivity_timeout_ms = 30000
 model = "gpt-5.5"
 
 [budget.research]
@@ -94,13 +94,13 @@ fn rejects_missing_required_config_section() {
 
 #[test]
 fn rejects_zero_network_timeout() {
-    let input = VALID_CONFIG.replace("timeout_ms = 30000", "timeout_ms = 0");
+    let input = VALID_CONFIG.replace("inactivity_timeout_ms = 30000", "inactivity_timeout_ms = 0");
 
     let err = load_config_from_test_str(&input).unwrap_err();
 
     assert!(
         err.to_string()
-            .contains("network.timeout_ms must not be zero")
+            .contains("network.inactivity_timeout_ms must not be zero")
     );
 }
 
@@ -144,7 +144,7 @@ fn accepts_zero_retry_values() {
 fn rejects_network_limits_section() {
     let input = VALID_CONFIG.replace(
         "user_agent = \"moeresearch/0.1.0\"",
-        "user_agent = \"moeresearch/0.1.0\"\n\n[network.limits]\nmax_timeout_ms = 30000",
+        "user_agent = \"moeresearch/0.1.0\"\n\n[network.limits]\nmax_inactivity_timeout_ms = 30000",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -177,15 +177,15 @@ fn rejects_network_stream_knobs() {
 #[test]
 fn rejects_zero_provider_timeout() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
-        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 0",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ninactivity_timeout_ms = 30000",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ninactivity_timeout_ms = 0",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
 
     assert!(
         err.to_string()
-            .contains("search.providers.exa.timeout_ms must not be zero")
+            .contains("search.providers.exa.inactivity_timeout_ms must not be zero")
     );
 }
 
@@ -237,7 +237,7 @@ fn network_client_rejects_zero_timeout() {
 
     assert!(
         err.to_string()
-            .contains("network.timeout_ms must not be zero")
+            .contains("network.inactivity_timeout_ms must not be zero")
     );
 }
 
@@ -256,8 +256,8 @@ fn rejects_plain_api_key_field() {
 #[test]
 fn rejects_enabled_model_provider_without_model() {
     let input = VALID_CONFIG.replace(
-        "[model.providers.openai]\nenabled = false\nbase_url = \"https://api.openai.com/v1\"\napi_key_env = \"OPENAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"gpt-5.5\"",
-        "[model.providers.openai]\nenabled = true\nbase_url = \"https://api.openai.com/v1\"\napi_key_env = \"PATH\"\ntimeout_ms = 30000",
+        "[model.providers.openai]\nenabled = false\nbase_url = \"https://api.openai.com/v1\"\napi_key_env = \"OPENAI_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"gpt-5.5\"",
+        "[model.providers.openai]\nenabled = true\nbase_url = \"https://api.openai.com/v1\"\napi_key_env = \"PATH\"\ninactivity_timeout_ms = 30000",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -271,8 +271,8 @@ fn rejects_enabled_model_provider_without_model() {
 #[test]
 fn rejects_enabled_grok_search_provider_without_model() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"",
-        "[search.providers.grok]\nenabled = true\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"PATH\"\ntimeout_ms = 30000",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"grok-4.3\"",
+        "[search.providers.grok]\nenabled = true\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"PATH\"\ninactivity_timeout_ms = 30000",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -313,8 +313,8 @@ fn accepts_provider_model_config() {
 #[test]
 fn accepts_enabled_exa_search_provider_without_model() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
-        "[search.providers.exa]\nenabled = true\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"PATH\"\ntimeout_ms = 30000",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ninactivity_timeout_ms = 30000",
+        "[search.providers.exa]\nenabled = true\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"PATH\"\ninactivity_timeout_ms = 30000",
     );
 
     let config = load_config_from_test_str(&input).expect("Exa without model must validate");
@@ -325,8 +325,8 @@ fn accepts_enabled_exa_search_provider_without_model() {
 #[test]
 fn accepts_enabled_tavily_search_provider_without_model() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
-        "[search.providers.tavily]\nenabled = true\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"PATH\"\ntimeout_ms = 30000",
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ninactivity_timeout_ms = 30000",
+        "[search.providers.tavily]\nenabled = true\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"PATH\"\ninactivity_timeout_ms = 30000",
     );
 
     let config = load_config_from_test_str(&input).expect("Tavily without model must validate");
@@ -386,8 +386,8 @@ fn network_client_rejects_invalid_user_agent() {
 #[test]
 fn rejects_grok_legacy_search_context_size() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"",
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"\nsearch_context_size = \"low\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"grok-4.3\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"grok-4.3\"\nsearch_context_size = \"low\"",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -404,8 +404,8 @@ fn rejects_grok_legacy_search_context_size() {
 #[test]
 fn rejects_grok_zero_max_output_tokens() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"",
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"\nmax_output_tokens = 0",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"grok-4.3\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"grok-4.3\"\nmax_output_tokens = 0",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -419,8 +419,8 @@ fn rejects_grok_zero_max_output_tokens() {
 #[test]
 fn accepts_grok_reasoning_effort() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"",
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"\nreasoning_effort = \"high\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"grok-4.3\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"grok-4.3\"\nreasoning_effort = \"high\"",
     );
 
     let config = load_config_from_test_str(&input).expect("config");
@@ -435,8 +435,8 @@ fn accepts_grok_reasoning_effort() {
 #[test]
 fn rejects_grok_xhigh_reasoning_effort() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"",
-        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ntimeout_ms = 30000\nmodel = \"grok-4.3\"\nreasoning_effort = \"xhigh\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"grok-4.3\"",
+        "[search.providers.grok]\nenabled = false\nbase_url = \"https://api.x.ai/v1\"\napi_key_env = \"XAI_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"grok-4.3\"\nreasoning_effort = \"xhigh\"",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -451,8 +451,8 @@ fn rejects_grok_xhigh_reasoning_effort() {
 #[test]
 fn rejects_exa_model() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
-        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000\nmodel = \"unused\"",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ninactivity_timeout_ms = 30000",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"unused\"",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -466,8 +466,8 @@ fn rejects_exa_model() {
 #[test]
 fn rejects_exa_reasoning_effort() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
-        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000\nreasoning_effort = \"high\"",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ninactivity_timeout_ms = 30000",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ninactivity_timeout_ms = 30000\nreasoning_effort = \"high\"",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -481,8 +481,8 @@ fn rejects_exa_reasoning_effort() {
 #[test]
 fn rejects_exa_max_output_tokens() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
-        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000\nmax_output_tokens = 1024",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ninactivity_timeout_ms = 30000",
+        "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ninactivity_timeout_ms = 30000\nmax_output_tokens = 1024",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -496,8 +496,8 @@ fn rejects_exa_max_output_tokens() {
 #[test]
 fn rejects_tavily_model() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
-        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000\nmodel = \"unused\"",
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ninactivity_timeout_ms = 30000",
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ninactivity_timeout_ms = 30000\nmodel = \"unused\"",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -511,8 +511,8 @@ fn rejects_tavily_model() {
 #[test]
 fn rejects_tavily_reasoning_effort() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
-        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000\nreasoning_effort = \"high\"",
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ninactivity_timeout_ms = 30000",
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ninactivity_timeout_ms = 30000\nreasoning_effort = \"high\"",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -526,8 +526,8 @@ fn rejects_tavily_reasoning_effort() {
 #[test]
 fn rejects_tavily_max_output_tokens() {
     let input = VALID_CONFIG.replace(
-        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
-        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000\nmax_output_tokens = 1024",
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ninactivity_timeout_ms = 30000",
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ninactivity_timeout_ms = 30000\nmax_output_tokens = 1024",
     );
 
     let err = load_config_from_test_str(&input).unwrap_err();
@@ -588,9 +588,9 @@ fn enabled_provider_requires_environment_variable() {
 fn enabled_tavily_requires_environment_variable() {
     let missing_env = format!("MOERESEARCH_TEST_MISSING_TAVILY_KEY_{}", std::process::id());
     let input = VALID_CONFIG.replace(
-        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
+        "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ninactivity_timeout_ms = 30000",
         &format!(
-            "[search.providers.tavily]\nenabled = true\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"{missing_env}\"\ntimeout_ms = 30000"
+            "[search.providers.tavily]\nenabled = true\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"{missing_env}\"\ninactivity_timeout_ms = 30000"
         ),
     );
     let id = CONFIG_ID.fetch_add(1, Ordering::Relaxed);
@@ -618,9 +618,9 @@ fn rejects_exa_search_tuning_in_config() {
         "maxAgeHours = 24",
     ] {
         let input = VALID_CONFIG.replace(
-            "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000",
+            "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ninactivity_timeout_ms = 30000",
             &format!(
-                "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ntimeout_ms = 30000\n{field}"
+                "[search.providers.exa]\nenabled = false\nbase_url = \"https://api.exa.ai\"\napi_key_env = \"EXA_API_KEY\"\ninactivity_timeout_ms = 30000\n{field}"
             ),
         );
         let err = load_config_from_test_str(&input).unwrap_err();
@@ -645,9 +645,9 @@ fn rejects_tavily_search_tuning_in_config() {
         "include_raw_content = true",
     ] {
         let input = VALID_CONFIG.replace(
-            "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000",
+            "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ninactivity_timeout_ms = 30000",
             &format!(
-                "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ntimeout_ms = 30000\n{field}"
+                "[search.providers.tavily]\nenabled = false\nbase_url = \"https://api.tavily.com\"\napi_key_env = \"TAVILY_API_KEY\"\ninactivity_timeout_ms = 30000\n{field}"
             ),
         );
         let err = load_config_from_test_str(&input).unwrap_err();

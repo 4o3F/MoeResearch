@@ -629,7 +629,7 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
     let request = &requests[0];
     assert_eq!(request.method, "POST");
     assert_eq!(request.url, "https://api.example.com/responses");
-    assert_eq!(request.timeout_ms, Some(1000));
+    assert_eq!(request.inactivity_timeout_ms, Some(1000));
     assert!(
         request
             .headers

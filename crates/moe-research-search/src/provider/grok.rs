@@ -16,7 +16,7 @@ pub struct GrokSearchProvider {
     network: Arc<dyn NetworkClient>,
     base_url: String,
     api_key: String,
-    timeout_ms: Option<u64>,
+    inactivity_timeout_ms: Option<u64>,
     model: String,
     max_output_tokens: Option<u32>,
     reasoning_effort: Option<GrokReasoningEffort>,
@@ -47,10 +47,18 @@ impl GrokSearchProvider {
         network: Arc<dyn NetworkClient>,
         base_url: String,
         api_key: String,
-        timeout_ms: Option<u64>,
+        inactivity_timeout_ms: Option<u64>,
         model: String,
     ) -> Self {
-        Self::with_request_options(network, base_url, api_key, timeout_ms, model, None, None)
+        Self::with_request_options(
+            network,
+            base_url,
+            api_key,
+            inactivity_timeout_ms,
+            model,
+            None,
+            None,
+        )
     }
 
     /// Constructs the provider with the response-size cap supplied from
@@ -62,7 +70,7 @@ impl GrokSearchProvider {
         network: Arc<dyn NetworkClient>,
         base_url: String,
         api_key: String,
-        timeout_ms: Option<u64>,
+        inactivity_timeout_ms: Option<u64>,
         model: String,
         max_output_tokens: Option<u32>,
     ) -> Self {
@@ -70,7 +78,7 @@ impl GrokSearchProvider {
             network,
             base_url,
             api_key,
-            timeout_ms,
+            inactivity_timeout_ms,
             model,
             max_output_tokens,
             None,
@@ -82,7 +90,7 @@ impl GrokSearchProvider {
         network: Arc<dyn NetworkClient>,
         base_url: String,
         api_key: String,
-        timeout_ms: Option<u64>,
+        inactivity_timeout_ms: Option<u64>,
         model: String,
         max_output_tokens: Option<u32>,
         reasoning_effort: Option<GrokReasoningEffort>,
@@ -91,7 +99,7 @@ impl GrokSearchProvider {
             network,
             base_url,
             api_key,
-            timeout_ms,
+            inactivity_timeout_ms,
             model,
             max_output_tokens,
             reasoning_effort,
@@ -127,7 +135,7 @@ impl SearchProvider for GrokSearchProvider {
                 "responses",
                 &self.api_key,
                 body,
-                self.timeout_ms,
+                self.inactivity_timeout_ms,
             ))
             .await?;
 

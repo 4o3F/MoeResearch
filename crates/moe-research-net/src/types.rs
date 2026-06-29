@@ -22,7 +22,7 @@ pub struct NetworkRequest {
     pub url: String,
     pub headers: Vec<Header>,
     pub body: Option<Value>,
-    pub timeout_ms: Option<u64>,
+    pub inactivity_timeout_ms: Option<u64>,
 }
 
 #[derive(Clone, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -61,7 +61,9 @@ impl fmt::Debug for NetworkRequest {
             debug.field("body", &None::<()>);
         }
 
-        debug.field("timeout_ms", &self.timeout_ms).finish()
+        debug
+            .field("inactivity_timeout_ms", &self.inactivity_timeout_ms)
+            .finish()
     }
 }
 

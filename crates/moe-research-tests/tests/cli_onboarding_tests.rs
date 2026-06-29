@@ -9,7 +9,7 @@ const BASE_CONFIG: &str = r#"
 format = "json"
 
 [network]
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "moeresearch/0.1.0"
@@ -18,26 +18,26 @@ user_agent = "moeresearch/0.1.0"
 enabled = false
 base_url = "https://api.exa.ai"
 api_key_env = "EXA_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 
 [search.providers.tavily]
 enabled = false
 base_url = "https://api.tavily.com"
 api_key_env = "TAVILY_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 
 [search.providers.grok]
 enabled = false
 base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 model = "grok-4.3"
 
 [model.providers.openai]
 enabled = false
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
-timeout_ms = 120000
+inactivity_timeout_ms = 120000
 model = "gpt-5.5"
 
 [budget.research]
@@ -103,7 +103,10 @@ fn assert_generated_search_provider_without_model(
     assert_eq!(provider_config["enabled"].as_bool(), Some(true));
     assert_eq!(provider_config["base_url"].as_str(), Some(base_url));
     assert_eq!(provider_config["api_key_env"].as_str(), Some(api_key_env));
-    assert_eq!(provider_config["timeout_ms"].as_integer(), Some(120_000));
+    assert_eq!(
+        provider_config["inactivity_timeout_ms"].as_integer(),
+        Some(120_000)
+    );
     assert!(provider_config.get("model").is_none());
     assert!(provider_config.get("api_key").is_none());
     assert!(!content.contains("api_key ="));
@@ -183,8 +186,8 @@ fn init_writes_valid_config_without_raw_api_key() {
     assert!(content.contains("[model.providers.openai]"));
     assert!(content.contains("[search.providers.tavily]"));
     assert!(content.contains("api_key_env"));
-    assert!(content.contains("timeout_ms = 120000"));
-    assert!(!content.contains("timeout_ms = 30000"));
+    assert!(content.contains("inactivity_timeout_ms = 120000"));
+    assert!(!content.contains("inactivity_timeout_ms = 30000"));
     assert!(!content.contains("api_key ="));
     moe_research_config::load_config(Some(&config_path))
         .unwrap_or_else(|error| panic!("generated config should be valid: {error}"));
@@ -589,7 +592,7 @@ fn onboard_force_allows_regenerating_existing_config() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(content.contains("enabled = true"));
-    assert!(content.contains("timeout_ms = 120000"));
+    assert!(content.contains("inactivity_timeout_ms = 120000"));
 }
 
 #[test]
