@@ -24,6 +24,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+flate2.workspace = true
 inquire.workspace = true
 moe-research-config = { path = "../moe-research-config" }
 moe-research-error = { path = "../moe-research-error" }
@@ -32,7 +33,13 @@ moe-research-model = { path = "../moe-research-model" }
 moe-research-net = { path = "../moe-research-net" }
 moe-research-search = { path = "../moe-research-search" }
 moe-research-workflow = { path = "../moe-research-workflow" }
+reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+tar.workspace = true
+tempfile.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+url.workspace = true

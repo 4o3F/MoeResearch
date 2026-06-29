@@ -22,6 +22,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Download and install MoeResearch asset bundles.
+    Assets(commands::assets::AssetsArgs),
     /// Run the MoeResearch MCP server over stdio.
     Serve(commands::serve::ServeArgs),
     /// Create a MoeResearch configuration file.
@@ -40,6 +42,10 @@ enum Command {
 #[tokio::main]
 async fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::Assets(args) => {
+            init_cli_logging()?;
+            commands::assets::run(args).await
+        }
         Command::Serve(args) => commands::serve::run(args).await,
         Command::Init(args) => {
             init_cli_logging()?;

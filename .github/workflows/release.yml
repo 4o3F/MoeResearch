@@ -262,6 +262,15 @@ jobs:
           pattern: artifacts-*
           path: artifacts
           merge-multiple: true
+      - name: Package PM DeepResearch assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "moe-research-cli").version')"
+          node scripts/package-pm-deep-research-assets.mjs \
+            --version "$VERSION" \
+            --commit "$GITHUB_SHA" \
+            --output-dir artifacts
       - name: Cleanup
         run: |
           # Remove the granular manifests

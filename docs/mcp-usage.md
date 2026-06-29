@@ -58,6 +58,22 @@ For project-scoped configs, the equivalent `mcpServers` shape is:
 
 Do not put provider API keys in `moeresearch.toml`. MoeResearch config stores only environment variable names in `api_key_env`; `moeresearch mcp register` reads current values for enabled providers and copies them into Claude Code registration. Dry-run output redacts the values.
 
+MCP registration only configures the stdio MoeResearch server. It does not install PM DeepResearch skills or prompt assets. For Claude Code, run:
+
+```bash
+moeresearch assets install pm-deep-research
+```
+
+The installer writes `SKILL.md` under the Claude Code skill discovery directory. For other clients, use:
+
+```bash
+moeresearch assets install pm-deep-research \
+  --target ~/.config/moeresearch/assets \
+  --layout repo
+```
+
+Then configure that client to load the installed skill and prompt files explicitly.
+
 ## 2. MCP lifecycle
 
 ### 2.1 Initialize

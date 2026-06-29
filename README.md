@@ -82,6 +82,34 @@ moeresearch mcp register --scope local --config ~/.config/moeresearch/moeresearc
 
 By default, registration records the current `moeresearch` executable path. Pass `--moeresearch-bin` only when Claude Code should launch a different binary. Registration validates enabled-provider environment variables before invoking `claude` and forwards their current values into Claude Code registration with redacted dry-run output.
 
+Install PM DeepResearch as a Claude Code skill:
+
+```bash
+moeresearch assets install pm-deep-research
+```
+
+The installer downloads the release asset for the current `moeresearch` version, not GitHub `latest`. The default install target is the Claude Code user skill discovery path:
+
+```text
+~/.claude/skills/pm-deep-research/SKILL.md
+```
+
+For a project-level Claude Code skill, use:
+
+```bash
+moeresearch assets install pm-deep-research --client claude-code --scope project
+```
+
+For non-Claude clients or manual loading, install the same release assets with repository-style sibling directories:
+
+```bash
+moeresearch assets install pm-deep-research \
+  --target ~/.config/moeresearch/assets \
+  --layout repo
+```
+
+Generic target installs are not Claude Code discovery installs. `moeresearch mcp register` registers the backend server only; `moeresearch assets install` installs client-side PM DeepResearch skill and prompt assets.
+
 Start the MCP server manually when needed:
 
 ```bash
@@ -104,6 +132,7 @@ Before creating a release tag:
 - Ensure the npm scope/package for `@4o3f/moeresearch` is available to publish.
 - Configure `NPM_TOKEN` as a GitHub secret with publish access to `@4o3f/moeresearch`.
 - Homebrew formula generation is enabled, but automatic tap publishing is intentionally disabled to avoid requiring a separate tap repository.
+- Release workflow packaging uploads `pm-deep-research-assets-v{version}.tar.gz` and `pm-deep-research-assets-v{version}.manifest.json`; the CLI verifies manifest and SHA-256 checksums before install.
 - `cargo-dist` generates the MSI package with a license sidecar. Windows code signing is a later hardening step unless configured separately.
 
 ## MCP Tools
