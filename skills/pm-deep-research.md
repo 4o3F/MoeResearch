@@ -159,6 +159,11 @@ Compact `deep_research` direct payload skeleton:
 
 For `aspect_research`, replace `user_question` + `aspect_tasks` + top-level `budget` with a single top-level `task: AspectResearchTask`. Keep the same policy blocks, `shared_context`, and `execution_policy`.
 
+Response contract:
+
+- After a direct MCP tool call, read the stable MoeResearch payload from `result.structuredContent`.
+- Treat `schema_validation_failed` as a Layer 1 request/prompt bug. Common causes include mutated evidence provenance, unsupported `source_type`, mismatched `supports_findings` versus finding `evidence_refs`, or `execution_policy.timeout_ms` exceeding the per-aspect budget.
+
 ### Product-requirements module order
 
 For `product-requirements`, keep the 8-段 PR-FAQ skeleton as the report contract. These modules run inside synthesis in this order:
