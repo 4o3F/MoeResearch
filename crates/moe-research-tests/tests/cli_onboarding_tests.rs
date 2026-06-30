@@ -624,13 +624,39 @@ fn mcp_register_dry_run_logs_claude_command_and_json_example() {
     assert!(output.status.success(), "stderr: {stderr}");
     assert!(stdout.is_empty(), "stdout: {stdout}");
     assert!(stderr.contains("claude mcp add"), "stderr: {stderr}");
-    assert!(stderr.contains("--env"), "stderr: {stderr}");
     assert!(stderr.contains(&env_name), "stderr: {stderr}");
     assert!(stderr.contains("<redacted>"), "stderr: {stderr}");
     assert!(stderr.contains(" serve --config"), "stderr: {stderr}");
     assert!(stderr.contains("mcpServers"));
     assert!(stderr.contains("stdio"));
     assert!(!stderr.contains("raw-test-secret"));
+
+    let name_index = stderr
+        .find("--scope local moeresearch")
+        .expect("server name before env flag");
+    let env_flag_index = stderr[name_index..]
+        .find(" -e ")
+        .map(|index| name_index + index)
+        .expect("env flag after server name");
+    let env_name_index = stderr[env_flag_index..]
+        .find(&env_name)
+        .map(|index| env_flag_index + index)
+        .expect("env name after env flag");
+    let redacted_index = stderr[env_name_index..]
+        .find("<redacted>")
+        .map(|index| env_name_index + index)
+        .expect("redacted env value");
+    let separator_index = stderr[redacted_index..]
+        .find(" -- ")
+        .map(|index| redacted_index + index)
+        .expect("command separator after env assignment");
+    let serve_index = stderr[separator_index..]
+        .find(" serve --config")
+        .map(|index| separator_index + index)
+        .expect("server command after separator");
+    assert!(name_index < env_flag_index, "stderr: {stderr}");
+    assert!(env_flag_index < separator_index, "stderr: {stderr}");
+    assert!(separator_index < serve_index, "stderr: {stderr}");
 }
 
 #[test]
@@ -695,9 +721,28 @@ fn mcp_register_invokes_fake_claude_with_local_scope_by_default() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(argv.contains("mcp\nadd\n--transport\nstdio\n--scope\nlocal\n--env\n"));
-    assert!(argv.contains(&format!("{env_name}=raw-test-secret\nmoeresearch\n--\n")));
-    assert!(argv.contains("\nserve\n--config\n"));
+    let args = argv.lines().collect::<Vec<_>>();
+    assert!(args.starts_with(&[
+        "mcp",
+        "add",
+        "--transport",
+        "stdio",
+        "--scope",
+        "local",
+        "moeresearch",
+    ]));
+    let name_index = args
+        .iter()
+        .position(|arg| *arg == "moeresearch")
+        .expect("server name");
+    let env_flag_index = args.iter().position(|arg| *arg == "-e").expect("env flag");
+    let separator_index = args.iter().position(|arg| *arg == "--").expect("separator");
+    let env_assignment = format!("{env_name}=raw-test-secret");
+    assert!(name_index < env_flag_index);
+    assert!(env_flag_index < separator_index);
+    assert_eq!(args[env_flag_index + 1], env_assignment.as_str());
+    assert!(args[separator_index + 1..].contains(&"serve"));
+    assert!(args[separator_index + 1..].contains(&"--config"));
     assert!(!String::from_utf8_lossy(&output.stderr).contains("raw-test-secret"));
 }
 
