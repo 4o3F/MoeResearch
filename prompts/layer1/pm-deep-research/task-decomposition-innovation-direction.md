@@ -174,10 +174,17 @@ Return only JSON matching this shape (no Markdown wrapper):
   },
   "model_policy": { "allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true },
   "search_policy": {
-    "allowed_providers": ["string"], "max_results_per_query": 5,
-    "recency": "fresh",
+    "allowed_providers": ["string"],
+    "max_results_per_query": 5,
     "freshness": null,
-    "language": "string | null", "region": "string | null", "include_domains": [], "exclude_domains": []
+    "depth": null,
+    "content_level": null,
+    "recency": "fresh",
+    "category": null,
+    "language": "string | null",
+    "region": "string | null",
+    "include_domains": [],
+    "exclude_domains": []
   },
   "evidence_policy": { "require_evidence_for_findings": true, "min_evidence_per_finding": 2 },
   "output_policy": { "language": "string", "max_findings_per_aspect": null },
@@ -191,7 +198,7 @@ Return only JSON matching this shape (no Markdown wrapper):
 }
 ```
 
-> Same `DeepResearchRequest` wire shape as competitive / product-capability — MoeResearch `schema_version="0.1"` 不变。`search_policy` uses `recency=fresh` + `max_results_per_query=5`; deep per-aspect cap is 6 because `recommended-bets` is a synthesis-heavy aspect. Do **not** set `depth`/`content_level`/`category` globally because broad-recall hints can over-search, detailed content increases provenance-validation risk, and category filters cannot fit mixed aspects.
+> Same `DeepResearchRequest` wire shape as competitive / product-capability — MoeResearch `schema_version="0.1"` 不变。`search_policy` emits the complete DTO shape: use `recency=fresh` + `max_results_per_query=5`, and set `depth`/`content_level`/`category` to `null` because broad-recall hints can over-search, detailed content increases provenance-validation risk, and category filters cannot fit mixed aspects.
 >
 > **`execution_policy.timeout_ms` 必须等于 per-aspect `budget.timeout_ms` (600000)**, NOT `total_timeout_ms`.
 
@@ -211,7 +218,11 @@ Return only JSON matching this shape (no Markdown wrapper):
 
 ## MCP request wrapper
 
-按 competitive / product-capability 变体规则：persona prompt content inline；Layer 1 读 `prompts/layer2/pm-deep-research/persona-*.md` 然后 verbatim 传入；Rust core 永不读 prompt 文件. Quick (2 aspect) 可用 2 个 `aspect_research` 调用, 也可用一个 `deep_research`.
+Pass the MoeResearch request object directly to the Claude Code MCP tool. Do not include a JSON-RPC `tools/call` wrapper, and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
+
+Persona prompt content is inline: Layer 1 reads `prompts/layer2/pm-deep-research/persona-*.md` and passes it verbatim as `AspectResearchTask.aspect.aspect_agent_prompt`; Rust core never reads prompt files.
+
+For a single-aspect Quick retry with `aspect_research`, emit one `AspectResearchRequest`: replace `user_question` + `aspect_tasks` + top-level `budget` with a single top-level `task` field (`AspectResearchTask`). Keep the same policy blocks, `shared_context`, and `execution_policy`; its `execution_policy.timeout_ms` must be ≤ `task.budget.timeout_ms`.
 
 ## Safety rules
 

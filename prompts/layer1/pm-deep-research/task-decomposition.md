@@ -154,9 +154,17 @@ Return only JSON matching this shape (no Markdown wrapper):
   },
   "model_policy": { "allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true },
   "search_policy": {
-    "allowed_providers": ["string"], "max_results_per_query": 5, "freshness": null,
+    "allowed_providers": ["string"],
+    "max_results_per_query": 5,
+    "freshness": null,
+    "depth": null,
+    "content_level": null,
     "recency": "fresh",
-    "language": "string | null", "region": "string | null", "include_domains": [], "exclude_domains": []
+    "category": null,
+    "language": "string | null",
+    "region": "string | null",
+    "include_domains": [],
+    "exclude_domains": []
   },
   "evidence_policy": { "require_evidence_for_findings": true, "min_evidence_per_finding": 2 },
   "output_policy": { "language": "string", "max_findings_per_aspect": null },
@@ -188,7 +196,11 @@ Return only JSON matching this shape (no Markdown wrapper):
 
 ## MCP request wrapper
 
-When converting this plan into a `DeepResearchRequest`, set the chosen persona prompt **content** inline on each `AspectResearchTask.aspect.aspect_agent_prompt`. Layer 1 reads the persona Markdown from disk (`prompts/layer2/pm-deep-research/persona-*.md`, relative to this skill) and passes its contents verbatim. Rust core never performs prompt file IO; Layer 1 owns prompt selection, version pinning, and substitution. For a single-aspect Quick study you may instead emit one `AspectResearchRequest` and call `aspect_research`.
+When converting this plan into a `DeepResearchRequest`, pass the MoeResearch request object directly to the Claude Code MCP tool. Do not include a JSON-RPC `tools/call` wrapper, and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
+
+Set the chosen persona prompt **content** inline on each `AspectResearchTask.aspect.aspect_agent_prompt`. Layer 1 reads the persona Markdown from disk (`prompts/layer2/pm-deep-research/persona-*.md`, relative to this skill) and passes its contents verbatim. Rust core never performs prompt file IO; Layer 1 owns prompt selection, version pinning, and substitution.
+
+For a single-aspect Quick study you may instead emit one `AspectResearchRequest` and call `aspect_research`: replace `user_question` + `aspect_tasks` + top-level `budget` with a single top-level `task` field (`AspectResearchTask`). Keep the same policy blocks, `shared_context`, and `execution_policy`; its `execution_policy.timeout_ms` must be ≤ `task.budget.timeout_ms`.
 
 ## Safety rules
 

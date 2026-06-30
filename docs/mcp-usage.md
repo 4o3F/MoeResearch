@@ -144,9 +144,23 @@ Both tools require:
 
 Any other value returns `unsupported_schema_version`.
 
-## 4. `tools/call` wrapper
+## 4. Invocation shapes
 
-All MCP tool calls use the standard `tools/call` method.
+### 4.1 Claude Code direct MCP invocation
+
+Claude Code usually exposes MCP tools as direct tool names such as
+`mcp__moeresearch__deep_research` or `mcp__moeresearch__aspect_research`.
+In that mode, pass only the tool-specific MoeResearch request object as the
+MCP tool input. That object is the same value shown below as `params.arguments`.
+
+Do not paste the outer JSON-RPC wrapper into a Claude Code direct MCP tool
+call. Do not wrap the request under `params`, `arguments`, `request`, `input`,
+or `tool_input`.
+
+### 4.2 Raw MCP `tools/call` wrapper
+
+Raw MCP clients that speak JSON-RPC over stdio use the standard `tools/call`
+method with `params.name` and `params.arguments`.
 
 Shape:
 
@@ -411,6 +425,10 @@ Use `aspect_research` when the client already has one concrete aspect to run.
     "allowed_providers": ["grok"],
     "max_results_per_query": 2,
     "freshness": null,
+    "depth": null,
+    "content_level": null,
+    "recency": null,
+    "category": null,
     "language": "en",
     "region": null,
     "include_domains": [],
@@ -481,6 +499,10 @@ Use `aspect_research` when the client already has one concrete aspect to run.
         "allowed_providers": ["grok"],
         "max_results_per_query": 2,
         "freshness": null,
+        "depth": null,
+        "content_level": null,
+        "recency": null,
+        "category": null,
         "language": "en",
         "region": null,
         "include_domains": [],
@@ -589,7 +611,7 @@ Use `deep_research` when the client wants the MCP server to run multiple aspect 
         "max_turns": 8,
         "max_tool_calls": 12,
         "max_search_calls": 6,
-        "timeout_ms": 120000
+        "timeout_ms": 300000
       }
     }
   ],
@@ -611,6 +633,10 @@ Use `deep_research` when the client wants the MCP server to run multiple aspect 
     "allowed_providers": ["grok"],
     "max_results_per_query": 5,
     "freshness": null,
+    "depth": null,
+    "content_level": null,
+    "recency": null,
+    "category": null,
     "language": "en",
     "region": null,
     "include_domains": [],
@@ -670,7 +696,7 @@ Use `deep_research` when the client wants the MCP server to run multiple aspect 
             "max_turns": 8,
             "max_tool_calls": 12,
             "max_search_calls": 6,
-            "timeout_ms": 120000
+            "timeout_ms": 300000
           }
         }
       ],
@@ -692,6 +718,10 @@ Use `deep_research` when the client wants the MCP server to run multiple aspect 
         "allowed_providers": ["grok"],
         "max_results_per_query": 5,
         "freshness": null,
+        "depth": null,
+        "content_level": null,
+        "recency": null,
+        "category": null,
         "language": "en",
         "region": null,
         "include_domains": [],

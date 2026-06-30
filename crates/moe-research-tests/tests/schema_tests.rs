@@ -13,7 +13,7 @@ use moe_research_workflow::{
     SearchPolicy, SearchRecency, ToolName,
 };
 use schemars::schema_for;
-use serde_json::json;
+use serde_json::{Value, json};
 
 fn aspect() -> AspectSpec {
     AspectSpec {
@@ -455,4 +455,93 @@ fn layer1_task_decomposition_fixture_deserializes_to_deep_research_request() {
         Limit::Limited(_)
     ));
     assert!(matches!(request.budget.max_tokens, Limit::Unlimited));
+    assert!(request.aspect_tasks.iter().all(|task| {
+        !request
+            .execution_policy
+            .timeout_ms
+            .exceeds(task.budget.timeout_ms)
+    }));
+}
+
+#[test]
+fn direct_mcp_payload_fixtures_deserialize_without_wrappers() {
+    let aspect_fixture = include_str!("../fixtures/mcp/aspect_research_direct_payload.json");
+    let aspect_value: Value =
+        serde_json::from_str(aspect_fixture).expect("aspect fixture is valid JSON");
+    assert_direct_tool_payload(&aspect_value);
+    let aspect: AspectResearchRequest =
+        serde_json::from_str(aspect_fixture).expect("aspect direct payload must deserialize");
+
+    assert_eq!(aspect.schema_version, "0.1");
+    assert!(aspect.task.aspect.aspect_agent_prompt.starts_with('#'));
+    assert_eq!(
+        aspect.execution_policy.timeout_ms,
+        aspect.task.budget.timeout_ms
+    );
+
+    let deep_fixture = include_str!("../fixtures/mcp/deep_research_direct_payload.json");
+    let deep_value: Value = serde_json::from_str(deep_fixture).expect("deep fixture is valid JSON");
+    assert_direct_tool_payload(&deep_value);
+    let deep: DeepResearchRequest =
+        serde_json::from_str(deep_fixture).expect("deep direct payload must deserialize");
+
+    assert_eq!(deep.schema_version, "0.1");
+    assert!(!deep.aspect_tasks.is_empty());
+    assert!(deep.aspect_tasks.iter().all(|task| {
+        task.aspect.aspect_agent_prompt.starts_with('#')
+            && task.aspect.search_provider.is_some()
+            && deep.execution_policy.timeout_ms == task.budget.timeout_ms
+    }));
+}
+
+#[test]
+fn layer1_prompt_search_policy_skeletons_include_complete_fields() {
+    let prompts = [
+        include_str!("../../../prompts/layer1/task-decomposition.md"),
+        include_str!("../../../prompts/layer1/pm-deep-research/task-decomposition.md"),
+        include_str!(
+            "../../../prompts/layer1/pm-deep-research/task-decomposition-product-capability.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/pm-deep-research/task-decomposition-innovation-direction.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md"
+        ),
+    ];
+
+    for prompt in prompts {
+        for field in [
+            "allowed_providers",
+            "max_results_per_query",
+            "freshness",
+            "depth",
+            "content_level",
+            "recency",
+            "category",
+            "language",
+            "region",
+            "include_domains",
+            "exclude_domains",
+        ] {
+            let marker = format!("\"{field}\"");
+            assert!(prompt.contains(&marker), "prompt missing {marker}");
+        }
+        assert!(prompt.contains("AspectResearchRequest"));
+        assert!(prompt.contains("top-level `task`"));
+    }
+}
+
+fn assert_direct_tool_payload(value: &Value) {
+    for wrapper_key in [
+        "jsonrpc",
+        "method",
+        "params",
+        "arguments",
+        "request",
+        "input",
+        "tool_input",
+    ] {
+        assert!(value.get(wrapper_key).is_none(), "unexpected {wrapper_key}");
+    }
 }

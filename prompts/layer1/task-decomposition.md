@@ -72,6 +72,10 @@ Return only JSON matching this shape:
     "allowed_providers": ["string"],
     "max_results_per_query": 5,
     "freshness": null,
+    "depth": null,
+    "content_level": null,
+    "recency": null,
+    "category": null,
     "language": "string | null",
     "region": "string | null",
     "include_domains": ["string"],
@@ -94,7 +98,7 @@ Return only JSON matching this shape:
   "execution_policy": {
     "allow_partial_results": true,
     "fail_fast": false,
-    "timeout_ms": 300000
+    "timeout_ms": 120000
   }
 }
 ```
@@ -115,20 +119,20 @@ Return only JSON matching this shape:
 
 ## MCP request wrapper
 
-When converting this plan into `AspectResearchRequest` or `DeepResearchRequest`, set the aspect-agent prompt **content** inline on each `AspectResearchTask.aspect`:
+When converting this plan into `AspectResearchRequest` or `DeepResearchRequest`, pass the MoeResearch request object directly to the Claude Code MCP tool. Do not include a JSON-RPC `tools/call` wrapper, and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
 
-```json
-{
-  "aspect_id": "market-context",
-  "aspect_agent_prompt": "<inline Markdown content of the chosen Layer 2 aspect-agent prompt>"
-}
+For `deep_research`, the top-level shape is the exact `DeepResearchRequest` shown above. For single-aspect retry with `aspect_research`, replace `user_question` + `aspect_tasks` + top-level `budget` with a single top-level `task` field (`AspectResearchTask`). Keep the same policy blocks, `shared_context`, and `execution_policy`; `task.aspect` and `task.budget` must still include all required fields.
+
+Prompt placement reminder:
+
+```text
+AspectResearchRequest.task.aspect.aspect_agent_prompt =
+  "<inline Markdown content of the chosen Layer 2 aspect-agent prompt>"
 ```
 
-Layer 1 reads the chosen aspect-agent Markdown asset from disk (relative to the Claude
-Code workspace, e.g. `prompts/layer2/aspect-agent.md`) and passes its contents verbatim
-as `AspectSpec.aspect_agent_prompt`. Rust core never performs prompt file IO; Layer 1
-owns prompt asset selection, version pinning, and substitution. The string must be a
-non-empty Markdown document under 64 KiB.
+Layer 1 reads the chosen aspect-agent Markdown asset from disk (relative to the Claude Code workspace, e.g. `prompts/layer2/aspect-agent.md`) and passes its contents verbatim as `AspectSpec.aspect_agent_prompt`. Rust core never performs prompt file IO; Layer 1 owns prompt asset selection, version pinning, and substitution. The string must be a non-empty Markdown document under 64 KiB.
+
+Ensure `execution_policy.timeout_ms` is less than or equal to each `aspect_tasks[].budget.timeout_ms` or, for `aspect_research`, `task.budget.timeout_ms`.
 
 ## Safety rules
 

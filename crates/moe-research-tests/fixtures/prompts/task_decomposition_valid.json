@@ -69,6 +69,6 @@
   "execution_policy": {
     "allow_partial_results": true,
     "fail_fast": false,
-    "timeout_ms": 300000
+    "timeout_ms": 120000
   }
 }
