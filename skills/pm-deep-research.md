@@ -63,6 +63,102 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
 11. **Synthesize report** via the chosen `../prompts/layer1/pm-deep-research/final-report-*.md` (thesis-first, action titles, tables-as-evidence). Use a 13-section narrative report for `competitive` / `product-capability` / `innovation-direction`; use an **8-section PR-FAQ template** for `product-requirements` (BLUF = 段1 PR-FAQ 自身, no separate chapter index). Product-requirements also uses `decision-closure.md` and `chinese-product-report-structure.md`; users do not need a separate `/humanizer-zh` call.
 12. **Quality-floor self-verification** (rubric floor incl. prose floor + product-requirements evidence gates) → mark warnings or abstain if below bar.
 
+### Claude Code MCP direct invocation contract
+
+When calling Claude Code MCP tools such as `mcp__moeresearch__deep_research` or `mcp__moeresearch__aspect_research`, pass the MoeResearch request object as the tool arguments directly. Do not include the outer JSON-RPC `tools/call` wrapper and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
+
+Raw MCP clients use the JSON-RPC wrapper documented in `docs/mcp-usage.md`; Claude Code direct tool calls do not.
+
+Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider-native request bodies must never appear in Skill payloads. Use provider names only; Rust config/env resolves secrets.
+
+PM runtime reminders:
+
+- Use `deep_research` for multi-aspect PM research; use `aspect_research` only for a single targeted retry.
+- For PM deep runs, keep per-aspect `budget.timeout_ms = 600000` and `execution_policy.timeout_ms = 600000` unless intentionally choosing a smaller budget.
+- Do not substitute `total_timeout_ms` for per-aspect timeouts; `deep_research` revalidates each aspect against its own budget.
+- `aspect_agent_prompt` is the inline content of the selected Layer 2 persona prompt.
+
+Compact `deep_research` direct payload skeleton:
+
+```json
+{
+  "schema_version": "0.1",
+  "request_id": "<stable-client-id>",
+  "user_question": "<original user question>",
+  "aspect_tasks": [
+    {
+      "aspect": {
+        "aspect_id": "<kebab-case>",
+        "name": "<aspect name>",
+        "role": "product strategist | product experience analyst",
+        "research_question": "<concrete aspect question>",
+        "scope": ["<in scope>"],
+        "boundaries": ["<out of scope>"],
+        "success_criteria": ["<criterion>"],
+        "aspect_agent_prompt": "<inline Layer 2 persona Markdown prompt>",
+        "allowed_tools": ["search"],
+        "model_provider": "<selected allowed model provider>",
+        "search_provider": "<selected allowed search provider>"
+      },
+      "budget": {
+        "max_turns": 8,
+        "max_tool_calls": 8,
+        "max_search_calls": 4,
+        "timeout_ms": 600000
+      }
+    }
+  ],
+  "budget": {
+    "max_agents": 6,
+    "max_concurrent_agents": 3,
+    "max_total_model_calls": 70,
+    "max_total_search_calls": 56,
+    "total_timeout_ms": 1260000,
+    "max_tokens": -1
+  },
+  "model_policy": {
+    "allowed_providers": ["<selected allowed model provider>"],
+    "temperature": 0.2,
+    "max_tokens": null,
+    "require_tool_call_support": true
+  },
+  "search_policy": {
+    "allowed_providers": ["<selected allowed search provider>"],
+    "max_results_per_query": 5,
+    "freshness": null,
+    "depth": null,
+    "content_level": null,
+    "recency": "fresh",
+    "category": null,
+    "language": null,
+    "region": null,
+    "include_domains": [],
+    "exclude_domains": []
+  },
+  "evidence_policy": {
+    "require_evidence_for_findings": true,
+    "min_evidence_per_finding": 2
+  },
+  "output_policy": {
+    "language": "<user language>",
+    "max_findings_per_aspect": null
+  },
+  "shared_context": {
+    "summary": "decision_intent + one-line justification + target product",
+    "known_facts": [],
+    "excluded_assumptions": [],
+    "prior_sources": []
+  },
+  "execution_policy": {
+    "allow_partial_results": true,
+    "fail_fast": false,
+    "timeout_ms": 600000
+  }
+}
+```
+
+For `aspect_research`, replace `user_question` + `aspect_tasks` + top-level `budget` with a single top-level `task: AspectResearchTask`. Keep the same policy blocks, `shared_context`, and `execution_policy`.
+
 ### Product-requirements module order
 
 For `product-requirements`, keep the 8-段 PR-FAQ skeleton as the report contract. These modules run inside synthesis in this order:

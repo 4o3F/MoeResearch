@@ -69,6 +69,95 @@ The skill produces a Markdown report for the user and may also persist intermedi
    - low-confidence findings are marked as limitations or open questions when appropriate.
 8. Read `prompts/layer1/final-report.md` and generate the final report in the user's language.
 
+### Claude Code MCP direct invocation contract
+
+When calling Claude Code MCP tools such as `mcp__moeresearch__deep_research` or `mcp__moeresearch__aspect_research`, pass the MoeResearch request object as the tool arguments directly. Do not include the outer JSON-RPC `tools/call` wrapper and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
+
+Raw MCP clients use the JSON-RPC wrapper documented in `docs/mcp-usage.md`; Claude Code direct tool calls do not.
+
+Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider-native request bodies must never appear in Skill payloads. Use provider names only; Rust config/env resolves secrets.
+
+Compact `deep_research` direct payload skeleton:
+
+```json
+{
+  "schema_version": "0.1",
+  "request_id": "<stable-client-id>",
+  "user_question": "<original user question>",
+  "aspect_tasks": [
+    {
+      "aspect": {
+        "aspect_id": "<kebab-case>",
+        "name": "<aspect name>",
+        "role": "<research role>",
+        "research_question": "<concrete aspect question>",
+        "scope": ["<in scope>"],
+        "boundaries": ["<out of scope>"],
+        "success_criteria": ["<criterion>"],
+        "aspect_agent_prompt": "<inline Layer 2 Markdown prompt>",
+        "allowed_tools": ["search"],
+        "model_provider": "<selected allowed model provider>",
+        "search_provider": "<selected allowed search provider>"
+      },
+      "budget": {
+        "max_turns": 8,
+        "max_tool_calls": 12,
+        "max_search_calls": 6,
+        "timeout_ms": 600000
+      }
+    }
+  ],
+  "budget": {
+    "max_agents": 4,
+    "max_concurrent_agents": 2,
+    "max_total_model_calls": 32,
+    "max_total_search_calls": 20,
+    "total_timeout_ms": 600000,
+    "max_tokens": -1
+  },
+  "model_policy": {
+    "allowed_providers": ["<selected allowed model provider>"],
+    "temperature": 0.2,
+    "max_tokens": null,
+    "require_tool_call_support": true
+  },
+  "search_policy": {
+    "allowed_providers": ["<selected allowed search provider>"],
+    "max_results_per_query": 5,
+    "freshness": null,
+    "depth": null,
+    "content_level": null,
+    "recency": null,
+    "category": null,
+    "language": null,
+    "region": null,
+    "include_domains": [],
+    "exclude_domains": []
+  },
+  "evidence_policy": {
+    "require_evidence_for_findings": true,
+    "min_evidence_per_finding": 1
+  },
+  "output_policy": {
+    "language": "<user language>",
+    "max_findings_per_aspect": null
+  },
+  "shared_context": {
+    "summary": "",
+    "known_facts": [],
+    "excluded_assumptions": [],
+    "prior_sources": []
+  },
+  "execution_policy": {
+    "allow_partial_results": true,
+    "fail_fast": false,
+    "timeout_ms": 600000
+  }
+}
+```
+
+For `aspect_research`, replace `user_question` + `aspect_tasks` + top-level `budget` with a single top-level `task: AspectResearchTask`. Keep the same policy blocks, `shared_context`, and `execution_policy`.
+
 ## Policy boundaries
 
 - Layer 1 may plan, allocate, validate, and synthesize.

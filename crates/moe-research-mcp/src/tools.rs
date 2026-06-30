@@ -13,7 +13,7 @@ use crate::server::MoeResearchMcpServer;
 #[tool_router(server_handler)]
 impl MoeResearchMcpServer {
     #[tool(
-        description = "Run one research aspect and return a ToolEnvelope containing an AspectResearchResult."
+        description = "Run exactly one MoeResearch aspect. Input is the AspectResearchRequest request object directly, with top-level fields schema_version, request_id, task, shared_context, model_policy, search_policy, evidence_policy, output_policy, and execution_policy. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.1\". aspect.aspect_agent_prompt must be inline Markdown content, not a file path. aspect.model_provider is required. aspect.search_provider is required when allowed_tools includes \"search\"."
     )]
     pub async fn aspect_research(
         &self,
@@ -90,7 +90,7 @@ impl MoeResearchMcpServer {
     }
 
     #[tool(
-        description = "Run a deep research plan and return a ToolEnvelope containing a DeepResearchResult."
+        description = "Run a complete multi-aspect MoeResearch plan. Input is the DeepResearchRequest request object directly, with top-level fields schema_version, request_id, user_question, aspect_tasks, budget, model_policy, search_policy, evidence_policy, output_policy, shared_context, and execution_policy. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.1\". Each aspect task must include inline aspect_agent_prompt, explicit model_provider, and search_provider when search is enabled."
     )]
     pub async fn deep_research(
         &self,

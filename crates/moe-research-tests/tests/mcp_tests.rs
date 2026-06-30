@@ -1,12 +1,13 @@
 mod support;
 
 use std::collections::VecDeque;
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use moe_research_error::{Error, Result};
@@ -97,6 +98,36 @@ fn public_tool_lookup_exposes_m6_contract_tools() {
     assert!(server.get_tool("deep_research").is_some());
     assert!(server.get_tool("serve_stdio").is_none());
     assert!(server.get_tool("search").is_none());
+}
+
+#[test]
+fn public_tool_descriptions_explain_direct_payload_shape() {
+    let server = mcp_server(services(&[]));
+
+    let aspect = server
+        .get_tool("aspect_research")
+        .expect("aspect research tool");
+    let aspect_description = aspect.description.as_deref().unwrap_or("");
+    assert!(aspect_description.contains("AspectResearchRequest"));
+    assert!(aspect_description.contains("request object directly"));
+    assert!(aspect_description.contains("Do not wrap"));
+    assert!(aspect_description.contains("schema_version"));
+    assert!(aspect_description.contains("aspect_agent_prompt"));
+    assert!(aspect_description.contains("model_provider"));
+    assert!(aspect_description.contains("search_provider"));
+
+    let deep = server
+        .get_tool("deep_research")
+        .expect("deep research tool");
+    let deep_description = deep.description.as_deref().unwrap_or("");
+    assert!(deep_description.contains("DeepResearchRequest"));
+    assert!(deep_description.contains("request object directly"));
+    assert!(deep_description.contains("Do not wrap"));
+    assert!(deep_description.contains("schema_version"));
+    assert!(deep_description.contains("aspect_agent_prompt"));
+    assert!(deep_description.contains("aspect_tasks"));
+    assert!(deep_description.contains("budget"));
+    assert!(deep_description.contains("search_policy"));
 }
 
 #[test]
@@ -797,16 +828,51 @@ timeout_ms = -1
         .spawn()
         .expect("spawn moeresearch serve");
 
-    thread::sleep(Duration::from_secs(5));
+    let mut stdout_pipe = child.stdout.take().expect("stdout pipe");
+    let stderr_pipe = child.stderr.take().expect("stderr pipe");
+    let stdout_reader = thread::spawn(move || {
+        let mut output = String::new();
+        stdout_pipe
+            .read_to_string(&mut output)
+            .expect("read stdout");
+        output
+    });
+    let (startup_tx, startup_rx) = mpsc::channel();
+    let stderr_reader = thread::spawn(move || {
+        let mut output = String::new();
+        let reader = BufReader::new(stderr_pipe);
+        for line in reader.lines() {
+            let line = line.expect("read stderr line");
+            if line.contains("moeresearch initialized") {
+                let _ = startup_tx.send(());
+            }
+            output.push_str(&line);
+            output.push('\n');
+        }
+        output
+    });
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        if startup_rx.try_recv().is_ok() {
+            break;
+        }
+        if child.try_wait().expect("poll moeresearch serve").is_some() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
     if child.try_wait().expect("poll moeresearch serve").is_none() {
         child.kill().expect("stop moeresearch serve");
     }
-    let output = child
-        .wait_with_output()
-        .expect("collect moeresearch serve output");
+    child.wait().expect("collect moeresearch serve status");
     let _ = std::fs::remove_file(&config_path);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = stdout_reader.join().expect("join stdout reader");
+    let stderr = stderr_reader.join().expect("join stderr reader");
 
     assert!(!stdout.contains("moeresearch initialized"));
     assert!(
