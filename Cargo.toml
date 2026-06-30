@@ -15,7 +15,7 @@ resolver = "3"
 
 [workspace.package]
 edition = "2024"
-version = "0.2.3"
+version = "0.2.4"
 repository = "https://github.com/4o3F/MoeResearch"
 homepage = "https://github.com/4o3F/MoeResearch"
 license = "AGPL-3.0-only"
