@@ -75,13 +75,13 @@ pub fn claude_mcp_add_argv(
         OsString::from("stdio"),
         OsString::from("--scope"),
         OsString::from(scope.as_str()),
+        OsString::from(name),
     ];
     for env in env_vars {
-        argv.push(OsString::from("--env"));
+        argv.push(OsString::from("-e"));
         argv.push(env.assignment());
     }
     argv.extend([
-        OsString::from(name),
         OsString::from("--"),
         moe_research_bin.as_os_str().to_owned(),
         OsString::from("serve"),

@@ -14,3 +14,4 @@
 - `92439398-be22-455f-88b3-5d153a84d6ac` **docs: add project AI context documentation** (docs/project-context) — 10 files
 - `591eb28f-7c2f-4d56-8792-81fb40112aec` **ci(release): publish npm packages with token** (main) — 2 files
 - `f1733fb2-2014-49a3-aee0-94a5d4bbafe6` **fix(mcp): clarify direct request payload contract** (fix/mcp-direct-payload-contract) — 14 files
+- `37c96d23-d3a3-4087-9634-ce06feba0efa` **fix(cli): place MCP env flags after server name** (fix/mcp-register-env-order) — 3 files

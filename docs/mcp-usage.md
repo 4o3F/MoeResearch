@@ -28,12 +28,12 @@ moeresearch mcp register --scope local --config ~/.config/moeresearch/moeresearc
 The command invokes `claude mcp add` with the current `moeresearch` executable path by default:
 
 ```bash
-claude mcp add --transport stdio --scope local --env OPENAI_API_KEY=<redacted> moeresearch -- /absolute/path/to/moeresearch serve --config /absolute/path/to/moeresearch.toml
+claude mcp add --transport stdio --scope local moeresearch -e OPENAI_API_KEY=<redacted> -- /absolute/path/to/moeresearch serve --config /absolute/path/to/moeresearch.toml
 ```
 
-Use `--moeresearch-bin` when Claude Code should launch a different binary.
+Use `--moeresearch-bin` when Claude Code should launch a different binary. The MCP server name appears before `-e` because Claude Code treats `--env <env...>` as variadic; placing environment flags before the name can make the name parse as an environment value.
 
-The registration command validates the config file and the environment variables for enabled providers before invoking `claude`. It copies current enabled-provider environment values into Claude Code registration with `--env`; use `--dry-run` to print the command and JSON example without calling `claude`, with values redacted:
+The registration command validates the config file and the environment variables for enabled providers before invoking `claude`. It copies current enabled-provider environment values into Claude Code registration with `-e`; use `--dry-run` to print the command and JSON example without calling `claude`, with values redacted:
 
 ```bash
 moeresearch mcp register --scope local --config ~/.config/moeresearch/moeresearch.toml --dry-run
