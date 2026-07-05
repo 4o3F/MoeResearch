@@ -378,6 +378,8 @@ Fields:
 | `fail_fast` | boolean | Yes | For `deep_research`, stop after the first aspect failure when possible. |
 | `timeout_ms` | limit | Yes | Request timeout in milliseconds. Use `-1` for unlimited. |
 
+`execution_policy.timeout_ms` is MoeResearch's request deadline, not the outer MCP/client deadline. Configure the MCP client timeout higher than the largest finite `execution_policy.timeout_ms`, `task.budget.timeout_ms`, or `budget.total_timeout_ms` you intend to send, plus provider retry/backoff slack. If you use `-1` for unlimited request budgets, choose the outer client timeout deliberately; otherwise the client may be the first component to abort and can miss the final `ok` or `partial` envelope.
+
 ## 6. `aspect_research`
 
 Use `aspect_research` when the client already has one concrete aspect to run.
@@ -791,7 +793,9 @@ Use `deep_research` when the client wants the MCP server to run multiple aspect 
 }
 ```
 
-`status` may be `partial` when `execution_policy.allow_partial_results` is true and usable evidence was collected before a terminal failure. For `deep_research`, `data.failed_aspects` describes failed aspect-level work and `data.evidence_index` may include evidence from failed aspects even when `completed_aspects` is empty. For `aspect_research`, `data` contains collected evidence with no findings, while `error` preserves the original failure metadata.
+`status` may be `partial` when `execution_policy.allow_partial_results` is true and usable evidence was collected before a terminal failure. For `deep_research`, `error` is `null`; `data.failed_aspects` describes failed aspect-level work, including each aspect's `retryable` value, and `data.evidence_index` may include evidence from failed aspects even when `completed_aspects` is empty. For `aspect_research`, `data` contains collected evidence with no findings, while `error` preserves the original failure metadata and `error.retryable`.
+
+A final `schema_validation_failed` can still return `status=partial` when `execution_policy.allow_partial_results=true` and the agent collected evidence before final output validation failed. For `mutated_evidence_provenance`, MoeResearch returns preserved runtime-collected evidence, not the model-mutated output. Preserve returned evidence as-is; in `deep_research`, evidence ids may be aspect-namespaced, while provenance fields (`source_title`, `url`, `provider`, `query`, `snippet`, `summary`, `published_at`, `retrieved_at`) remain byte-equal to search-tool output. Treat findings as absent. Because `retryable` means retrying the same request later may help, a validation failure may be `retryable: false`; if useful, submit a changed corrective request for the failed aspect, such as a smaller evidence set or stricter prompt.
 
 ## 8. MCP response envelope
 
@@ -968,8 +972,10 @@ Fields:
 | `code` | string | Stable error code. |
 | `message` | string | Public-safe message. |
 | `aspect_id` | string or null | Aspect id when the failure belongs to one aspect. |
-| `retryable` | boolean | Whether retry may be useful. |
+| `retryable` | boolean | Whether retrying the same request later may be useful. |
 | `failed_aspects` | `AspectFailure[]` | Aspect-level failures for aggregated `deep_research` failures. |
+
+`provider_unavailable` has two retryability classes. Provider-side terminal/incomplete/error SSE events that the server classifies as transient return `retryable: true`. Configuration, policy, missing environment variable, or provider-not-configured failures return `retryable: false`; clients should use `retryable` as the source of truth.
 
 Error codes:
 
@@ -1001,13 +1007,14 @@ Use:
 
 ### `provider_unavailable`
 
-The request selected a provider name that is unavailable or not allowed by policy.
+The request selected a provider name that is unavailable or not allowed by policy, or a provider-side SSE stream ended with a transient terminal/error event.
 
 Client-side checks:
 
 - `aspect.model_provider` is included in `model_policy.allowed_providers`.
 - If search is enabled, `aspect.search_provider` is included in `search_policy.allowed_providers`.
 - Provider names match the MCP server environment you are calling.
+- Inspect `retryable`: retry transient provider-side failures, but fix configuration, environment, or policy failures before retrying.
 
 ### `tool_policy_denied`
 
@@ -1031,7 +1038,7 @@ Client-side checks:
 
 ### `schema_validation_failed`
 
-The final structured result failed validation.
+The final structured result failed validation. If evidence was already collected and partial results are allowed, `aspect_research` may return `status=partial` with frozen evidence and this error metadata; `deep_research` partials carry failed aspect metadata in `data.failed_aspects` and keep top-level `error: null`.
 
 Client-side checks:
 

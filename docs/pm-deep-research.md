@@ -237,7 +237,9 @@ If WebSearch/WebFetch is unavailable, the report must disclose the limitation, l
 
 ## Partial Results and Failed Aspects
 
-`status=partial` is still useful. Completed aspects should be kept. Failed aspects should be treated as gaps and, when worthwhile, retried once with `aspect_research` using prior sources.
+`status=partial` is still useful. Completed aspects and preserved evidence should be kept. Failed aspects should be treated as gaps and, when worthwhile, retried once with `aspect_research` using prior sources.
+
+Inspect `retryable` before retrying the same request. For `deep_research` partials, read `data.failed_aspects[*].retryable`; for `aspect_research` partial or failed envelopes, read `error.retryable`. Retry transient provider-side failures when useful, but fix configuration, environment, or policy failures before retrying. Do not rewrite returned MoeResearch evidence: preserve ids exactly as returned, and keep provenance fields (`source_title`, `url`, `provider`, `query`, `snippet`, `summary`, `published_at`, `retrieved_at`) byte-equal to search-tool output.
 
 The final report must disclose failed aspects in open questions or Annex A. It must not silently synthesize unsupported recommendations from missing aspects.
 
@@ -264,7 +266,7 @@ Reduce concurrency or depth. Use a smaller PM DeepResearch tier (`quick` or `sta
 
 ### `schema_validation_failed: mutated_evidence_provenance`
 
-The aspect agent changed a frozen evidence field. Evidence fields copied from MoeResearch search results must be byte-equal. Retry the failed aspect with a smaller evidence set and avoid copying all search results.
+The aspect agent changed a frozen evidence provenance field. The frozen fields copied from MoeResearch search results (`source_title`, `url`, `provider`, `query`, `snippet`, `summary`, `published_at`, `retrieved_at`) must be byte-equal; preserve returned evidence ids exactly because `deep_research` may namespace them by aspect. When partial results are allowed, MoeResearch may still return preserved evidence with no findings; keep that evidence and treat the failed aspect as a gap. This failure may not be retryable as the same request; if useful, retry with a changed request such as a smaller evidence set or stricter prompt. Avoid copying all search results into the final answer.
 
 ### WebSearch/WebFetch unavailable
 
