@@ -175,12 +175,14 @@ async fn assemble_grok_sse(stream: &mut SseNetworkStream) -> Result<Value> {
                 return Err(Error::ProviderUnavailable {
                     provider: "grok".to_owned(),
                     message: "SSE stream ended with terminal failure".to_owned(),
+                    retryable: true,
                 });
             }
             Some("error") => {
                 return Err(Error::ProviderUnavailable {
                     provider: "grok".to_owned(),
                     message: "SSE stream returned error event".to_owned(),
+                    retryable: true,
                 });
             }
             _ => {}

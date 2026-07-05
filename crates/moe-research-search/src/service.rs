@@ -32,6 +32,7 @@ impl SearchService {
                 .ok_or_else(|| Error::ProviderUnavailable {
                     provider: provider_name.clone(),
                     message: "search provider is not configured".to_owned(),
+                    retryable: false,
                 })?;
 
         provider.search(request).await

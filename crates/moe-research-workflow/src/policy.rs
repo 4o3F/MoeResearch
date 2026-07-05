@@ -78,6 +78,7 @@ impl ModelPolicy {
             return Err(Error::ProviderUnavailable {
                 provider: request.provider.clone(),
                 message: "model provider is not allowed by policy".to_owned(),
+                retryable: false,
             });
         }
 
@@ -131,6 +132,7 @@ impl SearchPolicy {
             return Err(Error::ProviderUnavailable {
                 provider: request.provider.clone(),
                 message: "search provider is not allowed by policy".to_owned(),
+                retryable: false,
             });
         }
 

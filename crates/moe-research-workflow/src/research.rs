@@ -268,6 +268,7 @@ fn validate_explicit_model_provider(aspect: &AspectSpec, policy: &ModelPolicy) -
         return Err(Error::ProviderUnavailable {
             provider: provider.to_owned(),
             message: "aspect model provider is not allowed by policy".to_owned(),
+            retryable: false,
         });
     }
 
@@ -297,6 +298,7 @@ fn validate_explicit_search_provider(
         return Err(Error::ProviderUnavailable {
             provider: provider.to_owned(),
             message: "aspect search provider is not allowed by policy".to_owned(),
+            retryable: false,
         });
     }
 

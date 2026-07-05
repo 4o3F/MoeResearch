@@ -73,6 +73,7 @@ impl SearchProvider for FailingProvider {
         Err(Error::ProviderUnavailable {
             provider: self.0.to_owned(),
             message: "selected provider failed".to_owned(),
+            retryable: false,
         })
     }
 }
@@ -172,7 +173,8 @@ async fn does_not_fallback_when_selected_provider_fails() {
     .await
     .expect_err("selected provider error");
 
-    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "exa"));
+    assert!(matches!(&error, Error::ProviderUnavailable { provider, .. } if provider == "exa"));
+    assert!(!error.retryable());
 }
 
 #[tokio::test]
@@ -205,7 +207,8 @@ async fn rejects_empty_allowlist_for_explicit_provider() {
     .await
     .expect_err("empty allowlist rejects provider");
 
-    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "exa"));
+    assert!(matches!(&error, Error::ProviderUnavailable { provider, .. } if provider == "exa"));
+    assert!(!error.retryable());
 }
 
 #[tokio::test]
@@ -222,7 +225,8 @@ async fn rejects_disallowed_explicit_provider() {
     .await
     .expect_err("disallowed search provider");
 
-    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "grok"));
+    assert!(matches!(&error, Error::ProviderUnavailable { provider, .. } if provider == "grok"));
+    assert!(!error.retryable());
 }
 
 #[tokio::test]
@@ -237,7 +241,8 @@ async fn rejects_unconfigured_explicit_provider() {
     .await
     .expect_err("unconfigured search provider");
 
-    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "exa"));
+    assert!(matches!(&error, Error::ProviderUnavailable { provider, .. } if provider == "exa"));
+    assert!(!error.retryable());
 }
 
 #[tokio::test]
@@ -1030,21 +1035,25 @@ async fn grok_search_rejects_non_success_status() {
 /// so Exa applies the date window server-side.
 #[tokio::test]
 async fn grok_sse_terminal_failure_returns_provider_error() {
-    let network = Arc::new(MockNetworkClient::new_sse([sse_response(
-        200,
-        vec![sse_json_event(
-            "response.incomplete",
-            json!({ "type": "response.incomplete" }),
-        )],
-    )]));
-    let provider = grok_provider(network);
+    for event_type in ["response.failed", "response.incomplete"] {
+        let network = Arc::new(MockNetworkClient::new_sse([sse_response(
+            200,
+            vec![sse_json_event(event_type, json!({ "type": event_type }))],
+        )]));
+        let provider = grok_provider(network);
 
-    let error = provider
-        .search(SearchRequest::new("grok", "moeresearch", 1))
-        .await
-        .expect_err("terminal failure errors");
+        let error = provider
+            .search(SearchRequest::new("grok", "moeresearch", 1))
+            .await
+            .expect_err("terminal failure errors");
 
-    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "grok"));
+        assert!(
+            matches!(&error, Error::ProviderUnavailable { provider, retryable: true, .. } if provider == "grok")
+        );
+        assert!(error.retryable());
+        assert_eq!(error.code().as_str(), "provider_unavailable");
+        assert_eq!(error.public_message(), "provider unavailable");
+    }
 }
 
 #[tokio::test]
@@ -1060,7 +1069,12 @@ async fn grok_sse_error_event_returns_provider_error() {
         .await
         .expect_err("error event errors");
 
-    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "grok"));
+    assert!(
+        matches!(&error, Error::ProviderUnavailable { provider, retryable: true, .. } if provider == "grok")
+    );
+    assert!(error.retryable());
+    assert_eq!(error.code().as_str(), "provider_unavailable");
+    assert_eq!(error.public_message(), "provider unavailable");
 }
 
 #[tokio::test]

@@ -42,6 +42,7 @@ impl ModelService {
                 .ok_or_else(|| Error::ProviderUnavailable {
                     provider: request.provider.clone(),
                     message: "model provider is not configured".to_owned(),
+                    retryable: false,
                 })?;
 
         request.validate()?;

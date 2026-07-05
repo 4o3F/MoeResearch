@@ -58,6 +58,18 @@ impl ModelProvider for SequenceModelProvider {
                 &aspect_name,
                 first_evidence_from_tool_output(&request.input),
             ));
+        } else if response.content.as_deref() == Some("__MUTATED_RESULT_FROM_TOOL_OUTPUT__") {
+            let aspect_id = aspect_field(&request.input, "Aspect ID");
+            let aspect_name = aspect_field(&request.input, "Aspect name");
+            let mut evidence = first_evidence_from_tool_output(&request.input);
+            evidence.summary.push_str(" mutated by model");
+            response.content = Some(medium_result_json(&aspect_id, &aspect_name, evidence));
+        } else if response.content.as_deref() == Some("__TRANSIENT_PROVIDER_UNAVAILABLE__") {
+            return Err(Error::ProviderUnavailable {
+                provider: "openai".to_owned(),
+                message: "SSE stream ended with terminal failure".to_owned(),
+                retryable: true,
+            });
         }
         Ok(response)
     }
@@ -257,6 +269,110 @@ async fn aspect_research_partial_failure_disabled_returns_failed_envelope() {
 }
 
 #[tokio::test]
+async fn aspect_research_schema_failure_after_evidence_returns_partial_with_frozen_evidence() {
+    let services = sequence_services(vec![
+        tool_response(),
+        final_response("__MUTATED_RESULT_FROM_TOOL_OUTPUT__".to_owned()),
+    ]);
+
+    let envelope = mcp_server(services)
+        .aspect_research(Parameters(aspect_request()))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Partial);
+    assert!(envelope.run_id.is_none());
+
+    let data = envelope.data.expect("partial aspect data");
+    assert!(data.aspect_report.findings.is_empty());
+    assert_eq!(data.evidence.len(), 1);
+    assert_eq!(data.evidence[0].source_title, "Shared Source");
+    assert_eq!(data.evidence[0].provider, "searcher");
+    assert_eq!(data.evidence[0].snippet, "shared snippet");
+    assert_eq!(data.evidence[0].summary, "shared summary");
+
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::SchemaValidationFailed);
+    assert_eq!(error.aspect_id.as_deref(), Some("aspect-1"));
+    assert!(!error.retryable);
+    assert!(error.message.contains("mutated_evidence_provenance"));
+    assert!(error.message.contains("evidence[0]"));
+    assert!(error.message.contains("summary"));
+}
+
+#[tokio::test]
+async fn aspect_research_schema_failure_after_evidence_fails_when_partials_disabled() {
+    let mut request = aspect_request();
+    request.execution_policy.allow_partial_results = false;
+    let services = sequence_services(vec![
+        tool_response(),
+        final_response("__MUTATED_RESULT_FROM_TOOL_OUTPUT__".to_owned()),
+    ]);
+
+    let envelope = mcp_server(services)
+        .aspect_research(Parameters(request))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    assert!(envelope.data.is_none());
+    assert!(envelope.run_id.is_none());
+
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::SchemaValidationFailed);
+    assert_eq!(error.aspect_id.as_deref(), Some("aspect-1"));
+    assert!(!error.retryable);
+}
+
+#[tokio::test]
+async fn aspect_research_transient_provider_unavailable_partial_marks_tool_error_retryable() {
+    let services = sequence_services(vec![
+        tool_response(),
+        final_response("__TRANSIENT_PROVIDER_UNAVAILABLE__".to_owned()),
+    ]);
+
+    let envelope = mcp_server(services)
+        .aspect_research(Parameters(aspect_request()))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Partial);
+    assert!(envelope.run_id.is_none());
+
+    let data = envelope.data.expect("partial aspect data");
+    assert!(data.aspect_report.findings.is_empty());
+    assert_eq!(data.evidence.len(), 1);
+
+    let error = envelope.error.expect("provider error");
+    assert_eq!(error.code, ToolErrorCode::ProviderUnavailable);
+    assert_eq!(error.message, "provider unavailable");
+    assert_eq!(error.aspect_id.as_deref(), Some("aspect-1"));
+    assert!(error.retryable);
+    assert!(error.failed_aspects.is_empty());
+}
+
+#[tokio::test]
+async fn aspect_research_policy_provider_unavailable_marks_tool_error_not_retryable() {
+    let mut request = aspect_request();
+    request.model_policy.allowed_providers = vec!["other".to_owned()];
+
+    let envelope = mcp_server(services(&[]))
+        .aspect_research(Parameters(request))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    assert!(envelope.data.is_none());
+
+    let error = envelope.error.expect("provider error");
+    assert_eq!(error.code, ToolErrorCode::ProviderUnavailable);
+    assert_eq!(error.message, "provider unavailable");
+    assert_eq!(error.aspect_id.as_deref(), Some("aspect-1"));
+    assert!(!error.retryable);
+    assert!(error.failed_aspects.is_empty());
+}
+
+#[tokio::test]
 async fn aspect_research_config_research_budget_failure_returns_tool_error() {
     let services = sequence_services(vec![tool_response()]);
     let search_calls = services.search_calls.clone();
@@ -451,6 +567,22 @@ fn error_retryability_mapping_is_stable() {
             status: 503,
             message: "service unavailable".to_owned(),
             retryable: true,
+        }
+        .retryable()
+    );
+    assert!(
+        Error::ProviderUnavailable {
+            provider: "openai".to_owned(),
+            message: "runtime transient".to_owned(),
+            retryable: true,
+        }
+        .retryable()
+    );
+    assert!(
+        !Error::ProviderUnavailable {
+            provider: "openai".to_owned(),
+            message: "not configured".to_owned(),
+            retryable: false,
         }
         .retryable()
     );
@@ -692,6 +824,7 @@ fn public_message_redacts_provider_path_and_api_key() {
             Error::ProviderUnavailable {
                 provider: "openai".to_owned(),
                 message: "missing OPENAI_API_KEY in /home/user/moeresearch.toml".to_owned(),
+                retryable: false,
             },
             vec!["openai", "OPENAI_API_KEY", "/home/user/moeresearch.toml"],
         ),

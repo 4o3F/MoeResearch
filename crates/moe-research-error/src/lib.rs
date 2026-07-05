@@ -71,7 +71,11 @@ pub enum Error {
     },
 
     #[snafu(display("provider unavailable: {provider}: {message}"))]
-    ProviderUnavailable { provider: String, message: String },
+    ProviderUnavailable {
+        provider: String,
+        message: String,
+        retryable: bool,
+    },
 
     #[snafu(display("network failed: {message}"))]
     NetworkFailed { message: String },
@@ -144,6 +148,7 @@ impl Error {
     #[must_use]
     pub fn retryable(&self) -> bool {
         match self {
+            Self::ProviderUnavailable { retryable, .. } => *retryable,
             Self::HttpTransport { retryable, .. } | Self::HttpStatus { retryable, .. } => {
                 *retryable
             }

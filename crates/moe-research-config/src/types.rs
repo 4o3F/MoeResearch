@@ -404,12 +404,14 @@ fn validate_env_key(kind: &str, name: &str, api_key_env: Option<&str>) -> Result
     let env_name = api_key_env.ok_or_else(|| Error::ProviderUnavailable {
         provider: format!("{kind}:{name}"),
         message: "enabled provider must set api_key_env".to_owned(),
+        retryable: false,
     })?;
 
     if std::env::var_os(env_name).is_none() {
         return Err(Error::ProviderUnavailable {
             provider: format!("{kind}:{name}"),
             message: format!("environment variable {env_name} is not set"),
+            retryable: false,
         });
     }
 

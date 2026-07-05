@@ -167,7 +167,8 @@ async fn rejects_disallowed_provider() {
         .await
         .expect_err("disallowed provider error");
 
-    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "beta"));
+    assert!(matches!(&error, Error::ProviderUnavailable { provider, .. } if provider == "beta"));
+    assert!(!error.retryable());
 }
 
 #[tokio::test]
@@ -517,21 +518,25 @@ async fn malformed_tool_call_arguments_returns_error() {
 
 #[tokio::test]
 async fn openai_sse_terminal_failure_returns_provider_error() {
-    let network = Arc::new(MockNetworkClient::new_sse([sse_response(
-        200,
-        vec![sse_json_event(
-            "response.failed",
-            json!({ "type": "response.failed" }),
-        )],
-    )]));
-    let provider = provider(network);
+    for event_type in ["response.failed", "response.incomplete"] {
+        let network = Arc::new(MockNetworkClient::new_sse([sse_response(
+            200,
+            vec![sse_json_event(event_type, json!({ "type": event_type }))],
+        )]));
+        let provider = provider(network);
 
-    let error = provider
-        .complete(request_with_input(vec![user_message("hi")]))
-        .await
-        .expect_err("terminal failure errors");
+        let error = provider
+            .complete(request_with_input(vec![user_message("hi")]))
+            .await
+            .expect_err("terminal failure errors");
 
-    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "openai"));
+        assert!(
+            matches!(&error, Error::ProviderUnavailable { provider, retryable: true, .. } if provider == "openai")
+        );
+        assert!(error.retryable());
+        assert_eq!(error.code().as_str(), "provider_unavailable");
+        assert_eq!(error.public_message(), "provider unavailable");
+    }
 }
 
 #[tokio::test]
@@ -547,7 +552,12 @@ async fn openai_sse_error_event_returns_provider_error() {
         .await
         .expect_err("error event errors");
 
-    assert!(matches!(error, Error::ProviderUnavailable { provider, .. } if provider == "openai"));
+    assert!(
+        matches!(&error, Error::ProviderUnavailable { provider, retryable: true, .. } if provider == "openai")
+    );
+    assert!(error.retryable());
+    assert_eq!(error.code().as_str(), "provider_unavailable");
+    assert_eq!(error.public_message(), "provider unavailable");
 }
 
 #[tokio::test]

@@ -185,11 +185,13 @@ fn provider_api_key(kind: &str, name: &str, api_key_env: Option<&String>) -> Res
     let api_key_env = api_key_env.ok_or_else(|| Error::ProviderUnavailable {
         provider: format!("{kind}:{name}"),
         message: "enabled provider must set api_key_env".to_owned(),
+        retryable: false,
     })?;
 
     std::env::var(api_key_env).map_err(|_| Error::ProviderUnavailable {
         provider: format!("{kind}:{name}"),
         message: format!("environment variable {api_key_env} is not set"),
+        retryable: false,
     })
 }
 
