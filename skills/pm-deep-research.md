@@ -73,7 +73,9 @@ Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider
 
 PM runtime reminders:
 
-- Use `deep_research` for multi-aspect PM research; use `aspect_research` only for a single targeted retry.
+- Use `deep_research` for multi-aspect PM research when the host MCP client can wait for the full run.
+- If the host layer has an observed short `tools/call` deadline, execute Standard/Deep reports as sequential `aspect_research` calls and assemble the same final report in Layer 1.
+- Use `aspect_research` for a single-aspect Quick study, one failed-aspect retry, a narrow backfill, or Standard/Deep orchestration when the host client cannot safely wait for a full `deep_research` call.
 - For PM deep runs, keep per-aspect `budget.timeout_ms = 600000` and `execution_policy.timeout_ms = 600000` unless intentionally choosing a smaller budget.
 - Do not substitute `total_timeout_ms` for per-aspect timeouts; `deep_research` revalidates each aspect against its own budget.
 - `aspect_agent_prompt` is the inline content of the selected Layer 2 persona prompt.
@@ -162,6 +164,8 @@ For `aspect_research`, replace `user_question` + `aspect_tasks` + top-level `bud
 Response contract:
 
 - After a direct MCP tool call, read the stable MoeResearch payload from `result.structuredContent`.
+- Treat `status = "partial"` with completed findings/aspects as usable partial research. Preserve completed aspects and evidence; retry each failed aspect at most once with `aspect_research`.
+- Treat `status = "partial"` with `completed_aspects = 0` or a single-aspect `findings_count = 0` as an unusable research result. Keep its evidence only as diagnostic/backfill leads; do not present it as MoeResearch findings or final conclusions.
 - Treat `schema_validation_failed` as a Layer 1 request/prompt bug. Common causes include mutated evidence provenance, unsupported `source_type`, mismatched `supports_findings` versus finding `evidence_refs`, or `execution_policy.timeout_ms` exceeding the per-aspect budget.
 
 ### Product-requirements module order
@@ -211,4 +215,4 @@ Layer 2 personas are shared across all four capabilities.
 
 ## Failure handling
 
-If MoeResearch MCP is unavailable or a call fails hard (`provider_unavailable` / `network_failed` / process down), surface the error and stop. There is no host-only fallback for MoeResearch execution. Partial MoeResearch results (`status=partial`) stay on the full path — keep completed aspects, treat failures as gaps and run a single targeted `aspect_research` retry on each.
+If MoeResearch MCP is unavailable or a call fails hard (`provider_unavailable` / `network_failed` / process down), surface the error and stop. There is no host-only fallback for MoeResearch execution. Partial MoeResearch results (`status=partial`) stay on the full path only when they contain completed findings/aspects; otherwise keep evidence as diagnostic/backfill leads and do not present it as MoeResearch findings. Retry failed aspects at most once with targeted `aspect_research`.
