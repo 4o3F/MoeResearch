@@ -98,10 +98,14 @@ impl OpenAiProvider {
         let mut content = Vec::new();
         let mut tool_calls = Vec::new();
         let mut output_items = Vec::new();
+        let mut message_count = 0usize;
+        let mut reasoning_count = 0usize;
+        let mut unknown_output_count = 0usize;
 
         for output in provider_response.output {
             match output {
                 OpenAiResponseOutput::Message { content: items, .. } => {
+                    message_count += 1;
                     let message = items
                         .into_iter()
                         .map(|item| match item {
@@ -132,9 +136,15 @@ impl OpenAiProvider {
                     output_items.push(ModelInputItem::tool_call(tool_call.clone()));
                     tool_calls.push(tool_call);
                 }
-                OpenAiResponseOutput::Reasoning {} => {}
+                OpenAiResponseOutput::Reasoning {} => {
+                    reasoning_count += 1;
+                }
                 OpenAiResponseOutput::Unknown => {
+                    unknown_output_count += 1;
                     tracing::debug!(
+                        event = "model_response_unknown_output_ignored",
+                        status = "ignored",
+                        provider_kind = "model",
                         provider = "openai",
                         "ignoring unknown OpenAI response output kind"
                     );
@@ -147,6 +157,20 @@ impl OpenAiProvider {
         } else {
             provider_response.id
         };
+        tracing::debug!(
+            event = "model_response_mapped",
+            status = "ok",
+            provider_kind = "model",
+            provider = "openai",
+            message_count,
+            tool_call_count = tool_calls.len(),
+            reasoning_count,
+            unknown_output_count,
+            output_item_count = output_items.len(),
+            content_present = !content.is_empty(),
+            usage_present = provider_response.usage.is_some(),
+            "model response mapped"
+        );
 
         Ok(ModelResponse {
             provider: self.name().to_owned(),
@@ -197,6 +221,15 @@ async fn assemble_openai_sse(stream: &mut SseNetworkStream) -> Result<Value> {
         let value: Value = serde_json::from_str(&event.data).context(JsonSnafu)?;
         match sse_event_type(&event, &value) {
             Some("response.completed") => {
+                tracing::debug!(
+                    event = "model_sse_terminal_event",
+                    status = "ok",
+                    provider_kind = "model",
+                    provider = "openai",
+                    terminal_event = "response.completed",
+                    saw_semantic_event,
+                    "model SSE terminal event observed"
+                );
                 return value.get("response").cloned().ok_or_else(|| {
                     Error::SchemaValidationFailed {
                         message: "openai response.completed missing response".to_owned(),
@@ -204,6 +237,17 @@ async fn assemble_openai_sse(stream: &mut SseNetworkStream) -> Result<Value> {
                 });
             }
             Some("response.failed" | "response.incomplete") => {
+                tracing::debug!(
+                    event = "model_sse_terminal_event",
+                    status = "failed",
+                    provider_kind = "model",
+                    provider = "openai",
+                    terminal_event = ?sse_event_type(&event, &value),
+                    saw_semantic_event,
+                    error_code = "provider_unavailable",
+                    retryable = true,
+                    "model SSE terminal event observed"
+                );
                 return Err(Error::ProviderUnavailable {
                     provider: "openai".to_owned(),
                     message: "SSE stream ended with terminal failure".to_owned(),
@@ -211,6 +255,17 @@ async fn assemble_openai_sse(stream: &mut SseNetworkStream) -> Result<Value> {
                 });
             }
             Some("error") => {
+                tracing::debug!(
+                    event = "model_sse_terminal_event",
+                    status = "failed",
+                    provider_kind = "model",
+                    provider = "openai",
+                    terminal_event = "error",
+                    saw_semantic_event,
+                    error_code = "provider_unavailable",
+                    retryable = true,
+                    "model SSE terminal event observed"
+                );
                 return Err(Error::ProviderUnavailable {
                     provider: "openai".to_owned(),
                     message: "SSE stream returned error event".to_owned(),

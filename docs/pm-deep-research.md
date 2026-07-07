@@ -254,7 +254,7 @@ moeresearch check --config ~/.config/moeresearch/moeresearch.toml
 moeresearch serve --config ~/.config/moeresearch/moeresearch.toml --log-format pretty
 ```
 
-Confirm that the MCP client launches the same `moeresearch` binary and passes the intended config path. Check stderr logs for provider, config, or panic messages.
+Confirm that the MCP client launches the same `moeresearch` binary and passes the intended config path. Check stderr logs for `serve_starting` and `serve_initialized`; these events include safe startup diagnostics such as version, OS/arch, pid/ppid, parent process name when available, log filter source, enabled provider names, network retry settings, and budget summary.
 
 ### Missing provider environment variables
 
@@ -267,6 +267,15 @@ Reduce concurrency or depth. Use a smaller PM DeepResearch tier (`quick` or `sta
 ### `schema_validation_failed: mutated_evidence_provenance`
 
 The aspect agent changed a frozen evidence provenance field. The frozen fields copied from MoeResearch search results (`source_title`, `url`, `provider`, `query`, `snippet`, `summary`, `published_at`, `retrieved_at`) must be byte-equal; preserve returned evidence ids exactly because `deep_research` may namespace them by aspect. When partial results are allowed, MoeResearch may still return preserved evidence with no findings; keep that evidence and treat the failed aspect as a gap. This failure may not be retryable as the same request; if useful, retry with a changed request such as a smaller evidence set or stricter prompt. Avoid copying all search results into the final answer.
+
+For operator debugging, run the server with workflow debug logs and inspect stderr for `output_validation_failed` plus `output_validation_issues`:
+
+```bash
+RUST_LOG=moe_research_workflow=debug \
+  moeresearch serve --config ~/.config/moeresearch/moeresearch.toml --log-format json
+```
+
+Compare `selected_evidence_ids` with `candidate_evidence_ids` when both sides show generated local ids (`ev-<search>-<result>`). If selected ids are redacted, assume the model emitted non-generated or sensitive-looking ids and rerun with stricter instructions to preserve MoeResearch evidence ids exactly. For provenance mutation, inspect the issue message for mismatched field names; normal logs still do not print raw snippets, summaries, URLs, search queries, or model final JSON.
 
 ### WebSearch/WebFetch unavailable
 

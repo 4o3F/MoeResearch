@@ -3,6 +3,7 @@
 pub mod agent_loop;
 pub mod budget;
 pub mod limit;
+mod log_safe;
 pub mod policy;
 pub mod report;
 pub mod research;

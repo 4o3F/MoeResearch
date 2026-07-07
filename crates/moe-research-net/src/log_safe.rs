@@ -35,13 +35,6 @@ impl<'a> SafeText<'a> {
     pub(crate) const fn new(text: &'a str) -> Self {
         Self { text }
     }
-
-    pub(crate) const fn excerpt(self, cap: usize) -> SafeTextExcerpt<'a> {
-        SafeTextExcerpt {
-            text: self.text,
-            cap,
-        }
-    }
 }
 
 impl fmt::Debug for SafeText<'_> {
@@ -53,18 +46,6 @@ impl fmt::Debug for SafeText<'_> {
 impl fmt::Display for SafeText<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&redact_text(self.text))
-    }
-}
-
-pub(crate) struct SafeTextExcerpt<'a> {
-    text: &'a str,
-    cap: usize,
-}
-
-impl fmt::Display for SafeTextExcerpt<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let redacted = redact_text(self.text);
-        f.write_str(&excerpt_for_debug(&redacted, self.cap))
     }
 }
 
@@ -128,7 +109,7 @@ impl<'a> SafeWireBody<'a> {
 
 impl fmt::Display for SafeWireBody<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let redacted = redact_text(self.raw);
+        let redacted = redact_wire_text(self.raw);
         if self.raw.len() <= self.cap {
             return f.write_str(&redacted);
         }
@@ -157,6 +138,78 @@ fn redact_url(raw: &str) -> String {
     url.set_query(None);
     url.set_fragment(None);
     url.to_string()
+}
+
+fn redact_wire_text(text: &str) -> String {
+    let Ok(value) = serde_json::from_str::<Value>(text) else {
+        return REDACTED.to_owned();
+    };
+    redact_wire_json_value(&value).to_string()
+}
+
+fn redact_wire_json_value(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| {
+                    let value = if is_sensitive_name(key) || is_wire_content_name(key) {
+                        Value::String(REDACTED.to_owned())
+                    } else {
+                        redact_wire_json_value(value)
+                    };
+                    (wire_key_for_log(key), value)
+                })
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.iter().map(redact_wire_json_value).collect()),
+        Value::String(_) => Value::String(REDACTED.to_owned()),
+        _ => value.clone(),
+    }
+}
+
+fn is_wire_content_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "arguments"
+            | "body"
+            | "content"
+            | "data"
+            | "error"
+            | "err"
+            | "input"
+            | "message"
+            | "messages"
+            | "output"
+            | "prompt"
+            | "query"
+            | "queries"
+            | "raw_content"
+            | "snippet"
+            | "summary"
+            | "text"
+            | "title"
+            | "url"
+            | "urls"
+    )
+}
+
+fn wire_key_for_log(key: &str) -> String {
+    if is_sensitive_name(key) || !is_safe_wire_key(key) {
+        return "[REDACTED_KEY]".to_owned();
+    }
+    key.to_owned()
+}
+
+fn is_safe_wire_key(key: &str) -> bool {
+    !key.is_empty()
+        && key.len() <= 64
+        && !key.contains("://")
+        && !key.contains('/')
+        && !key.contains('\\')
+        && key.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')
+        })
 }
 
 fn redact_text(text: &str) -> String {
@@ -316,23 +369,4 @@ fn scrub_marker_value_case_insensitive(text: &str, marker: &str) -> String {
 
     output.push_str(remaining);
     output
-}
-
-fn excerpt_for_debug(raw: &str, cap: usize) -> String {
-    let body_bytes = raw.len();
-    if body_bytes <= cap {
-        return raw.to_owned();
-    }
-
-    let mut cut = cap;
-    while cut > 0 && !raw.is_char_boundary(cut) {
-        cut -= 1;
-    }
-
-    format!(
-        "{}… ({} of {} bytes; enable reqwest_client=trace for full body)",
-        &raw[..cut],
-        cut,
-        body_bytes
-    )
 }

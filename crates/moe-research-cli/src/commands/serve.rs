@@ -1,4 +1,7 @@
+use std::env;
+use std::fs;
 use std::path::PathBuf;
+use std::process;
 use std::sync::Arc;
 
 use clap::{Args, ValueEnum};
@@ -38,11 +41,59 @@ pub enum LogFormat {
 }
 
 pub async fn run(args: ServeArgs) -> Result<()> {
-    init_logging(args.log_format)?;
-    let config = load_config(args.config.as_deref())?;
+    let log_format = args.log_format;
+    let config_source = if args.config.is_some() {
+        "explicit"
+    } else {
+        "default"
+    };
+    let config_filename = args
+        .config
+        .as_ref()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
+        .map(ToOwned::to_owned);
+    let (effective_filter, filter_source) = init_logging(log_format)?;
+    let ppid = parent_pid_best_effort();
+    let parent_process_name = ppid.as_deref().and_then(parent_process_name_best_effort);
+    let launcher_hint = parent_process_name.as_deref().unwrap_or("unknown");
+
     tracing::info!(
-        search_providers = config.search.enabled_count(),
-        model_providers = config.model.enabled_count(),
+        event = "serve_starting",
+        status = "starting",
+        binary = "moeresearch",
+        version = env!("CARGO_PKG_VERSION"),
+        os = env::consts::OS,
+        arch = env::consts::ARCH,
+        pid = process::id(),
+        ppid = ?ppid,
+        parent_process_name = ?parent_process_name,
+        launcher_hint,
+        config_source,
+        config_filename = ?config_filename,
+        log_format = ?log_format,
+        rust_log_present = env::var_os("RUST_LOG").is_some(),
+        effective_filter = %effective_filter,
+        filter_source,
+        "moeresearch serve starting"
+    );
+
+    let config = load_config(args.config.as_deref())?;
+    let budget_config = build_workflow_budget(&config.budget);
+    let enabled_model_providers = enabled_model_provider_names(&config);
+    let enabled_search_providers = enabled_search_provider_names(&config);
+    tracing::info!(
+        event = "serve_initialized",
+        status = "ok",
+        model_provider_count = enabled_model_providers.len(),
+        model_providers = ?enabled_model_providers,
+        search_provider_count = enabled_search_providers.len(),
+        search_providers = ?enabled_search_providers,
+        network_timeout_ms = config.network.inactivity_timeout_ms,
+        network_max_retries = config.network.max_retries,
+        network_retry_backoff_ms = config.network.retry_backoff_ms,
+        budget_research = ?budget_config.research,
+        budget_per_agent = ?budget_config.per_agent,
         "moeresearch initialized"
     );
 
@@ -54,35 +105,93 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     )?);
     let model_service = build_model_service(&config, &network)?;
     let search_service = build_search_service(&config, &network)?;
-    let budget_config = build_workflow_budget(&config.budget);
 
     moe_research_mcp::serve_stdio(model_service, search_service, budget_config).await
 }
 
-fn init_logging(format: LogFormat) -> Result<()> {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("moeresearch=info,moe_research=info"));
+fn init_logging(format: LogFormat) -> Result<(String, &'static str)> {
+    let default_filter = "moeresearch=info,moe_research=info";
+    let rust_log = env::var("RUST_LOG").ok();
+    let (filter, effective_filter, filter_source) = match rust_log.as_deref() {
+        Some(value) => match EnvFilter::try_new(value) {
+            Ok(filter) => (filter, value.to_owned(), "env"),
+            Err(_) => (
+                EnvFilter::new(default_filter),
+                default_filter.to_owned(),
+                "default_invalid_env",
+            ),
+        },
+        None => (
+            EnvFilter::new(default_filter),
+            default_filter.to_owned(),
+            "default",
+        ),
+    };
 
     match format {
         LogFormat::Compact => tracing_subscriber::fmt()
             .with_writer(std::io::stderr)
             .with_env_filter(filter)
+            .with_target(true)
+            .with_thread_ids(true)
+            .with_thread_names(true)
             .try_init(),
         LogFormat::Pretty => tracing_subscriber::fmt()
             .pretty()
             .with_writer(std::io::stderr)
             .with_env_filter(filter)
+            .with_target(true)
+            .with_thread_ids(true)
+            .with_thread_names(true)
             .try_init(),
         LogFormat::Json => tracing_subscriber::fmt()
             .json()
             .flatten_event(true)
             .with_writer(std::io::stderr)
             .with_env_filter(filter)
+            .with_target(true)
+            .with_thread_ids(true)
+            .with_thread_names(true)
             .try_init(),
     }
     .map_err(|source| Error::LoggingInit {
         message: source.to_string(),
-    })
+    })?;
+
+    Ok((effective_filter, filter_source))
+}
+
+fn parent_pid_best_effort() -> Option<String> {
+    let stat = fs::read_to_string("/proc/self/stat").ok()?;
+    let after_process_name = stat.rsplit_once(") ")?.1;
+    after_process_name
+        .split_whitespace()
+        .nth(1)
+        .map(ToOwned::to_owned)
+}
+
+fn parent_process_name_best_effort(ppid: &str) -> Option<String> {
+    let name = fs::read_to_string(format!("/proc/{ppid}/comm")).ok()?;
+    let name = name.trim();
+    (!name.is_empty()).then(|| name.to_owned())
+}
+
+fn enabled_model_provider_names(config: &MoeResearchConfig) -> Vec<&str> {
+    config
+        .model
+        .providers
+        .iter()
+        .filter_map(|(name, provider)| provider.enabled.then_some(name.as_str()))
+        .collect()
+}
+
+fn enabled_search_provider_names(config: &MoeResearchConfig) -> Vec<&str> {
+    config
+        .search
+        .providers
+        .iter()
+        .filter_map(|(name, provider)| provider.enabled.then_some(name.as_str()))
+        .collect()
 }
 
 fn build_model_service(
@@ -188,7 +297,7 @@ fn provider_api_key(kind: &str, name: &str, api_key_env: Option<&String>) -> Res
         retryable: false,
     })?;
 
-    std::env::var(api_key_env).map_err(|_| Error::ProviderUnavailable {
+    env::var(api_key_env).map_err(|_| Error::ProviderUnavailable {
         provider: format!("{kind}:{name}"),
         message: format!("environment variable {api_key_env} is not set"),
         retryable: false,

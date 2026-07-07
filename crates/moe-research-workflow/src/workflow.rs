@@ -13,6 +13,7 @@ use uuid::Uuid;
 use crate::agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
 use crate::budget::{BudgetConfig, ResearchBudget};
 use crate::limit::Limit;
+use crate::log_safe::error_message_for_log;
 use crate::report::{
     AspectFailure, AspectReport, AspectResearchResult, Confidence, ConfidenceSummary,
     CoverageSummary, DeepResearchResult, Evidence, OpenQuestion, ResearchBudgetUsage,
@@ -139,6 +140,7 @@ pub async fn deep_research(
             search_calls_used = run.budget_usage.search_calls_used,
             elapsed_ms = run.budget_usage.elapsed_ms,
             error_code = error.code().as_str(),
+            error_message = %error_message_for_log(&error),
             retryable = error.retryable(),
             status = if return_partial { "partial" } else { "failed" },
             "deep research budget check failed"
@@ -169,6 +171,7 @@ pub async fn deep_research(
             run_id = %run_id,
             requested_aspects,
             error_code = failure.error.code().as_str(),
+            error_message = %error_message_for_log(&failure.error),
             retryable = failure.error.retryable(),
             failed_aspects = failure.failed_aspects.len(),
             status = "failed",
@@ -372,6 +375,22 @@ fn record_aspect_result(
         Ok(result) => record_aspect_success(run, result),
         Err(mut failure) => {
             let aspect_error = aspect_failure(aspect_id, &failure.error);
+            let partial_evidence_count = failure
+                .partial_output
+                .as_ref()
+                .map_or(0, |output| output.result.evidence.len());
+            let preserve_partial_evidence = allow_partial_results && partial_evidence_count > 0;
+            tracing::warn!(
+                event = "aspect_failed",
+                status = "failed",
+                aspect_id,
+                error_code = failure.error.code().as_str(),
+                error_message = %error_message_for_log(&failure.error),
+                retryable = failure.error.retryable(),
+                partial_evidence_count,
+                preserve_partial_evidence,
+                "aspect failed"
+            );
             if allow_partial_results && let Some(mut output) = failure.partial_output.take() {
                 namespace_aspect_evidence(&mut output.result);
                 for evidence in &output.result.evidence {

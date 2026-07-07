@@ -495,7 +495,7 @@ async fn wire_trace_disabled_emits_no_body_events() {
 async fn wire_trace_enabled_emits_paired_outbound_and_inbound() {
     let server = MockServer::start(vec![CannedResponse::new(
         200,
-        r#"{"ok":true,"api_key":"sk-response-secret"}"#.to_owned(),
+        r#"{"ok":true,"https://source.example/path?query=leak":"body text","api_key":"sk-response-secret"}"#.to_owned(),
     )])
     .await;
 
@@ -504,6 +504,7 @@ async fn wire_trace_enabled_emits_paired_outbound_and_inbound() {
     let mut request = request_to(server.url("/responses"));
     request.body = Some(serde_json::json!({
         "input": "hello",
+        "https://source.example/path?query=leak": "body text",
         "api_key": "sk-request-secret",
     }));
     let _ = client.send_json(request).await.expect("request succeeds");
@@ -541,6 +542,14 @@ async fn wire_trace_enabled_emits_paired_outbound_and_inbound() {
         !outbound_body.contains("sk-request-secret"),
         "outbound body leaked request secret: `{outbound_body}`"
     );
+    assert!(
+        !outbound_body.contains("hello"),
+        "outbound body leaked model input: `{outbound_body}`"
+    );
+    assert!(
+        !outbound_body.contains("source.example") && !outbound_body.contains("query=leak"),
+        "outbound body leaked dynamic URL key: `{outbound_body}`"
+    );
 
     // Body field round-trips through the trace formatter as a string;
     // the inbound event must carry the redacted response payload.
@@ -551,6 +560,10 @@ async fn wire_trace_enabled_emits_paired_outbound_and_inbound() {
     );
     assert!(inbound_body.contains("[REDACTED]"));
     assert!(!inbound_body.contains("sk-response-secret"));
+    assert!(
+        !inbound_body.contains("source.example") && !inbound_body.contains("query=leak"),
+        "inbound body leaked dynamic URL key: `{inbound_body}`"
+    );
 }
 
 /// Each `send_once` attempt generates a fresh `correlation_id` and a
@@ -629,7 +642,7 @@ async fn response_body_read_failure_is_retryable() {
     );
     assert_eq!(field_bool(transport_error, "retryable"), Some(true));
     assert!(
-        field_str(transport_error, "error_detail").is_some(),
+        field_str(transport_error, "error_message").is_some(),
         "operator detail should include sanitized reqwest error text"
     );
     assert!(
@@ -981,7 +994,7 @@ async fn sse_stream_delivers_done_as_regular_event() {
         .iter()
         .find(|event| {
             message_of(event) == "inbound SSE event metadata"
-                && field_str(event, "event") == Some("response.created")
+                && field_str(event, "sse_event_type") == Some("response.created")
         })
         .unwrap_or_else(|| {
             panic!(
@@ -1078,8 +1091,7 @@ async fn sse_response_rejects_total_data_overflow() {
 }
 
 /// Non-2xx responses must drop the full body from the debug event and
-/// expose only a short `body_excerpt`. The complete payload remains
-/// available in the trace-level inbound event.
+/// expose only a redacted pointer to trace-level wire metadata.
 #[tokio::test(flavor = "current_thread")]
 async fn wire_non_success_debug_event_uses_excerpt_not_full_body() {
     // Make the body large enough to trigger excerpt truncation.
@@ -1112,7 +1124,7 @@ async fn wire_non_success_debug_event_uses_excerpt_not_full_body() {
     let excerpt = field_str(non_success, "body_excerpt").expect("body_excerpt field");
     assert!(
         excerpt.contains("reqwest_client=trace"),
-        "excerpt must point operators at the trace knob for the full body"
+        "excerpt must point operators at the trace knob for wire metadata"
     );
     assert!(
         excerpt.len() < big_error.len(),
@@ -1121,17 +1133,17 @@ async fn wire_non_success_debug_event_uses_excerpt_not_full_body() {
     assert!(excerpt.contains("[REDACTED]"));
     assert!(!excerpt.contains("sk-error-secret"));
 
-    // The redacted body is still captured at trace level.
+    // The redacted body metadata is still captured at trace level.
     let inbound = events
         .iter()
         .find(|e| field_str(e, "direction") == Some("inbound"))
         .expect("trace-level inbound event present");
     assert_eq!(field_u64(inbound, "status"), Some(400));
     let inbound_body = field_str(inbound, "body").expect("inbound body");
-    assert!(
-        inbound_body.contains("zzzz"),
-        "trace inbound event must carry the upstream body"
-    );
     assert!(inbound_body.contains("[REDACTED]"));
     assert!(!inbound_body.contains("sk-error-secret"));
+    assert!(
+        !inbound_body.contains("zzzz"),
+        "trace inbound event leaked provider body text: `{inbound_body}`"
+    );
 }

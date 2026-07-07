@@ -269,6 +269,10 @@ fn map_grok_response(response: GrokSearchResponse, max_results: usize) -> Vec<Se
     let mut full_text = String::new();
     let mut citations = Vec::new();
     let mut fallback_sources: Vec<GrokSearchSource> = Vec::new();
+    let mut output_message_count = 0usize;
+    let mut citation_annotation_count = 0usize;
+    let mut fallback_source_count = 0usize;
+    let mut duplicate_source_count = 0usize;
 
     for output in response.output {
         match output {
@@ -276,9 +280,13 @@ fn map_grok_response(response: GrokSearchResponse, max_results: usize) -> Vec<Se
                 content,
                 search_sources,
             } => {
+                output_message_count += 1;
+                fallback_source_count = fallback_source_count.saturating_add(search_sources.len());
                 for item in content {
                     match item {
                         GrokSearchContent::OutputText { text, annotations } => {
+                            citation_annotation_count =
+                                citation_annotation_count.saturating_add(annotations.len());
                             if !full_text.is_empty() {
                                 full_text.push('\n');
                             }
@@ -303,6 +311,7 @@ fn map_grok_response(response: GrokSearchResponse, max_results: usize) -> Vec<Se
 
     for citation in citations {
         if !seen_urls.insert(citation.url.clone()) {
+            duplicate_source_count = duplicate_source_count.saturating_add(1);
             continue;
         }
 
@@ -340,6 +349,7 @@ fn map_grok_response(response: GrokSearchResponse, max_results: usize) -> Vec<Se
             break;
         }
         if !seen_urls.insert(source.url.clone()) {
+            duplicate_source_count = duplicate_source_count.saturating_add(1);
             continue;
         }
 
@@ -368,6 +378,21 @@ fn map_grok_response(response: GrokSearchResponse, max_results: usize) -> Vec<Se
             published_at: None,
         });
     }
+
+    tracing::debug!(
+        event = "search_response_mapped",
+        status = "ok",
+        provider_kind = "search",
+        provider = "grok",
+        max_results,
+        output_message_count,
+        citation_annotation_count,
+        fallback_source_count,
+        duplicate_source_count,
+        emitted_result_count = results.len(),
+        capped_by_max_results = results.len() == max_results,
+        "search response mapped"
+    );
 
     results
 }

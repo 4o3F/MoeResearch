@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use moe_research_error::{Error, Result};
 use moe_research_model::{ModelTool, ModelToolCall};
 
+use crate::log_safe::json_error_message_for_log;
 use crate::policy::{SearchCategory, SearchContentLevel, SearchDepth, SearchRecency};
 use crate::research::AspectSpec;
 
@@ -68,9 +69,12 @@ impl ToolPolicyGuard {
         }
 
         let args: SearchToolArgs =
-            serde_json::from_value(call.arguments.clone()).map_err(|_| {
+            serde_json::from_value(call.arguments.clone()).map_err(|error| {
                 Error::ToolPolicyDenied {
-                    message: "search tool arguments are malformed".to_owned(),
+                    message: format!(
+                        "search tool arguments are malformed: {}",
+                        json_error_message_for_log(&error)
+                    ),
                 }
             })?;
 

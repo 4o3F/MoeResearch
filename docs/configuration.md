@@ -211,7 +211,30 @@ Use `RUST_LOG` to adjust log levels:
 RUST_LOG=moe_research=debug moeresearch serve --config moeresearch.toml --log-format pretty
 ```
 
-Logs are written to stderr so stdout remains available for MCP protocol messages.
+Logs are written to stderr so stdout remains available for MCP protocol messages. Startup logs include safe operator diagnostics such as binary version, OS/arch, pid/ppid, parent process name when available, config source, enabled provider names, network retry settings, and budget summary. They do not include provider keys, environment variable values, or full parent command lines.
+
+For schema and workflow debugging, enable debug logs for the workflow and provider layers:
+
+```bash
+RUST_LOG=moe_research_workflow=debug,moe_research_mcp=debug,moe_research_model=debug,moe_research_search=debug \
+  moeresearch serve --config moeresearch.toml --log-format json
+```
+
+For network retry and non-success HTTP diagnostics without normal body logging:
+
+```bash
+RUST_LOG=moe_research_net=debug \
+  moeresearch serve --config moeresearch.toml --log-format json
+```
+
+Trace-level network wire logging emits bounded body metadata with sensitive fields and string content redacted through the existing safe wire formatter. Use it only in controlled debugging sessions:
+
+```bash
+RUST_LOG=moe_research_net=trace \
+  moeresearch serve --config moeresearch.toml --log-format json
+```
+
+When an aspect fails with `schema_validation_failed`, inspect stderr for `output_validation_failed` and `output_validation_issues`. These events include complete validation issue metadata plus selected and candidate evidence id lists when ids match the generated `ev-<search>-<result>` format. Non-generated or sensitive-looking ids are redacted; logs do not include raw model output, search snippets, summaries, URLs, or search queries.
 
 ## 8. Troubleshooting
 

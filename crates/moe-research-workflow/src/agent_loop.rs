@@ -7,6 +7,7 @@ use serde_json::json;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::limit::{DurationLimitMs, Limit};
+use crate::log_safe::{error_message_for_log, safe_model_identifier_for_log};
 use crate::policy::SearchPolicy;
 use crate::report::{
     AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, SourceType,
@@ -234,7 +235,12 @@ impl<'a> AgentRuntime<'a> {
         for tool_call in tool_calls {
             if !seen.insert(tool_call.id.as_str()) {
                 tracing::warn!(
-                    tool_call_id = %tool_call.id,
+                    event = "tool_call_duplicate_rejected",
+                    status = "rejected",
+                    tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
+                    error_code = "tool_policy_denied",
+                    error_message = "model returned duplicate tool call id",
+                    retryable = false,
                     "duplicate tool call id rejected before dispatch"
                 );
                 return Err(Error::ToolPolicyDenied {
@@ -267,6 +273,7 @@ impl<'a> AgentRuntime<'a> {
                 request_id = %self.request.request_id,
                 aspect_id = %self.request.task.aspect.aspect_id,
                 error_code = error.code().as_str(),
+                error_message = %error_message_for_log(&error),
                 retryable = error.retryable(),
                 status = "rejected",
                 "research model budget rejected before model dispatch"
@@ -289,6 +296,7 @@ impl<'a> AgentRuntime<'a> {
                     aspect_id = %self.request.task.aspect.aspect_id,
                     duration_ms = elapsed_ms(model_started.elapsed()),
                     error_code = error.code().as_str(),
+                    error_message = %error_message_for_log(&error),
                     retryable = error.retryable(),
                     status = "failed",
                     "model turn failed"
@@ -304,6 +312,7 @@ impl<'a> AgentRuntime<'a> {
                 request_id = %self.request.request_id,
                 aspect_id = %self.request.task.aspect.aspect_id,
                 error_code = error.code().as_str(),
+                error_message = %error_message_for_log(&error),
                 retryable = error.retryable(),
                 status = "rejected",
                 "research token budget exhausted after model dispatch"
@@ -349,9 +358,10 @@ impl<'a> AgentRuntime<'a> {
                 tracing::warn!(
                     request_id = %self.request.request_id,
                     aspect_id = %self.request.task.aspect.aspect_id,
-                    tool_call_id = %tool_call.id,
-                    tool_name = %tool_call.name,
+                    tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
+                    tool_name = %safe_model_identifier_for_log(&tool_call.name),
                     error_code = error.code().as_str(),
+                    error_message = %error_message_for_log(&error),
                     retryable = error.retryable(),
                     status = "denied",
                     "tool call denied"
@@ -367,14 +377,15 @@ impl<'a> AgentRuntime<'a> {
             tracing::warn!(
                 request_id = %self.request.request_id,
                 aspect_id = %self.request.task.aspect.aspect_id,
-                tool_call_id = %tool_call.id,
-                tool_name = %tool_call.name,
+                tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
+                tool_name = %safe_model_identifier_for_log(&tool_call.name),
                 provider = %search_provider,
                 turns_used = budget_usage.turns_used,
                 tool_calls_used = budget_usage.tool_calls_used,
                 search_calls_used = budget_usage.search_calls_used,
                 elapsed_ms = budget_usage.elapsed_ms,
                 error_code = error.code().as_str(),
+                error_message = %error_message_for_log(&error),
                 retryable = error.retryable(),
                 status = "rejected",
                 "search tool call budget rejected"
@@ -385,10 +396,11 @@ impl<'a> AgentRuntime<'a> {
             tracing::warn!(
                 request_id = %self.request.request_id,
                 aspect_id = %self.request.task.aspect.aspect_id,
-                tool_call_id = %tool_call.id,
-                tool_name = %tool_call.name,
+                tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
+                tool_name = %safe_model_identifier_for_log(&tool_call.name),
                 provider = %search_provider,
                 error_code = error.code().as_str(),
+                error_message = %error_message_for_log(&error),
                 retryable = error.retryable(),
                 status = "rejected",
                 "research search budget rejected before search dispatch"
@@ -402,8 +414,8 @@ impl<'a> AgentRuntime<'a> {
         tracing::debug!(
             request_id = %self.request.request_id,
             aspect_id = %self.request.task.aspect.aspect_id,
-            tool_call_id = %tool_call.id,
-            tool_name = %tool_call.name,
+            tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
+            tool_name = %safe_model_identifier_for_log(&tool_call.name),
             provider = %search_provider,
             max_results,
             status = "accepted",
@@ -424,6 +436,7 @@ impl<'a> AgentRuntime<'a> {
                     provider = %search_provider,
                     duration_ms = elapsed_ms(search_started.elapsed()),
                     error_code = error.code().as_str(),
+                    error_message = %error_message_for_log(&error),
                     retryable = error.retryable(),
                     status = "failed",
                     "search call failed"
@@ -454,8 +467,8 @@ impl<'a> AgentRuntime<'a> {
         tracing::debug!(
             request_id = %self.request.request_id,
             aspect_id = %self.request.task.aspect.aspect_id,
-            tool_call_id = %tool_call.id,
-            tool_name = %tool_call.name,
+            tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
+            tool_name = %safe_model_identifier_for_log(&tool_call.name),
             provider = %response.provider,
             result_count,
             duration_ms = search_duration,
@@ -478,18 +491,37 @@ impl<'a> AgentRuntime<'a> {
     ) -> std::result::Result<AgentRuntimeOutput, Box<AgentRuntimeFailure>> {
         let (result, _) = match validator.validate_content(content, &state.candidate_evidence) {
             Ok(result) => result,
-            Err(error) => return Err(Box::new(self.failure(error, &state, budget))),
+            Err(error) => {
+                let budget_usage = budget.usage();
+                tracing::warn!(
+                    event = "agent_finish_failed",
+                    status = "failed",
+                    request_id = %self.request.request_id,
+                    aspect_id = %self.request.task.aspect.aspect_id,
+                    turns_used = budget_usage.turns_used,
+                    tool_calls_used = budget_usage.tool_calls_used,
+                    search_calls_used = budget_usage.search_calls_used,
+                    elapsed_ms = budget_usage.elapsed_ms,
+                    candidate_evidence_count = state.candidate_evidence.len(),
+                    error_code = error.code().as_str(),
+                    error_message = %error_message_for_log(&error),
+                    retryable = error.retryable(),
+                    "agent finish failed"
+                );
+                return Err(Box::new(self.failure(error, &state, budget)));
+            }
         };
         let budget_usage = budget.usage();
         tracing::info!(
+            event = "agent_runtime_completed",
+            status = "ok",
             request_id = %self.request.request_id,
             aspect_id = %self.request.task.aspect.aspect_id,
             turns_used = budget_usage.turns_used,
             tool_calls_used = budget_usage.tool_calls_used,
             search_calls_used = budget_usage.search_calls_used,
             elapsed_ms = budget_usage.elapsed_ms,
-            evidence_count = state.candidate_evidence.len(),
-            status = "completed",
+            candidate_evidence_count = state.candidate_evidence.len(),
             "agent runtime completed"
         );
 
@@ -705,17 +737,18 @@ impl<'a> AgentRuntime<'a> {
         let budget_usage = budget.usage();
         let partial_output = self.partial_output(&error, state, budget);
         tracing::warn!(
+            event = "agent_runtime_failed",
+            status = "failed",
             request_id = %self.request.request_id,
             aspect_id = %self.request.task.aspect.aspect_id,
             turns_used = budget_usage.turns_used,
             tool_calls_used = budget_usage.tool_calls_used,
             search_calls_used = budget_usage.search_calls_used,
             elapsed_ms = budget_usage.elapsed_ms,
-            evidence_count = state.candidate_evidence.len(),
+            candidate_evidence_count = state.candidate_evidence.len(),
             error_code = error.code().as_str(),
-            error_detail = %error.public_message(),
+            error_message = %error_message_for_log(&error),
             retryable = error.retryable(),
-            status = "failed",
             "agent runtime failed"
         );
         AgentRuntimeFailure {

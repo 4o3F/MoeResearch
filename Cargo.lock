@@ -1108,7 +1108,7 @@ dependencies = [
 
 [[package]]
 name = "moe-research-cli"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "clap",
  "flate2",
@@ -1134,7 +1134,7 @@ dependencies = [
 
 [[package]]
 name = "moe-research-config"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "moe-research-error",
  "reqwest",
@@ -1146,7 +1146,7 @@ dependencies = [
 
 [[package]]
 name = "moe-research-error"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "serde_json",
  "snafu",
@@ -1155,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "moe-research-mcp"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "moe-research-error",
  "moe-research-model",
@@ -1169,7 +1169,7 @@ dependencies = [
 
 [[package]]
 name = "moe-research-model"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "async-trait",
  "moe-research-error",
@@ -1183,7 +1183,7 @@ dependencies = [
 
 [[package]]
 name = "moe-research-net"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "async-trait",
  "eventsource-stream",
@@ -1200,7 +1200,7 @@ dependencies = [
 
 [[package]]
 name = "moe-research-search"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "async-trait",
  "moe-research-error",
@@ -1209,11 +1209,12 @@ dependencies = [
  "serde",
  "serde_json",
  "snafu",
+ "tracing",
 ]
 
 [[package]]
 name = "moe-research-tests"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "async-trait",
  "flate2",
@@ -1238,7 +1239,7 @@ dependencies = [
 
 [[package]]
 name = "moe-research-workflow"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "futures",
  "moe-research-error",

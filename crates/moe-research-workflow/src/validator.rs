@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use moe_research_error::{Error, Result};
 
+use crate::log_safe::{json_error_message_for_log, safe_evidence_id_for_log};
 use crate::policy::{EvidencePolicy, OutputPolicy};
 use crate::report::{
     AspectReport, AspectResearchResult, Evidence, ValidationIssue, ValidationStatus,
@@ -32,11 +33,28 @@ impl<'a> OutputValidator<'a> {
         content: &str,
         candidate_evidence: &[Evidence],
     ) -> Result<(AspectResearchResult, ValidationStatus)> {
-        let result = serde_json::from_str::<AspectResearchResult>(content).map_err(|_| {
-            Error::SchemaValidationFailed {
-                message: "final output must be valid AspectResearchResult JSON".to_owned(),
+        let result = match serde_json::from_str::<AspectResearchResult>(content) {
+            Ok(result) => result,
+            Err(error) => {
+                tracing::warn!(
+                    event = "output_validation_failed",
+                    status = "failed",
+                    aspect_id = %self.aspect.aspect_id,
+                    validation_phase = "json_parse",
+                    content_bytes = content.len(),
+                    json_error_class = ?error.classify(),
+                    json_error_line = error.line(),
+                    json_error_column = error.column(),
+                    json_error_message = %json_error_message_for_log(&error),
+                    error_code = "schema_validation_failed",
+                    retryable = false,
+                    "final output JSON parsing failed"
+                );
+                return Err(Error::SchemaValidationFailed {
+                    message: "final output must be valid AspectResearchResult JSON".to_owned(),
+                });
             }
-        })?;
+        };
 
         let mut issues = self.validate_report(&result.aspect_report, &result.evidence);
         issues.extend(validate_selected_evidence(
@@ -48,6 +66,37 @@ impl<'a> OutputValidator<'a> {
         if issues.is_empty() {
             return Ok((result, ValidationStatus { ok: true, issues }));
         }
+
+        let selected_evidence_ids = evidence_ids_for_log(&result.evidence);
+        let candidate_evidence_ids = evidence_ids_for_log(candidate_evidence);
+        let validation_issues = issues
+            .iter()
+            .map(|issue| (&issue.code, issue.path.as_deref(), &issue.message))
+            .collect::<Vec<_>>();
+        let first_issue = &issues[0];
+        tracing::warn!(
+            event = "output_validation_failed",
+            status = "failed",
+            aspect_id = %self.aspect.aspect_id,
+            issue_count = issues.len(),
+            selected_evidence_count = result.evidence.len(),
+            candidate_evidence_count = candidate_evidence.len(),
+            selected_evidence_ids = ?selected_evidence_ids,
+            candidate_evidence_ids = ?candidate_evidence_ids,
+            first_issue_code = %first_issue.code,
+            first_issue_path = first_issue.path.as_deref(),
+            first_issue_message = %first_issue.message,
+            error_code = "schema_validation_failed",
+            retryable = false,
+            "aspect output validation failed"
+        );
+        tracing::debug!(
+            event = "output_validation_issues",
+            status = "failed",
+            aspect_id = %self.aspect.aspect_id,
+            validation_issues = ?validation_issues,
+            "aspect output validation issue details"
+        );
 
         // Surface the first issue's code, the path it occurred at, and the
         // human-readable message. Including the path means a
@@ -337,6 +386,13 @@ fn provenance_mismatch_fields(selected: &Evidence, candidate: &Evidence) -> Vec<
         fields.push("retrieved_at");
     }
     fields
+}
+
+fn evidence_ids_for_log(evidence: &[Evidence]) -> Vec<String> {
+    evidence
+        .iter()
+        .map(|evidence| safe_evidence_id_for_log(&evidence.id))
+        .collect()
 }
 
 pub fn validate_output(

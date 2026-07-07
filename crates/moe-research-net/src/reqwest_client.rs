@@ -22,12 +22,6 @@ use uuid::Uuid;
 /// `original_bytes` count plus a UTF-8-safe `head` prefix.
 pub(crate) const MAX_WIRE_BODY_BYTES: usize = 64 * 1024;
 
-/// Maximum byte length captured in a non-2xx debug `body_excerpt` field.
-///
-/// Debug-level events are intended for high-level error signal only; the
-/// redacted provider body still appears in the trace-level wire event
-/// when the operator opts in.
-const MAX_DEBUG_EXCERPT_BYTES: usize = 256;
 const MAX_SSE_EVENTS: usize = usize::MAX / 2;
 const MAX_SSE_DATA_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SSE_TOTAL_DATA_BYTES: usize = 8 * 1024 * 1024;
@@ -103,12 +97,19 @@ impl ReqwestNetworkClient {
         let path = url.path().to_owned();
         let correlation_id = Uuid::new_v4();
 
+        let header_names = request
+            .headers
+            .iter()
+            .map(|header| header.name.as_str())
+            .collect::<Vec<_>>();
         tracing::debug!(
-            target: "moe_research_net::reqwest_client",
+            event = "outbound_request_sending",
+            status = "starting",
+            provider_kind = "network",
             method = %method,
             host = %host,
             path = %path,
-            headers = ?request.headers,
+            header_names = ?header_names,
             timeout_ms,
             "sending outbound request"
         );
@@ -288,12 +289,14 @@ impl ReqwestNetworkClient {
                 }
             };
         tracing::trace!(
-            target: "moe_research_net::reqwest_client",
+            event = "sse_event_received",
+            status = "streaming",
+            provider_kind = "network",
             correlation_id = %correlation_id,
             attempt,
             host = %host,
             path = %path,
-            event = %first_event.event,
+            sse_event_type = %first_event.event,
             data_bytes = first_event.data.len(),
             "inbound SSE event metadata"
         );
@@ -460,13 +463,22 @@ async fn handle_non_success_response(
         duration_ms,
         &text,
     );
+    let header_names = headers
+        .iter()
+        .map(|header| header.name.as_str())
+        .collect::<Vec<_>>();
     tracing::debug!(
-        target: "moe_research_net::reqwest_client",
-        status,
+        event = "outbound_response_non_success",
+        status = "failed",
+        provider_kind = "network",
+        http_status = status,
         host = %context.host,
         path = %context.path,
-        headers = ?headers,
-        body_excerpt = %SafeText::new(&text).excerpt(MAX_DEBUG_EXCERPT_BYTES),
+        header_names = ?header_names,
+        body_bytes = text.len(),
+        body_excerpt = "[REDACTED]; enable reqwest_client=trace for redacted wire metadata",
+        error_code = "http_status",
+        retryable = is_retryable_status(status),
         "outbound response returned non-success status"
     );
     Err(Error::HttpStatus {
@@ -490,8 +502,10 @@ async fn pump_sse_events<S, E>(
         tokio::select! {
             _ = sender.closed() => {
                 tracing::debug!(
-                    target: "moe_research_net::reqwest_client",
-                    status = context.status,
+                    event = "sse_receiver_dropped",
+                    status = "closed",
+                    provider_kind = "network",
+                    http_status = context.status,
                     host = %context.host,
                     path = %context.path,
                     event_count,
@@ -510,12 +524,14 @@ async fn pump_sse_events<S, E>(
                     }
                 };
                 tracing::trace!(
-                    target: "moe_research_net::reqwest_client",
+                    event = "sse_event_received",
+                    status = "streaming",
+                    provider_kind = "network",
                     correlation_id = %context.correlation_id,
                     attempt = context.attempt,
                     host = %context.host,
                     path = %context.path,
-                    event = %event.event,
+                    sse_event_type = %event.event,
                     data_bytes = event.data.len(),
                     "inbound SSE event metadata"
                 );
@@ -542,8 +558,10 @@ async fn pump_sse_events<S, E>(
     }
 
     tracing::debug!(
-        target: "moe_research_net::reqwest_client",
-        status = context.status,
+        event = "sse_upstream_ended",
+        status = "ok",
+        provider_kind = "network",
+        http_status = context.status,
         host = %context.host,
         path = %context.path,
         event_count,
@@ -674,15 +692,18 @@ fn emit_transport_error_detail(
 ) {
     let error_detail = transport_error_detail(source);
     tracing::warn!(
-        target: "moe_research_net::reqwest_client",
+        event = "outbound_request_transport_error",
+        status = "failed",
+        provider_kind = "network",
         phase = context.phase,
         attempt = context.attempt,
         correlation_id = %context.correlation_id,
         host = %context.host,
         path = %context.path,
         timeout_ms = context.timeout_ms,
+        error_code = error.code().as_str(),
         retryable = error.retryable(),
-        error_detail = %SafeText::new(&error_detail),
+        error_message = %SafeText::new(&error_detail),
         "outbound request transport error"
     );
 }
@@ -716,7 +737,9 @@ fn emit_outbound_wire_trace(
     let body_bytes = body_str.len();
     let truncated = body_bytes > MAX_WIRE_BODY_BYTES;
     tracing::trace!(
-        target: "moe_research_net::reqwest_client",
+        event = "wire_body_recorded",
+        status = "ok",
+        provider_kind = "network",
         direction = "outbound",
         correlation_id = %correlation_id,
         attempt,
@@ -750,7 +773,9 @@ fn emit_inbound_wire_trace(
     let body_bytes = text.len();
     let truncated = body_bytes > MAX_WIRE_BODY_BYTES;
     tracing::trace!(
-        target: "moe_research_net::reqwest_client",
+        event = "wire_body_recorded",
+        status = "ok",
+        provider_kind = "network",
         direction = "inbound",
         correlation_id = %correlation_id,
         attempt,
@@ -795,9 +820,15 @@ impl NetworkClient for ReqwestNetworkClient {
                     }
 
                     tracing::warn!(
-                        target: "moe_research_net::reqwest_client",
+                        event = "outbound_request_retrying",
+                        status = "retrying",
+                        provider_kind = "network",
                         attempt = attempt_u32,
-                        error = %error,
+                        next_attempt = attempt_u32.saturating_add(1),
+                        max_retries = self.max_retries,
+                        backoff_ms = self.retry_backoff_ms,
+                        error_code = error.code().as_str(),
+                        retryable = error.retryable(),
                         "retrying outbound request"
                     );
                     last_error = Some(error);
@@ -826,9 +857,15 @@ impl NetworkClient for ReqwestNetworkClient {
                     }
 
                     tracing::warn!(
-                        target: "moe_research_net::reqwest_client",
+                        event = "outbound_request_retrying",
+                        status = "retrying",
+                        provider_kind = "network",
                         attempt = attempt_u32,
-                        error = %error,
+                        next_attempt = attempt_u32.saturating_add(1),
+                        max_retries = self.max_retries,
+                        backoff_ms = self.retry_backoff_ms,
+                        error_code = error.code().as_str(),
+                        retryable = error.retryable(),
                         "retrying outbound request"
                     );
                     last_error = Some(error);
