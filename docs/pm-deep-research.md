@@ -33,7 +33,7 @@ Rust/MoeResearch owns provider calls, search, budgets, agent loops, schema valid
 The supported release delivery path is a binary install plus CLI-installed skill assets:
 
 1. Install or build the `moeresearch` binary.
-2. Run `moeresearch assets install pm-deep-research` for Claude Code, or use `--target <dir> --layout repo` for a generic asset root.
+2. Run `moeresearch assets install research-skills` for Claude Code, or use `--target <dir> --layout repo` for a generic asset root.
 3. Register the MoeResearch MCP server with your MCP client.
 4. Load the PM DeepResearch skill through your client's skill or instruction mechanism.
 
@@ -127,14 +127,14 @@ MCP protocol messages use stdin/stdout. Logs are written to stderr.
 For Claude Code, inspect the install plan first if desired, then install the user-level skill assets:
 
 ```bash
-moeresearch assets install pm-deep-research --dry-run
-moeresearch assets install pm-deep-research
+moeresearch assets install research-skills --dry-run
+moeresearch assets install research-skills
 ```
 
 This creates the Claude Code discovery layout:
 
 ```text
-~/.claude/skills/pm-deep-research/
+~/.claude/skills/deep-research/
   SKILL.md
   prompts/layer1/pm-deep-research/
   prompts/layer2/pm-deep-research/
@@ -143,7 +143,7 @@ This creates the Claude Code discovery layout:
 For a project-local Claude Code skill:
 
 ```bash
-moeresearch assets install pm-deep-research \
+moeresearch assets install research-skills \
   --client claude-code \
   --scope project
 ```
@@ -153,7 +153,7 @@ Claude Code discovers skills from `~/.claude/skills/<name>/SKILL.md` or `./.clau
 For non-Claude clients, install a repository-style asset root:
 
 ```bash
-moeresearch assets install pm-deep-research \
+moeresearch assets install research-skills \
   --target ~/.config/moeresearch/assets \
   --layout repo
 ```
@@ -286,15 +286,15 @@ Continue with MoeResearch results only when claims can be supported by MoeResear
 For Claude Code, prefer the installer so `SKILL.md` and prompts are placed together:
 
 ```bash
-moeresearch assets install pm-deep-research
+moeresearch assets install research-skills
 ```
 
 Expected user-level layout:
 
 ```text
-~/.claude/skills/pm-deep-research/SKILL.md
-~/.claude/skills/pm-deep-research/prompts/layer1/pm-deep-research/
-~/.claude/skills/pm-deep-research/prompts/layer2/pm-deep-research/
+~/.claude/skills/deep-research/SKILL.md
+~/.claude/skills/deep-research/prompts/layer1/pm-deep-research/
+~/.claude/skills/deep-research/prompts/layer2/pm-deep-research/
 ```
 
 For generic clients, ensure the installed repo-like asset root contains both `skills/pm-deep-research.md` and the sibling `prompts/` tree.
@@ -305,3 +305,14 @@ For generic clients, ensure the installed repo-like asset root contains both `sk
 - It does not make host WebSearch/WebFetch part of MoeResearch provenance.
 - It does not make MCP registration install client-side PM DeepResearch skill assets.
 - It does not replace source verification for high-risk health, fitness, safety, regulatory, or academic claims.
+
+
+## Compatibility asset note
+
+PM DeepResearch is one profile inside the installed MoeResearch research skill assets. The install command keeps the asset slug for the unified research entry:
+
+```bash
+moeresearch assets install research-skills
+```
+
+The same asset also installs Academic DeepResearch prompts, Technical Evaluation prompts, and common evidence modules. Rust/MCP tool schemas remain domain-neutral; profile routing and methodology stay in Skill and prompt Markdown.

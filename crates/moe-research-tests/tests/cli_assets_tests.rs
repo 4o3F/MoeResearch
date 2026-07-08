@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -9,10 +10,34 @@ use flate2::write::GzEncoder;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-const ASSET: &str = "pm-deep-research";
-const SKILL_PATH: &str = "skills/pm-deep-research.md";
-const LAYER1_PATH: &str = "prompts/layer1/pm-deep-research/task-decomposition.md";
-const LAYER2_PATH: &str = "prompts/layer2/pm-deep-research/persona-strategist.md";
+const ASSET: &str = "research-skills";
+const SKILL_PATH: &str = "skills/deep-research.md";
+const PM_SKILL_PATH: &str = "skills/pm-deep-research.md";
+const ACADEMIC_SKILL_PATH: &str = "skills/academic-deep-research.md";
+const TECHNICAL_SKILL_PATH: &str = "skills/technical-evaluation.md";
+const COMMON_PATH: &str = "prompts/layer1/common/evidence-postprocess.md";
+const PM_LAYER1_PATH: &str = "prompts/layer1/pm-deep-research/task-decomposition.md";
+const PM_LAYER2_PATH: &str = "prompts/layer2/pm-deep-research/persona-strategist.md";
+const ACADEMIC_LAYER1_PATH: &str = "prompts/layer1/academic-deep-research/task-decomposition.md";
+const ACADEMIC_LAYER2_PATH: &str =
+    "prompts/layer2/academic-deep-research/persona-literature-reviewer.md";
+const TECHNICAL_LAYER1_PATH: &str = "prompts/layer1/technical-evaluation/task-decomposition.md";
+const TECHNICAL_LAYER2_PATH: &str =
+    "prompts/layer2/technical-evaluation/persona-architecture-analyst.md";
+
+const EXPECTED_FILES: &[&str] = &[
+    SKILL_PATH,
+    PM_SKILL_PATH,
+    ACADEMIC_SKILL_PATH,
+    TECHNICAL_SKILL_PATH,
+    COMMON_PATH,
+    PM_LAYER1_PATH,
+    PM_LAYER2_PATH,
+    ACADEMIC_LAYER1_PATH,
+    ACADEMIC_LAYER2_PATH,
+    TECHNICAL_LAYER1_PATH,
+    TECHNICAL_LAYER2_PATH,
+];
 
 struct TestDir {
     path: PathBuf,
@@ -110,7 +135,7 @@ fn help_exposes_assets_install_options() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(stdout.contains("pm-deep-research"));
+    assert!(stdout.contains("research-skills"));
     assert!(stdout.contains("--client"));
     assert!(stdout.contains("--scope"));
     assert!(stdout.contains("--target"));
@@ -120,26 +145,68 @@ fn help_exposes_assets_install_options() {
 }
 
 #[test]
+fn package_script_manifest_covers_expanded_research_roots() {
+    let output = TestDir::new("package-output");
+    let version = "0.0.0-test";
+
+    let command_output = Command::new("node")
+        .current_dir(workspace())
+        .arg("scripts/package-research-skills-assets.mjs")
+        .args([
+            "--version",
+            version,
+            "--output-dir",
+            output.path().to_str().expect("utf8 output dir"),
+        ])
+        .output()
+        .expect("run package script");
+
+    assert!(
+        command_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&command_output.stderr)
+    );
+
+    let archive_path = output
+        .path()
+        .join(format!("{ASSET}-assets-v{version}.tar.gz"));
+    let manifest_path = output
+        .path()
+        .join(format!("{ASSET}-assets-v{version}.manifest.json"));
+    assert!(archive_path.is_file());
+    assert!(manifest_path.is_file());
+
+    let manifest: Value = serde_json::from_slice(&fs::read(&manifest_path).expect("read manifest"))
+        .expect("parse manifest");
+    assert_eq!(manifest["asset"], ASSET);
+    assert_eq!(
+        manifest["sha256"],
+        sha256_hex(&fs::read(archive_path).expect("read archive"))
+    );
+
+    let paths = manifest["files"]
+        .as_array()
+        .expect("manifest files")
+        .iter()
+        .map(|file| file["path"].as_str().expect("file path").to_owned())
+        .collect::<BTreeSet<_>>();
+    for expected in EXPECTED_FILES {
+        assert!(paths.contains(*expected), "manifest missing {expected}");
+    }
+    for path in &paths {
+        assert!(
+            is_research_asset_path(path),
+            "unexpected packaged path {path}"
+        );
+    }
+}
+
+#[test]
 fn assets_install_repo_layout_preserves_skills_and_prompts() {
     let fixture = AssetFixture::new(|_| {}, None);
     let target = TestDir::new("target");
 
-    let output = moeresearch_command()
-        .args([
-            "assets",
-            "install",
-            "pm-deep-research",
-            "--target",
-            target.path().to_str().expect("utf8 target"),
-            "--layout",
-            "repo",
-            "--version",
-            env!("CARGO_PKG_VERSION"),
-            "--base-url",
-            &fixture.base_url,
-        ])
-        .output()
-        .expect("run assets install");
+    let output = install_repo_layout(&fixture, &target);
 
     assert!(
         output.status.success(),
@@ -151,8 +218,9 @@ fn assets_install_repo_layout_preserves_skills_and_prompts() {
         fs::read_to_string(target.path().join(SKILL_PATH)).expect("read skill"),
         skill_content()
     );
-    assert!(target.path().join(LAYER1_PATH).is_file());
-    assert!(target.path().join(LAYER2_PATH).is_file());
+    for expected in EXPECTED_FILES {
+        assert!(target.path().join(expected).is_file(), "missing {expected}");
+    }
 }
 
 #[test]
@@ -165,7 +233,7 @@ fn assets_install_default_claude_code_layout_rewrites_skill_prompt_paths() {
         .args([
             "assets",
             "install",
-            "pm-deep-research",
+            "research-skills",
             "--version",
             env!("CARGO_PKG_VERSION"),
             "--base-url",
@@ -181,13 +249,29 @@ fn assets_install_default_claude_code_layout_rewrites_skill_prompt_paths() {
     );
     assert!(output.stdout.is_empty());
 
-    let skill_root = home.path().join(".claude/skills/pm-deep-research");
+    let skill_root = home.path().join(".claude/skills/deep-research");
     let installed_skill = fs::read_to_string(skill_root.join("SKILL.md")).expect("read skill");
     assert!(installed_skill.contains("./prompts/layer1/pm-deep-research/task-decomposition.md"));
+    assert!(
+        installed_skill.contains("./prompts/layer1/academic-deep-research/task-decomposition.md")
+    );
     assert!(!installed_skill.contains("../prompts/"));
+    assert!(!skill_root.join(SKILL_PATH).exists());
+    assert!(!skill_root.join(ACADEMIC_SKILL_PATH).exists());
+    assert!(!skill_root.join(TECHNICAL_SKILL_PATH).exists());
     assert!(
         skill_root
-            .join("prompts/layer1/pm-deep-research/task-decomposition.md")
+            .join("prompts/layer1/common/evidence-postprocess.md")
+            .is_file()
+    );
+    assert!(
+        skill_root
+            .join("prompts/layer1/academic-deep-research/task-decomposition.md")
+            .is_file()
+    );
+    assert!(
+        skill_root
+            .join("prompts/layer1/technical-evaluation/task-decomposition.md")
             .is_file()
     );
     assert!(
@@ -207,7 +291,7 @@ fn assets_install_project_scope_uses_current_project_directory() {
         .args([
             "assets",
             "install",
-            "pm-deep-research",
+            "research-skills",
             "--scope",
             "project",
             "--version",
@@ -227,7 +311,7 @@ fn assets_install_project_scope_uses_current_project_directory() {
     assert!(
         project
             .path()
-            .join(".claude/skills/pm-deep-research/SKILL.md")
+            .join(".claude/skills/deep-research/SKILL.md")
             .is_file()
     );
 }
@@ -241,7 +325,7 @@ fn assets_install_dry_run_does_not_write_target_files() {
         .args([
             "assets",
             "install",
-            "pm-deep-research",
+            "research-skills",
             "--target",
             target.path().to_str().expect("utf8 target"),
             "--layout",
@@ -259,7 +343,7 @@ fn assets_install_dry_run_does_not_write_target_files() {
     assert!(output.status.success(), "stderr: {stderr}");
     assert!(output.stdout.is_empty());
     assert!(!target.path().join(SKILL_PATH).exists());
-    assert!(stderr.contains("would install MoeResearch assets"));
+    assert!(stderr.contains("would install MoeResearch research assets"));
 }
 
 #[test]
@@ -371,6 +455,60 @@ fn assets_install_rejects_version_mismatch() {
 }
 
 #[test]
+fn assets_install_rejects_manifest_unrelated_path() {
+    let fixture = AssetFixture::new(
+        |manifest| {
+            manifest["files"][0]["path"] = Value::String("docs/not-research.md".to_owned());
+        },
+        None,
+    );
+    let target = TestDir::new("target");
+
+    let output = install_repo_layout(&fixture, &target);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!target.path().join(SKILL_PATH).exists());
+}
+
+#[test]
+fn assets_install_rejects_manifest_prompt_directory_as_file() {
+    let fixture = AssetFixture::new(
+        |manifest| {
+            manifest["files"][0]["path"] = Value::String("prompts/layer1/common".to_owned());
+        },
+        None,
+    );
+    let target = TestDir::new("target");
+
+    let output = install_repo_layout(&fixture, &target);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!target.path().join(SKILL_PATH).exists());
+}
+
+#[test]
+fn assets_install_requires_manifest_core_skill_file() {
+    let fixture = AssetFixture::new(
+        |manifest| {
+            manifest["files"]
+                .as_array_mut()
+                .expect("files array")
+                .retain(|file| file["path"] != SKILL_PATH);
+        },
+        None,
+    );
+    let target = TestDir::new("target");
+
+    let output = install_repo_layout(&fixture, &target);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!target.path().join(SKILL_PATH).exists());
+}
+
+#[test]
 fn assets_install_preserves_conflicting_files_without_force() {
     let fixture = AssetFixture::new(|_| {}, None);
     let target = TestDir::new("target");
@@ -401,7 +539,7 @@ fn assets_install_force_overwrites_manifest_owned_file_only() {
         .args([
             "assets",
             "install",
-            "pm-deep-research",
+            "research-skills",
             "--target",
             target.path().to_str().expect("utf8 target"),
             "--layout",
@@ -435,7 +573,7 @@ fn install_repo_layout(fixture: &AssetFixture, target: &TestDir) -> std::process
         .args([
             "assets",
             "install",
-            "pm-deep-research",
+            "research-skills",
             "--target",
             target.path().to_str().expect("utf8 target"),
             "--layout",
@@ -469,24 +607,44 @@ fn moeresearch_command() -> Command {
 }
 
 fn fixture_files() -> Vec<FixtureFile> {
-    vec![
-        FixtureFile {
-            path: SKILL_PATH.to_owned(),
-            bytes: skill_content().into_bytes(),
-        },
-        FixtureFile {
-            path: LAYER1_PATH.to_owned(),
-            bytes: b"layer 1 prompt".to_vec(),
-        },
-        FixtureFile {
-            path: LAYER2_PATH.to_owned(),
-            bytes: b"layer 2 prompt".to_vec(),
-        },
-    ]
+    EXPECTED_FILES
+        .iter()
+        .map(|path| FixtureFile {
+            path: (*path).to_owned(),
+            bytes: fixture_content(path),
+        })
+        .collect()
 }
 
 fn skill_content() -> String {
-    "Use ../prompts/layer1/pm-deep-research/task-decomposition.md\n".to_owned()
+    concat!(
+        "Use ../prompts/layer1/pm-deep-research/task-decomposition.md\n",
+        "Use ../prompts/layer1/academic-deep-research/task-decomposition.md\n",
+    )
+    .to_owned()
+}
+
+fn fixture_content(path: &str) -> Vec<u8> {
+    match path {
+        SKILL_PATH => skill_content().into_bytes(),
+        PM_SKILL_PATH => b"pm research reference skill".to_vec(),
+        ACADEMIC_SKILL_PATH => b"academic research reference skill".to_vec(),
+        TECHNICAL_SKILL_PATH => b"technical evaluation reference skill".to_vec(),
+        _ => format!("fixture prompt for {path}").into_bytes(),
+    }
+}
+
+fn is_research_asset_path(path: &str) -> bool {
+    matches!(
+        path,
+        SKILL_PATH | PM_SKILL_PATH | ACADEMIC_SKILL_PATH | TECHNICAL_SKILL_PATH
+    ) || path.starts_with("prompts/layer1/common/")
+        || path.starts_with("prompts/layer1/pm-deep-research/")
+        || path.starts_with("prompts/layer2/pm-deep-research/")
+        || path.starts_with("prompts/layer1/academic-deep-research/")
+        || path.starts_with("prompts/layer2/academic-deep-research/")
+        || path.starts_with("prompts/layer1/technical-evaluation/")
+        || path.starts_with("prompts/layer2/technical-evaluation/")
 }
 
 fn archive_bytes(files: &[FixtureFile], extra_file: Option<&FixtureFile>) -> Vec<u8> {

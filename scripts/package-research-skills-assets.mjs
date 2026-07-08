@@ -4,12 +4,37 @@ import { readdir, readFile, stat, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-const ASSET = 'pm-deep-research';
+const ASSET = 'research-skills';
 const SCHEMA_VERSION = 1;
 const ROOTS = [
+  'skills/deep-research.md',
   'skills/pm-deep-research.md',
+  'skills/academic-deep-research.md',
+  'skills/technical-evaluation.md',
+  'prompts/layer1/common',
   'prompts/layer1/pm-deep-research',
   'prompts/layer2/pm-deep-research',
+  'prompts/layer1/academic-deep-research',
+  'prompts/layer2/academic-deep-research',
+  'prompts/layer1/technical-evaluation',
+  'prompts/layer2/technical-evaluation',
+];
+
+const ALLOWED_FILES = new Set([
+  'skills/deep-research.md',
+  'skills/pm-deep-research.md',
+  'skills/academic-deep-research.md',
+  'skills/technical-evaluation.md',
+]);
+
+const ALLOWED_PREFIXES = [
+  'prompts/layer1/common/',
+  'prompts/layer1/pm-deep-research/',
+  'prompts/layer2/pm-deep-research/',
+  'prompts/layer1/academic-deep-research/',
+  'prompts/layer2/academic-deep-research/',
+  'prompts/layer1/technical-evaluation/',
+  'prompts/layer2/technical-evaluation/',
 ];
 
 const args = parseArgs(process.argv.slice(2));
@@ -129,9 +154,8 @@ function validateFiles(files) {
 }
 
 function validateAssetPath(relativePath) {
-  const isAllowed = relativePath === 'skills/pm-deep-research.md'
-    || relativePath.startsWith('prompts/layer1/pm-deep-research/')
-    || relativePath.startsWith('prompts/layer2/pm-deep-research/');
+  const isAllowed = ALLOWED_FILES.has(relativePath)
+    || ALLOWED_PREFIXES.some((prefix) => relativePath.startsWith(prefix));
   if (!isAllowed) {
     throw new Error(`unexpected asset path: ${relativePath}`);
   }

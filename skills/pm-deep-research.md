@@ -1,6 +1,6 @@
 ---
 name: pm-deep-research
-description: PM DeepResearch — product manager's deep research skill (Layer 1 orchestration) over the MoeResearch MCP core. Covers 4 capabilities (competitive / product-capability / innovation-direction / product-requirements). Produces decision-oriented, evidence-complete reports.
+description: PM DeepResearch profile over the MoeResearch MCP core. Covers competitive, product-capability, innovation-direction, and product-requirements research.
 ---
 
 # PM DeepResearch — Deep Research Skill (4 capabilities)
