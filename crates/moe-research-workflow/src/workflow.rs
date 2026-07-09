@@ -30,7 +30,7 @@ use moe_research_search::SearchService;
 /// Runs one aspect agent.
 ///
 /// `AspectResearchRequest` has no request-level [`ResearchLimits`], so the
-/// standalone tool inherits the operator `budget.research` caps from config.
+/// standalone tool inherits the operator `limits.research` caps from config.
 /// The request task still supplies the per-agent turn/tool/search limits.
 pub async fn aspect_research(
     request: AspectResearchRequest,

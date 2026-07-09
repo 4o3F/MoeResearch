@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::process::Command as ProcessCommand;
+use std::process::Command;
 
 use clap::{Args, Subcommand};
 use moe_research_config::{MoeResearchConfig, load_config};
@@ -100,7 +100,7 @@ pub fn run_register(register_args: McpRegisterArgs) -> Result<()> {
         return Ok(());
     }
 
-    let status = ProcessCommand::new(&register_args.claude_bin)
+    let status = Command::new(&register_args.claude_bin)
         .args(&claude_args)
         .status()
         .map_err(|source| Error::Internal {

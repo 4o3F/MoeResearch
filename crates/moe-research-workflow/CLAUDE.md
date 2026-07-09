@@ -41,7 +41,7 @@
 - `SUPPORTED_SCHEMA_VERSIONS = ["0.2"]`。
 - 当前模型可见工具只有 `search`。
 - Deep research 并发由 normalized `limits.max_concurrent_agents` 控制。
-- 请求 limits 和 operator 配置 budget 在 normalizer 中取更严格值；`Unlimited` 表示该层不加限制，不表示覆盖另一层有限值。
+- 请求 limits 和 operator config limits 在 normalizer 中取更严格值；`Unlimited` 表示该层不加限制，不表示覆盖另一层有限值。
 
 ## 数据模型
 
@@ -55,7 +55,7 @@ v0.2 request 形态：
 关键流程：
 
 1. `AspectResearchRequest` / `DeepResearchRequest` 先经过 normalizer，完成 schema version、ID、provider、policy、limits、prompt 大小等校验。
-2. normalizer 将 request limits 与 operator config budget 取更严格值，生成 `EffectiveResearchPlan` / `EffectiveAspectPlan`。
+2. normalizer 将 request limits 与 operator config limits 取更严格值，生成 `EffectiveResearchPlan` / `EffectiveAspectPlan`。
 3. `AgentRuntime` 只消费 effective aspect plan；`instructions` 作为 system prompt，`AspectPromptInput` 作为 user prompt。
 4. `AspectPromptInput` 只包含 aspect intent、context、可用工具和 evidence/output 要求，不包含 limits、provider allowlist、selected provider 或 execution policy。
 5. 模型如返回 tool call，`ToolPolicyGuard` 校验 tool 名称、允许列表和 args。
@@ -105,7 +105,7 @@ cargo test -p moe-research-tests schema
 
 ## 常见问题 (FAQ)
 
-- 为什么 request limits 和 config budget 都存在？配置是 operator 硬上限，请求只能进一步收紧。
+- 为什么 request limits 和 config limits 都存在？配置是 operator 硬上限，请求只能进一步收紧。
 - 为什么 runtime 仍叫 `AgentBudgetGuard` / `ResearchBudgetGuard`？这是运行时消耗记账语义；LLM-visible request schema 使用 `limits`。
 - 为什么 partial result 有时返回 Ok？当 `allow_partial_results = true` 且已有有价值结果时，deep research 返回 `DeepResearchResult` 并记录 failed aspects。
 - 为什么要 byte-equal evidence provenance？防止模型把搜索工具返回的来源、URL、snippet 等 provenance 字段改写后仍被当作可信证据。

@@ -927,7 +927,7 @@ api_key_env = "OPENAI_API_KEY"
 inactivity_timeout_ms = 120000
 model = "gpt-5.5"
 
-[budget.research]
+[limits.research]
 max_agents = -1
 max_concurrent_agents = -1
 max_total_model_calls = -1
@@ -935,7 +935,7 @@ max_total_search_calls = -1
 total_timeout_ms = -1
 max_tokens = -1
 
-[budget.per_agent]
+[limits.per_agent]
 max_turns = -1
 max_tool_calls = -1
 max_search_calls = -1
@@ -1013,5 +1013,17 @@ timeout_ms = -1
     assert!(
         stderr.contains("moeresearch initialized"),
         "expected startup logs on stderr, got stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("operator_limits_research"),
+        "expected startup logs to include operator_limits_research, got stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("operator_limits_per_agent"),
+        "expected startup logs to include operator_limits_per_agent, got stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("budget_research") && !stderr.contains("budget_per_agent"),
+        "startup logs should not expose legacy budget_* config field names, got stderr: {stderr}"
     );
 }

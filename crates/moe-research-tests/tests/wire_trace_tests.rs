@@ -26,7 +26,7 @@ use moe_research_net::reqwest_client::ReqwestNetworkClient;
 use moe_research_net::{Header, NetworkClient, NetworkRequest};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard, oneshot};
+use tokio::sync::oneshot;
 use tracing_subscriber::layer::SubscriberExt;
 
 // ---------------------------------------------------------------------------
@@ -57,11 +57,11 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedBuffer {
 
 struct BufferWriter(Arc<Mutex<Vec<u8>>>);
 
-static TRACING_CAPTURE_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+static TRACING_CAPTURE_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
 struct TracingCaptureGuard {
     _default: tracing::subscriber::DefaultGuard,
-    _lock: AsyncMutexGuard<'static, ()>,
+    _lock: tokio::sync::MutexGuard<'static, ()>,
 }
 
 impl Write for BufferWriter {
@@ -82,9 +82,9 @@ impl Write for BufferWriter {
 ///
 /// The returned guard keeps the subscriber active until it is dropped;
 /// in single-threaded tests this covers the entire test body.
-async fn lock_tracing_capture() -> AsyncMutexGuard<'static, ()> {
+async fn lock_tracing_capture() -> tokio::sync::MutexGuard<'static, ()> {
     TRACING_CAPTURE_LOCK
-        .get_or_init(|| AsyncMutex::new(()))
+        .get_or_init(|| tokio::sync::Mutex::new(()))
         .lock()
         .await
 }

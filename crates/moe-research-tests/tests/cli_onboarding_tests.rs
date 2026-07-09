@@ -40,7 +40,7 @@ api_key_env = "OPENAI_API_KEY"
 inactivity_timeout_ms = 120000
 model = "gpt-5.5"
 
-[budget.research]
+[limits.research]
 max_agents = -1
 max_concurrent_agents = -1
 max_total_model_calls = -1
@@ -48,7 +48,7 @@ max_total_search_calls = -1
 total_timeout_ms = -1
 max_tokens = -1
 
-[budget.per_agent]
+[limits.per_agent]
 max_turns = -1
 max_tool_calls = -1
 max_search_calls = -1

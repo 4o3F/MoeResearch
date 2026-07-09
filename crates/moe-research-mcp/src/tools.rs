@@ -4,7 +4,7 @@ use moe_research_error::{Error, ErrorCode};
 use moe_research_workflow::agent_loop::AgentRuntimeOutput;
 use moe_research_workflow::{
     AspectFailure, AspectResearchRequest, AspectResearchResult, DeepResearchRequest,
-    DeepResearchResult, aspect_research as run_aspect_research, deep_research as run_deep_research,
+    DeepResearchResult,
 };
 
 use crate::envelope::{ToolEnvelope, ToolError, ToolErrorCode, ToolStatus};
@@ -31,7 +31,7 @@ impl MoeResearchMcpServer {
         );
 
         Json(
-            match run_aspect_research(
+            match moe_research_workflow::aspect_research(
                 request,
                 &self.model_service,
                 &self.search_service,
@@ -105,7 +105,7 @@ impl MoeResearchMcpServer {
         );
 
         Json(
-            match run_deep_research(
+            match moe_research_workflow::deep_research(
                 request,
                 &self.model_service,
                 &self.search_service,

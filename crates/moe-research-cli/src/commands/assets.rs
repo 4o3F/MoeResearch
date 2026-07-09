@@ -713,7 +713,7 @@ fn file_sha256(path: &Path) -> Result<String> {
 }
 
 fn bytes_sha256(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
+    use std::fmt::Write;
 
     let hash = Sha256::digest(bytes);
     hash.iter().fold(String::new(), |mut output, byte| {

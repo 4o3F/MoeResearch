@@ -2,7 +2,7 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command as ProcessCommand, Stdio};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use clap::Args;
@@ -227,7 +227,7 @@ fn check_mcp_smoke(config_path: &Path) -> CheckRow {
         }
     };
 
-    let mut child = match ProcessCommand::new(executable)
+    let mut child = match Command::new(executable)
         .arg("serve")
         .arg("--config")
         .arg(config_path)
