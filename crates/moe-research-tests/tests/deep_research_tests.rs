@@ -280,24 +280,28 @@ async fn research_concurrency_above_configured_limits_is_clamped() {
 }
 
 #[tokio::test]
-async fn rejects_agent_budget_above_configured_limits() {
-    let request = deep_request(2);
+async fn configured_agent_turn_limit_caps_request_runtime() {
+    let mut request = deep_request(2);
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    request.policy.execution.allow_partial_results = false;
+    request.policy.execution.fail_fast = true;
     let services = services(&[]);
     let limits = BudgetConfig {
         research: ResearchLimits::unlimited(),
         per_agent: AgentLimits {
-            max_turns: Limit::limited(5),
+            max_turns: Limit::limited(1),
             ..AgentLimits::unlimited()
         },
     };
 
     let failure = deep_research(request, &services.model, &services.search, &limits)
         .await
-        .expect_err("agent budget exceeds configured limits");
+        .expect_err("configured agent turns should cap request runtime");
 
-    assert!(matches!(failure.error, Error::BudgetExceeded { .. }));
-    assert!(failure.failed_aspects.is_empty());
-    assert_eq!(services.model_calls.load(Ordering::SeqCst), 0);
+    assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.failed_aspects.len(), 1);
+    assert_eq!(failure.failed_aspects[0].error_code, "budget_exceeded");
+    assert_eq!(services.model_calls.load(Ordering::SeqCst), 1);
 }
 
 /// Global search-call budget is enforced pre-dispatch: the second aspect's

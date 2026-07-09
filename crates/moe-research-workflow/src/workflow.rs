@@ -11,21 +11,21 @@ use futures::{StreamExt, stream};
 use uuid::Uuid;
 
 use crate::agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
-use crate::budget::{BudgetConfig, ResearchLimits};
-use crate::limit::Limit;
+use crate::budget::BudgetConfig;
 use crate::log_safe::error_message_for_log;
 use crate::report::{
     AspectFailure, AspectReport, AspectResearchResult, Confidence, ConfidenceSummary,
     CoverageSummary, DeepResearchResult, Evidence, OpenQuestion, ResearchBudgetUsage,
 };
-use crate::research::{AspectResearchRequest, DeepResearchRequest, WorkflowValidationContext};
+use crate::research::{
+    AspectResearchRequest, DeepResearchRequest, EffectiveAspectPlan, EffectiveResearchPlan,
+    SUPPORTED_SCHEMA_VERSIONS, WorkflowValidationContext, effective_research_limits,
+};
 use crate::runtime_budget::ResearchBudgetGuard;
 use crate::tool_policy::SEARCH_TOOL_NAME;
 use moe_research_error::{Error, Result};
 use moe_research_model::ModelService;
 use moe_research_search::SearchService;
-
-const SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["0.2"];
 
 /// Runs one aspect agent.
 ///
@@ -38,17 +38,20 @@ pub async fn aspect_research(
     search_service: &SearchService,
     budget_config: &BudgetConfig,
 ) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
+    let plan = request
+        .normalize_for_execution(&WorkflowValidationContext {
+            budget_config,
+            supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
+            supported_tool_name: SEARCH_TOOL_NAME,
+        })
+        .map_err(|error| AgentRuntimeFailure {
+            error,
+            partial_output: None,
+        })?;
     let research_budget =
         ResearchBudgetGuard::new(effective_research_limits(&budget_config.research, None));
     research_budget.record_agent_started();
-    run_aspect_runtime(
-        request,
-        model_service,
-        search_service,
-        budget_config,
-        research_budget,
-    )
-    .await
+    run_aspect_runtime(plan, model_service, search_service, research_budget).await
 }
 
 /// Runs a Layer 1 deep-research plan.
@@ -60,34 +63,30 @@ pub async fn aspect_research(
 /// `policy.execution.fail_fast` during execution and `allow_partial_results`
 /// when shaping the final result.
 pub async fn deep_research(
-    mut request: DeepResearchRequest,
+    request: DeepResearchRequest,
     model_service: &ModelService,
     search_service: &SearchService,
     budget_config: &BudgetConfig,
 ) -> std::result::Result<DeepResearchResult, Box<DeepResearchFailure>> {
-    let requested_limits = request.limits.clone();
-    let effective_limits =
-        effective_research_limits(&budget_config.research, Some(&requested_limits));
-    if effective_limits != requested_limits {
-        tracing::debug!(
-            request_id = %request.request_id,
-            requested_limits = ?requested_limits,
-            effective_limits = ?effective_limits,
-            "deep research limits constrained by effective limits"
-        );
-    }
-    request.limits = effective_limits.clone();
-    request
-        .validate_for_execution(&WorkflowValidationContext {
+    let plan = request
+        .normalize_for_execution(&WorkflowValidationContext {
             budget_config,
             supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
             supported_tool_name: SEARCH_TOOL_NAME,
         })
         .map_err(DeepResearchFailure::top_level)?;
+    if plan.limits != request.limits {
+        tracing::debug!(
+            request_id = %request.request_id,
+            requested_limits = ?request.limits,
+            effective_limits = ?plan.limits,
+            "deep research limits constrained by effective limits"
+        );
+    }
 
     let run_id = Uuid::new_v4().to_string();
-    let request_id = request.request_id.clone();
-    let requested_aspects = request.task.aspects.len();
+    let request_id = plan.request_id.clone();
+    let requested_aspects = plan.task.aspects.len();
     tracing::info!(
         request_id = %request_id,
         run_id = %run_id,
@@ -95,12 +94,11 @@ pub async fn deep_research(
         "deep research started"
     );
 
-    let research_budget = ResearchBudgetGuard::new(effective_limits.clone());
+    let research_budget = ResearchBudgetGuard::new(plan.limits.clone());
     let mut run = execute_aspects(
-        &request,
+        &plan,
         model_service,
         search_service,
-        budget_config,
         research_budget.clone(),
     )
     .await;
@@ -109,15 +107,15 @@ pub async fn deep_research(
         Err(error) => {
             return Err(DeepResearchFailure::with_aspects(
                 error,
-                order_failures_by_request(&request, run.failures),
+                order_failures_by_request(&plan, run.failures),
             ));
         }
     };
-    if let Err(error) = effective_limits.ensure_usage_within(&run.budget_usage) {
+    if let Err(error) = plan.limits.ensure_usage_within(&run.budget_usage) {
         let failures_before = run.failures.len();
         let mut accounted = run.completed.iter().cloned().collect::<BTreeSet<_>>();
         accounted.extend(run.failures.iter().map(|failure| failure.aspect_id.clone()));
-        for aspect in &request.task.aspects {
+        for aspect in &plan.task.aspects {
             let aspect_id = &aspect.id;
             if accounted.insert(aspect_id.clone()) {
                 run.failures.push(aspect_failure(aspect_id, &error));
@@ -125,7 +123,7 @@ pub async fn deep_research(
         }
         let terminal_failures_added = run.failures.len() - failures_before;
         let has_partial_payload = !run.completed.is_empty() || !run.evidence_by_id.is_empty();
-        let return_partial = request.policy.execution.allow_partial_results
+        let return_partial = plan.policy.execution.allow_partial_results
             && has_partial_payload
             && (!run.failures.is_empty() || terminal_failures_added > 0);
         tracing::warn!(
@@ -148,12 +146,12 @@ pub async fn deep_research(
         if !return_partial {
             return Err(DeepResearchFailure::with_aspects(
                 error,
-                order_failures_by_request(&request, run.failures),
+                order_failures_by_request(&plan, run.failures),
             ));
         }
     }
 
-    let result = finalize_deep_result(&request, run, run_id.clone());
+    let result = finalize_deep_result(&plan, run, run_id.clone());
     match &result {
         Ok(result) => tracing::info!(
             request_id = %request_id,
@@ -231,10 +229,9 @@ impl DeepResearchRun {
 /// concurrency cap controls scheduling, while the shared `ResearchBudgetGuard`
 /// reserves global model/search/token capacity before provider dispatch.
 async fn execute_aspects(
-    request: &DeepResearchRequest,
+    request: &EffectiveResearchPlan,
     model_service: &ModelService,
     search_service: &SearchService,
-    budget_config: &BudgetConfig,
     research_budget: Arc<ResearchBudgetGuard>,
 ) -> DeepResearchRun {
     let mut run = DeepResearchRun::new();
@@ -247,7 +244,6 @@ async fn execute_aspects(
                 aspect_request,
                 model_service,
                 search_service,
-                budget_config,
                 research_budget,
             )
             .await;
@@ -277,82 +273,23 @@ async fn execute_aspects(
 }
 
 async fn run_aspect_runtime(
-    request: AspectResearchRequest,
+    request: EffectiveAspectPlan,
     model_service: &ModelService,
     search_service: &SearchService,
-    budget_config: &BudgetConfig,
     research_budget: Arc<ResearchBudgetGuard>,
 ) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
-    request
-        .validate_for_execution(&WorkflowValidationContext {
-            budget_config,
-            supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
-            supported_tool_name: SEARCH_TOOL_NAME,
-        })
-        .map_err(|error| AgentRuntimeFailure {
-            error,
-            partial_output: None,
-        })?;
     AgentRuntime::new(model_service, search_service, &request, research_budget)
         .run()
         .await
 }
 
-/// Merges operator config and optional Layer 1 request limits.
-///
-/// Each field chooses the stricter limit. `Unlimited` means the corresponding
-/// layer does not constrain that dimension, so a finite limit from the other
-/// layer wins. If both layers are unlimited, the effective field remains
-/// unlimited; no hidden hard cap is introduced here.
-fn effective_research_limits(
-    configured: &ResearchLimits,
-    requested: Option<&ResearchLimits>,
-) -> ResearchLimits {
-    let Some(requested) = requested else {
-        return configured.clone();
-    };
-
-    ResearchLimits {
-        max_agents: stricter_limit(configured.max_agents, requested.max_agents),
-        max_concurrent_agents: stricter_limit(
-            configured.max_concurrent_agents,
-            requested.max_concurrent_agents,
-        ),
-        max_total_model_calls: stricter_limit(
-            configured.max_total_model_calls,
-            requested.max_total_model_calls,
-        ),
-        max_total_search_calls: stricter_limit(
-            configured.max_total_search_calls,
-            requested.max_total_search_calls,
-        ),
-        total_timeout_ms: stricter_limit(configured.total_timeout_ms, requested.total_timeout_ms),
-        max_tokens: stricter_limit(configured.max_tokens, requested.max_tokens),
-    }
-}
-
-fn stricter_limit<T>(configured: Limit<T>, requested: Limit<T>) -> Limit<T>
-where
-    T: Copy + Ord,
-{
-    match (configured, requested) {
-        (Limit::Unlimited, Limit::Unlimited) => Limit::Unlimited,
-        (Limit::Unlimited, Limit::Limited(value)) | (Limit::Limited(value), Limit::Unlimited) => {
-            Limit::Limited(value)
-        }
-        (Limit::Limited(configured), Limit::Limited(requested)) => {
-            Limit::Limited(configured.min(requested))
-        }
-    }
-}
-
-fn aspect_requests(request: &DeepResearchRequest) -> Vec<AspectResearchRequest> {
+fn aspect_requests(request: &EffectiveResearchPlan) -> Vec<EffectiveAspectPlan> {
     request
         .task
         .aspects
         .iter()
         .cloned()
-        .map(|task| AspectResearchRequest {
+        .map(|task| EffectiveAspectPlan {
             schema_version: request.schema_version.clone(),
             request_id: request.request_id.clone(),
             task,
@@ -441,7 +378,7 @@ fn namespace_aspect_evidence(result: &mut AspectResearchResult) {
 /// `request` is borrowed so the partial-result decision can read the policy
 /// without taking ownership of the deep-research request.
 fn finalize_deep_result(
-    request: &DeepResearchRequest,
+    request: &EffectiveResearchPlan,
     run: DeepResearchRun,
     run_id: String,
 ) -> std::result::Result<DeepResearchResult, Box<DeepResearchFailure>> {
@@ -475,7 +412,7 @@ fn finalize_deep_result(
 /// coverage summary; `run` is consumed because the aggregated reports and
 /// evidence are moved into the result.
 fn deep_result(
-    request: &DeepResearchRequest,
+    request: &EffectiveResearchPlan,
     run: DeepResearchRun,
     run_id: String,
 ) -> DeepResearchResult {
@@ -501,7 +438,7 @@ fn deep_result(
 }
 
 fn order_failures_by_request(
-    request: &DeepResearchRequest,
+    request: &EffectiveResearchPlan,
     failures: Vec<AspectFailure>,
 ) -> Vec<AspectFailure> {
     let mut by_aspect_id = failures

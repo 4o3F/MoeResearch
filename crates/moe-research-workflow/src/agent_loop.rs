@@ -13,7 +13,7 @@ use crate::report::{
     AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, SourceType,
     TokenUsage,
 };
-use crate::research::{ASPECT_PROMPT_MAX_BYTES, AspectResearchRequest};
+use crate::research::{ASPECT_PROMPT_MAX_BYTES, EffectiveAspectPlan};
 use crate::runtime_budget::{AgentBudgetGuard, ResearchBudgetGuard};
 use crate::tool_policy::{SearchToolArgs, ToolPolicyGuard};
 use crate::validator::OutputValidator;
@@ -26,10 +26,10 @@ use moe_research_model::{
 use moe_research_search::SearchService;
 use moe_research_search::{SearchRequest, SearchResponse, SearchResult};
 
-pub struct AgentRuntime<'a> {
+pub(crate) struct AgentRuntime<'a> {
     model_service: &'a ModelService,
     search_service: &'a SearchService,
-    request: &'a AspectResearchRequest,
+    request: &'a EffectiveAspectPlan,
     research_budget: Arc<ResearchBudgetGuard>,
 }
 
@@ -110,10 +110,10 @@ impl RuntimeState {
 
 impl<'a> AgentRuntime<'a> {
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         model_service: &'a ModelService,
         search_service: &'a SearchService,
-        request: &'a AspectResearchRequest,
+        request: &'a EffectiveAspectPlan,
         research_budget: Arc<ResearchBudgetGuard>,
     ) -> Self {
         Self {
@@ -124,7 +124,7 @@ impl<'a> AgentRuntime<'a> {
         }
     }
 
-    pub async fn run(&self) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
+    pub(crate) async fn run(&self) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
         self.validate_inline_prompt()
             .map_err(Self::untraced_failure)?;
         let effective_budget = self.effective_budget();
@@ -190,10 +190,9 @@ impl<'a> AgentRuntime<'a> {
 
     /// Re-checks the inline prompt invariants before the agent loop starts.
     ///
-    /// `validate_for_execution` enforces the same invariants at the workflow
-    /// boundary, but `AgentRuntime` is a public type and is exercised
-    /// directly by tests, so this method guards the entrypoint that callers
-    /// reach without passing through the workflow validator. The check is
+    /// The request normalizer enforces the same invariants at the workflow
+    /// boundary. This method keeps the runtime entrypoint defensive because
+    /// crate-internal callers can still construct effective plans. The check is
     /// O(1) for the empty case and O(n) only on the length comparison.
     ///
     /// # Errors
@@ -545,7 +544,14 @@ impl<'a> AgentRuntime<'a> {
     }
 
     fn user_prompt(&self) -> String {
-        match serde_json::to_string_pretty(self.request) {
+        let request = json!({
+            "schema_version": &self.request.schema_version,
+            "request_id": &self.request.request_id,
+            "task": &self.request.task,
+            "policy": &self.request.policy,
+            "context": &self.request.context,
+        });
+        match serde_json::to_string_pretty(&request) {
             Ok(request) => request,
             Err(error) => json!({ "serialization_error": error.to_string() }).to_string(),
         }

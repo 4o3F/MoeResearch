@@ -12,7 +12,7 @@ pub mod tool_policy;
 pub mod validator;
 pub mod workflow;
 
-pub use agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
+pub use agent_loop::{AgentRuntimeFailure, AgentRuntimeOutput};
 pub use budget::{AgentLimits, BudgetConfig, ResearchLimits};
 pub use limit::{CountLimit, DurationLimitMs, Limit, TokenLimit};
 pub use policy::{
