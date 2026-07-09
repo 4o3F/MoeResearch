@@ -13,11 +13,42 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use url::Url;
 
-const ASSET_PM_DEEP_RESEARCH: &str = "pm-deep-research";
-const CLAUDE_SKILL_NAME: &str = "pm-deep-research";
+const ASSET_RESEARCH_SKILLS: &str = "research-skills";
+const CLAUDE_SKILL_NAME: &str = "deep-research";
 const DEFAULT_REPOSITORY: &str = "https://github.com/4o3F/MoeResearch";
 const MANIFEST_SCHEMA_VERSION: u32 = 1;
-const SKILL_SOURCE_PATH: &str = "skills/pm-deep-research.md";
+const SKILL_SOURCE_PATH: &str = "skills/deep-research.md";
+
+const ALLOWED_ASSET_FILES: &[&str] = &[
+    "skills/deep-research.md",
+    "skills/pm-deep-research.md",
+    "skills/academic-deep-research.md",
+    "skills/technical-evaluation.md",
+];
+
+const ALLOWED_ASSET_PREFIXES: &[&str] = &[
+    "prompts/layer1/common/",
+    "prompts/layer1/pm-deep-research/",
+    "prompts/layer2/pm-deep-research/",
+    "prompts/layer1/academic-deep-research/",
+    "prompts/layer2/academic-deep-research/",
+    "prompts/layer1/technical-evaluation/",
+    "prompts/layer2/technical-evaluation/",
+];
+
+const ALLOWED_ASSET_DIRS: &[&str] = &[
+    "skills",
+    "prompts",
+    "prompts/layer1",
+    "prompts/layer2",
+    "prompts/layer1/common",
+    "prompts/layer1/pm-deep-research",
+    "prompts/layer2/pm-deep-research",
+    "prompts/layer1/academic-deep-research",
+    "prompts/layer2/academic-deep-research",
+    "prompts/layer1/technical-evaluation",
+    "prompts/layer2/technical-evaluation",
+];
 
 #[derive(Debug, Args)]
 pub struct AssetsArgs {
@@ -34,7 +65,7 @@ pub enum AssetsCommand {
 #[derive(Clone, Copy, Debug, ValueEnum)]
 #[clap(rename_all = "kebab-case")]
 pub enum AssetName {
-    PmDeepResearch,
+    ResearchSkills,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -168,7 +199,7 @@ async fn install(args: InstallArgs) -> Result<()> {
             target = %target.root.display(),
             file_count = planned_files.len(),
             conflict_count = conflicts.len(),
-            "would install MoeResearch assets"
+            "would install MoeResearch research assets"
         );
         return Ok(());
     }
@@ -181,7 +212,7 @@ async fn install(args: InstallArgs) -> Result<()> {
         layout = ?target.layout,
         target = %target.root.display(),
         file_count = planned_files.len(),
-        "installed MoeResearch assets"
+        "installed MoeResearch research assets"
     );
     Ok(())
 }
@@ -252,7 +283,7 @@ fn home_dir() -> Result<PathBuf> {
 
 fn asset_slug(asset: AssetName) -> &'static str {
     match asset {
-        AssetName::PmDeepResearch => ASSET_PM_DEEP_RESEARCH,
+        AssetName::ResearchSkills => ASSET_RESEARCH_SKILLS,
     }
 }
 
@@ -335,6 +366,15 @@ fn parse_manifest(
             message: "asset manifest must list files".to_owned(),
         });
     }
+    if !manifest
+        .files
+        .iter()
+        .any(|file| file.path == SKILL_SOURCE_PATH)
+    {
+        return Err(Error::InvalidInput {
+            message: format!("asset manifest must include {SKILL_SOURCE_PATH}"),
+        });
+    }
     validate_sha256_hex(&manifest.sha256, "archive sha256")?;
 
     let mut seen = BTreeSet::new();
@@ -381,10 +421,14 @@ fn validate_safe_relative_path(path: &Path) -> Result<()> {
 }
 
 fn validate_owned_asset_file_path(path: &Path) -> Result<()> {
-    if path == Path::new(SKILL_SOURCE_PATH)
-        || path.starts_with("prompts/layer1/pm-deep-research")
-        || path.starts_with("prompts/layer2/pm-deep-research")
-    {
+    let allowed_file = ALLOWED_ASSET_FILES
+        .iter()
+        .any(|allowed| path == Path::new(allowed));
+    let allowed_prompt = ALLOWED_ASSET_PREFIXES
+        .iter()
+        .any(|prefix| path_has_child_under(path, Path::new(prefix)));
+
+    if allowed_file || allowed_prompt {
         return Ok(());
     }
 
@@ -394,12 +438,9 @@ fn validate_owned_asset_file_path(path: &Path) -> Result<()> {
 }
 
 fn validate_allowed_asset_dir_path(path: &Path) -> Result<()> {
-    if path == Path::new("skills")
-        || path == Path::new("prompts")
-        || path == Path::new("prompts/layer1")
-        || path == Path::new("prompts/layer2")
-        || path == Path::new("prompts/layer1/pm-deep-research")
-        || path == Path::new("prompts/layer2/pm-deep-research")
+    if ALLOWED_ASSET_DIRS
+        .iter()
+        .any(|allowed| path == Path::new(allowed))
     {
         return Ok(());
     }
@@ -407,6 +448,11 @@ fn validate_allowed_asset_dir_path(path: &Path) -> Result<()> {
     Err(Error::InvalidInput {
         message: format!("unexpected asset directory {}", path.display()),
     })
+}
+
+fn path_has_child_under(path: &Path, directory: &Path) -> bool {
+    path.strip_prefix(directory)
+        .is_ok_and(|remainder| remainder.components().next().is_some())
 }
 
 fn validate_sha256_hex(value: &str, label: &str) -> Result<()> {
@@ -513,12 +559,13 @@ fn plan_install(
         let source_path = PathBuf::from(&file.path);
         let staged_path = stage.join(&source_path);
         let bytes = fs::read(&staged_path).map_err(io_error("read staged asset file"))?;
-        let (destination_path, bytes) = map_install_file(&source_path, bytes, target)?;
-        planned.push(PlannedFile {
-            source_path,
-            destination_path,
-            bytes,
-        });
+        if let Some((destination_path, bytes)) = map_install_file(&source_path, bytes, target)? {
+            planned.push(PlannedFile {
+                source_path,
+                destination_path,
+                bytes,
+            });
+        }
     }
     Ok(planned)
 }
@@ -527,16 +574,20 @@ fn map_install_file(
     source_path: &Path,
     bytes: Vec<u8>,
     target: &InstallTarget,
-) -> Result<(PathBuf, Vec<u8>)> {
+) -> Result<Option<(PathBuf, Vec<u8>)>> {
     match target.layout {
-        InstallLayout::Repo => Ok((target.root.join(source_path), bytes)),
+        InstallLayout::Repo => Ok(Some((target.root.join(source_path), bytes))),
         InstallLayout::ClaudeCode => {
             if source_path == Path::new(SKILL_SOURCE_PATH) {
                 let content = String::from_utf8(bytes).map_err(|source| Error::InvalidInput {
-                    message: format!("PM DeepResearch skill is not valid UTF-8: {source}"),
+                    message: format!("MoeResearch research skill is not valid UTF-8: {source}"),
                 })?;
                 let content = content.replace("../prompts/", "./prompts/");
-                return Ok((target.root.join("SKILL.md"), content.into_bytes()));
+                return Ok(Some((target.root.join("SKILL.md"), content.into_bytes())));
+            }
+
+            if source_path.starts_with("skills") {
+                return Ok(None);
             }
 
             let prompt_path =
@@ -545,7 +596,7 @@ fn map_install_file(
                     .map_err(|_| Error::InvalidInput {
                         message: format!("unexpected Claude Code asset {}", source_path.display()),
                     })?;
-            Ok((target.root.join("prompts").join(prompt_path), bytes))
+            Ok(Some((target.root.join("prompts").join(prompt_path), bytes)))
         }
     }
 }

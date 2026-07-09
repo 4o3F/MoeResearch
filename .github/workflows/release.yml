@@ -267,7 +267,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "moe-research-cli").version')"
-          node scripts/package-pm-deep-research-assets.mjs \
+          node scripts/package-research-skills-assets.mjs \
             --version "$VERSION" \
             --commit "$GITHUB_SHA" \
             --output-dir artifacts
@@ -275,17 +275,12 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
-      - name: Create GitHub Release
-        env:
-          PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
-          ANNOUNCEMENT_TITLE: "${{ fromJson(steps.host.outputs.manifest).announcement_title }}"
-          ANNOUNCEMENT_BODY: "${{ fromJson(steps.host.outputs.manifest).announcement_github_body }}"
-          RELEASE_COMMIT: "${{ github.sha }}"
+      - name: Upload research skill assets
         run: |
-          # Write and read notes from a file to avoid quoting breaking things
-          echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
-
-          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+          gh release upload "${{ needs.plan.outputs.tag }}" \
+            artifacts/research-skills-assets-v*.tar.gz \
+            artifacts/research-skills-assets-v*.manifest.json \
+            --clobber
 
   announce:
     needs:

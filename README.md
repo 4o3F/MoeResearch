@@ -67,33 +67,33 @@ moeresearch mcp register --scope local --config ~/.config/moeresearch/moeresearc
 
 By default, registration records the current `moeresearch` executable path. Pass `--moeresearch-bin` only when Claude Code should launch a different binary. Registration validates enabled-provider environment variables before invoking `claude` and forwards their current values into Claude Code registration with redacted dry-run output.
 
-Install PM DeepResearch as a Claude Code skill:
+Install MoeResearch research skill assets:
 
 ```bash
-moeresearch assets install pm-deep-research
+moeresearch assets install research-skills
 ```
 
-The installer downloads the release asset for the current `moeresearch` version, not GitHub `latest`. The default install target is the Claude Code user skill discovery path:
+The installed Markdown assets include PM DeepResearch, Academic DeepResearch, Technical Evaluation, and common evidence prompts. Claude Code receives one discoverable `deep-research` skill directory for the unified research entry; academic and technical profiles are used through that entry with explicit profile instructions, not as separate sibling Skill directories. The installer downloads the release asset for the current `moeresearch` version, not GitHub `latest`. The default install target is the Claude Code user skill discovery path:
 
 ```text
-~/.claude/skills/pm-deep-research/SKILL.md
+~/.claude/skills/deep-research/SKILL.md
 ```
 
 For a project-level Claude Code skill, use:
 
 ```bash
-moeresearch assets install pm-deep-research --client claude-code --scope project
+moeresearch assets install research-skills --client claude-code --scope project
 ```
 
 For non-Claude clients or manual loading, install the same release assets with repository-style sibling directories:
 
 ```bash
-moeresearch assets install pm-deep-research \
+moeresearch assets install research-skills \
   --target ~/.config/moeresearch/assets \
   --layout repo
 ```
 
-Generic target installs are not Claude Code discovery installs. `moeresearch mcp register` registers the backend server only; `moeresearch assets install` installs client-side PM DeepResearch skill and prompt assets.
+Generic target installs are not Claude Code discovery installs. `moeresearch mcp register` registers the backend server only; `moeresearch assets install` installs client-side research Skill and prompt assets.
 
 Start the MCP server manually when needed:
 
@@ -114,7 +114,7 @@ Logs are written to stderr. MCP protocol messages are exchanged over stdin and s
 
 Before creating a release tag:
 
-- Release workflow packaging uploads `pm-deep-research-assets-v{version}.tar.gz` and `pm-deep-research-assets-v{version}.manifest.json`; the CLI verifies manifest and SHA-256 checksums before install.
+- Release workflow packaging uploads `research-skills-assets-v{version}.tar.gz` and `research-skills-assets-v{version}.manifest.json`; the research skills asset now contains all MoeResearch research Skill Markdown roots, and the CLI verifies manifest and SHA-256 checksums before install.
 - `cargo-dist` generates shell installers for macOS/Linux and a PowerShell installer for Windows.
 
 ## MCP Tools
@@ -139,7 +139,10 @@ See [`docs/mcp-usage.md`](docs/mcp-usage.md) for the full MCP client interface, 
 | Document | Purpose |
 | --- | --- |
 | [`docs/mcp-usage.md`](docs/mcp-usage.md) | MCP-only client interface and tool schemas. |
+| [`docs/research-skills.md`](docs/research-skills.md) | Research Skill asset installation, layout, and profile routing. |
 | [`docs/pm-deep-research.md`](docs/pm-deep-research.md) | End-to-end PM DeepResearch setup and usage guide. |
+| [`docs/academic-deep-research.md`](docs/academic-deep-research.md) | Academic DeepResearch usage guide. |
+| [`docs/technical-evaluation.md`](docs/technical-evaluation.md) | Technical Evaluation usage guide. |
 | [`docs/configuration.md`](docs/configuration.md) | Runtime configuration, providers, budgets, logging, and troubleshooting. |
 | [`docs/development.md`](docs/development.md) | Repository layout and contributor commands. |
 | [`docs/research-agent-product.md`](docs/research-agent-product.md) | Product and architecture background. |

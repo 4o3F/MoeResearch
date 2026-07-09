@@ -116,6 +116,9 @@ cargo test -p moe-research-tests
 | --- | --- |
 | [`configuration.md`](configuration.md) | Runtime config, providers, budgets, logging, and troubleshooting. |
 | [`mcp-usage.md`](mcp-usage.md) | MCP-only client interface: JSON-RPC lifecycle, tools, requests, responses, and errors. |
+| [`research-skills.md`](research-skills.md) | Research Skill asset installation, profile routing, and prompt layout. |
+| [`academic-deep-research.md`](academic-deep-research.md) | Academic research profile guide. |
+| [`technical-evaluation.md`](technical-evaluation.md) | Technical evaluation profile guide. |
 | [`research-agent-product.md`](research-agent-product.md) | Product and architecture background. |
 
 ## 7. Safety rules

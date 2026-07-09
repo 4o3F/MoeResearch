@@ -532,6 +532,53 @@ fn layer1_prompt_search_policy_skeletons_include_complete_fields() {
     }
 }
 
+#[test]
+fn research_profile_task_decomposition_prompts_keep_schema_boundary() {
+    let prompts = [
+        (
+            "academic",
+            include_str!("../../../prompts/layer1/academic-deep-research/task-decomposition.md"),
+        ),
+        (
+            "technical",
+            include_str!("../../../prompts/layer1/technical-evaluation/task-decomposition.md"),
+        ),
+    ];
+
+    for (name, prompt) in prompts {
+        for marker in [
+            "DeepResearchRequest",
+            "aspect_agent_prompt",
+            "model_policy",
+            "search_policy",
+            "execution_policy",
+            "timeout_ms",
+        ] {
+            assert!(prompt.contains(marker), "{name} prompt missing {marker}");
+        }
+
+        for field in [
+            "allowed_providers",
+            "max_results_per_query",
+            "include_domains",
+            "exclude_domains",
+        ] {
+            let marker = format!("\"{field}\"");
+            assert!(prompt.contains(&marker), "{name} prompt missing {marker}");
+        }
+
+        let lower = prompt.to_ascii_lowercase();
+        assert!(
+            lower.contains("rust core") && lower.contains("never reads prompt files"),
+            "{name} prompt must keep prompt assets outside Rust runtime IO"
+        );
+        assert!(
+            lower.contains("provider-native"),
+            "{name} prompt must forbid provider-native request fields"
+        );
+    }
+}
+
 fn assert_direct_tool_payload(value: &Value) {
     for wrapper_key in [
         "jsonrpc",
