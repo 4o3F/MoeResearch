@@ -9,6 +9,7 @@
 | 2026-06-29 13:22:02 | 初次扫描并生成模块级文档。 |
 | 2026-07-09 | 更新 v0.2 控制面请求 schema：`task` / `limits` / `policy` / `context`。 |
 | 2026-07-09 | 增加 Phase 2 normalizer：请求/config limits 合并为 `EffectiveResearchPlan` / `EffectiveAspectPlan` 后再进入 runtime。 |
+| 2026-07-09 | 增加 Phase 3 `AspectPromptInput`：Layer 2 user prompt 只接收 LLM-visible 投影。 |
 
 ## 模块职责
 
@@ -55,13 +56,14 @@ v0.2 request 形态：
 
 1. `AspectResearchRequest` / `DeepResearchRequest` 先经过 normalizer，完成 schema version、ID、provider、policy、limits、prompt 大小等校验。
 2. normalizer 将 request limits 与 operator config budget 取更严格值，生成 `EffectiveResearchPlan` / `EffectiveAspectPlan`。
-3. `AgentRuntime` 只消费 effective aspect plan，构造初始 prompt/input，循环调用模型。
-4. 模型如返回 tool call，`ToolPolicyGuard` 校验 tool 名称、允许列表和 args。
-5. `AgentBudgetGuard` 与 `ResearchBudgetGuard` 在 provider dispatch 前消费运行时预算。
-6. 搜索结果被转成 candidate evidence。
-7. 模型最终必须输出 `AspectResearchResult` JSON。
-8. `OutputValidator` 检查报告字段、finding/evidence 引用、证据来源未被篡改。
-9. Deep research 汇总 aspect reports、evidence index、open questions、coverage/confidence/budget usage。
+3. `AgentRuntime` 只消费 effective aspect plan；`instructions` 作为 system prompt，`AspectPromptInput` 作为 user prompt。
+4. `AspectPromptInput` 只包含 aspect intent、context、可用工具和 evidence/output 要求，不包含 limits、provider allowlist、selected provider 或 execution policy。
+5. 模型如返回 tool call，`ToolPolicyGuard` 校验 tool 名称、允许列表和 args。
+6. `AgentBudgetGuard` 与 `ResearchBudgetGuard` 在 provider dispatch 前消费运行时预算。
+7. 搜索结果被转成 candidate evidence。
+8. 模型最终必须输出 `AspectResearchResult` JSON。
+9. `OutputValidator` 检查报告字段、finding/evidence 引用、证据来源未被篡改。
+10. Deep research 汇总 aspect reports、evidence index、open questions、coverage/confidence/budget usage。
 
 重要约束：
 

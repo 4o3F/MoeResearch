@@ -241,8 +241,8 @@ pub fn first_evidence_from_tool_output(input: &[ModelInputItem]) -> Evidence {
 
 pub fn aspect_field(input: &[ModelInputItem], label: &str) -> String {
     let pointer = match label {
-        "Aspect ID" => "/task/id",
-        "Aspect name" => "/task/name",
+        "Aspect ID" => "/aspect/id",
+        "Aspect name" => "/aspect/name",
         _ => return String::new(),
     };
 

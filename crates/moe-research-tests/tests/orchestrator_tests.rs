@@ -103,6 +103,7 @@ struct SequenceModelProvider {
 }
 
 struct CapturingSequenceModelProvider {
+    name: &'static str,
     calls: Arc<AtomicUsize>,
     responses: Mutex<VecDeque<ModelResponse>>,
     requests: Arc<Mutex<Vec<ModelRequest>>>,
@@ -134,7 +135,7 @@ impl ModelProvider for SequenceModelProvider {
 #[async_trait]
 impl ModelProvider for CapturingSequenceModelProvider {
     fn name(&self) -> &'static str {
-        "model"
+        self.name
     }
 
     async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
@@ -547,6 +548,7 @@ async fn instructions_content_is_passed_as_system_message() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls,
         responses: Mutex::new(
             vec![tool_response("search"), final_response(valid_report_json())].into(),
@@ -578,6 +580,102 @@ async fn instructions_content_is_passed_as_system_message() {
         ),
         "first input must be System message equal to inline prompt content"
     );
+}
+
+/// The Layer 2 user prompt must contain only the LLM-visible projection.
+/// Runtime controls, provider routing, and inline system-prompt content stay out
+/// of the serialized user JSON.
+#[tokio::test]
+async fn model_user_prompt_excludes_control_plane_fields() {
+    let mut request = aspect_request();
+    request.task.instructions =
+        "# Secret Inline Prompt\n\nDo not repeat this in user JSON.\n".to_owned();
+    request.task.tools.clear();
+    request.task.model_provider = "hidden-selected-model".to_owned();
+    request.task.search_provider = Some("hidden-selected-searcher".to_owned());
+    request.task.limits = AgentLimits {
+        max_turns: Limit::limited(3),
+        max_tool_calls: Limit::limited(4),
+        max_search_calls: Limit::limited(5),
+        timeout_ms: Limit::limited(6_000),
+    };
+    request.policy.model.allowed_providers = vec![
+        "hidden-selected-model".to_owned(),
+        "hidden-model-allowlist".to_owned(),
+    ];
+    request.policy.search.allowed_providers =
+        vec!["searcher".to_owned(), "hidden-search-allowlist".to_owned()];
+    request.policy.execution.fail_fast = true;
+    request.policy.evidence.require_evidence_for_findings = false;
+
+    let final_payload = serde_json::to_string(&AspectResearchResult {
+        aspect_report: AspectReport {
+            aspect_id: "aspect-1".to_owned(),
+            aspect_name: "Aspect".to_owned(),
+            question: "What is true?".to_owned(),
+            scope: vec!["scope".to_owned()],
+            findings: Vec::new(),
+            assumptions: Vec::new(),
+            risks: Vec::new(),
+            counterarguments: Vec::new(),
+            open_questions: Vec::new(),
+            confidence: Confidence::Medium,
+            limitations: Vec::new(),
+        },
+        evidence: Vec::new(),
+    })
+    .expect("report json");
+
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let captured_requests = Arc::new(Mutex::new(Vec::new()));
+    let mut model_service = ModelService::new();
+    model_service.register(CapturingSequenceModelProvider {
+        name: "hidden-selected-model",
+        calls: model_calls,
+        responses: Mutex::new(vec![final_response(final_payload)].into()),
+        requests: captured_requests.clone(),
+    });
+    let search_service = SearchService::new();
+
+    aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect("projected prompt request");
+
+    let requests = captured_requests.lock().expect("requests lock").clone();
+    let user_prompt = requests[0]
+        .input
+        .iter()
+        .find_map(|item| match item {
+            ModelInputItem::Message(message)
+                if message.role == moe_research_model::ModelMessageRole::User =>
+            {
+                Some(message.content.as_str())
+            }
+            _ => None,
+        })
+        .expect("user prompt message");
+    let value = serde_json::from_str::<serde_json::Value>(user_prompt).expect("user prompt json");
+
+    assert_eq!(value["aspect"]["id"], "aspect-1");
+    assert_eq!(value["output_requirements"]["language"], "zh-CN");
+    assert!(value.get("policy").is_none());
+    assert!(value.get("limits").is_none());
+    assert!(!user_prompt.contains("allowed_providers"));
+    assert!(!user_prompt.contains("hidden-model-allowlist"));
+    assert!(!user_prompt.contains("hidden-search-allowlist"));
+    assert!(!user_prompt.contains("max_turns"));
+    assert!(!user_prompt.contains("fail_fast"));
+    assert!(!user_prompt.contains("model_provider"));
+    assert!(!user_prompt.contains("hidden-selected-model"));
+    assert!(!user_prompt.contains("search_provider"));
+    assert!(!user_prompt.contains("hidden-selected-searcher"));
+    assert!(!user_prompt.contains("# Secret Inline Prompt"));
+    assert!(!user_prompt.contains("Do not repeat this in user JSON."));
 }
 
 /// The aspect research entrypoint must reject empty inline prompts before any
@@ -966,6 +1064,7 @@ async fn model_tool_outputs_use_ordered_responses_items() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls.clone(),
         responses: Mutex::new(
             vec![tool_response("search"), final_response(valid_report_json())].into(),
@@ -1022,6 +1121,7 @@ async fn search_tool_output_includes_full_results_for_layer2() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls.clone(),
         responses: Mutex::new(
             vec![tool_response("search"), final_response(valid_report_json())].into(),
@@ -1140,6 +1240,7 @@ async fn model_tool_outputs_fallback_replays_tool_calls() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls.clone(),
         responses: Mutex::new(
             vec![
@@ -1189,6 +1290,7 @@ async fn model_tool_outputs_use_previous_response_id_when_available() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls.clone(),
         responses: Mutex::new(
             vec![
@@ -1234,6 +1336,7 @@ async fn model_tool_outputs_can_fall_back_after_previous_response_id() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls.clone(),
         responses: Mutex::new(
             vec![
@@ -1685,6 +1788,7 @@ async fn aspect_with_empty_tools_sends_empty_model_tools() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls,
         responses: Mutex::new(vec![final_response(final_payload)].into()),
         requests: captured_requests.clone(),

@@ -13,7 +13,7 @@ use crate::report::{
     AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, SourceType,
     TokenUsage,
 };
-use crate::research::{ASPECT_PROMPT_MAX_BYTES, EffectiveAspectPlan};
+use crate::research::{ASPECT_PROMPT_MAX_BYTES, AspectPromptInput, EffectiveAspectPlan};
 use crate::runtime_budget::{AgentBudgetGuard, ResearchBudgetGuard};
 use crate::tool_policy::{SearchToolArgs, ToolPolicyGuard};
 use crate::validator::OutputValidator;
@@ -524,7 +524,7 @@ impl<'a> AgentRuntime<'a> {
     }
 
     /// Builds the initial agent input: the inline aspect-agent system prompt
-    /// followed by the user prompt derived from the request payload.
+    /// followed by the narrow user-prompt projection.
     fn initial_input(&self) -> Vec<ModelInputItem> {
         vec![
             ModelInputItem::message(ModelMessageRole::System, self.system_prompt().to_owned()),
@@ -535,8 +535,8 @@ impl<'a> AgentRuntime<'a> {
     /// Returns the Layer 2 aspect-agent system prompt supplied inline by Layer 1.
     ///
     /// No filesystem IO is performed here; the string is taken verbatim from
-    /// the MCP request after schema validation has already enforced non-empty
-    /// and size-bound invariants. Eliminating runtime prompt file IO closes
+    /// the MCP request after normalization has already enforced non-empty and
+    /// size-bound invariants. Eliminating runtime prompt file IO closes
     /// the arbitrary-file-read attack surface that earlier path-based variants
     /// of this code carried.
     fn system_prompt(&self) -> &str {
@@ -544,14 +544,8 @@ impl<'a> AgentRuntime<'a> {
     }
 
     fn user_prompt(&self) -> String {
-        let request = json!({
-            "schema_version": &self.request.schema_version,
-            "request_id": &self.request.request_id,
-            "task": &self.request.task,
-            "policy": &self.request.policy,
-            "context": &self.request.context,
-        });
-        match serde_json::to_string_pretty(&request) {
+        let prompt_input = AspectPromptInput::from(self.request);
+        match serde_json::to_string_pretty(&prompt_input) {
             Ok(request) => request,
             Err(error) => json!({ "serialization_error": error.to_string() }).to_string(),
         }
