@@ -6,7 +6,7 @@ use moe_research_model::{ModelTool, ModelToolCall};
 
 use crate::log_safe::json_error_message_for_log;
 use crate::policy::{SearchCategory, SearchContentLevel, SearchDepth, SearchRecency};
-use crate::research::AspectSpec;
+use crate::research::AspectRequest;
 
 pub const SEARCH_TOOL_NAME: &str = "search";
 
@@ -28,12 +28,9 @@ pub struct ToolPolicyGuard {
 }
 
 impl ToolPolicyGuard {
-    pub fn new(aspect: &AspectSpec) -> Self {
+    pub fn new(aspect: &AspectRequest) -> Self {
         Self {
-            search_allowed: aspect
-                .allowed_tools
-                .iter()
-                .any(|tool| tool.0 == SEARCH_TOOL_NAME),
+            search_allowed: aspect.tools.iter().any(|tool| tool.0 == SEARCH_TOOL_NAME),
         }
     }
 
@@ -41,7 +38,7 @@ impl ToolPolicyGuard {
     /// allows.
     ///
     /// The orchestrator uses this to drive `ModelRequest.tools`: aspects with
-    /// `allowed_tools = []` get an empty tools list (no tool calls possible),
+    /// `tools = []` get an empty tools list (no tool calls possible),
     /// while aspects that permit search get exactly the search tool. This is
     /// strictly tighter than always advertising the full tool catalogue and
     /// closes the gap where a model could call a denied tool just because it

@@ -11,4 +11,4 @@ Assign each academic aspect to exactly one Layer 2 persona.
 
 Deep academic runs must include citation/source-validity coverage. Prefer a dedicated `citation-verifier` aspect for paper evaluation and evidence synthesis; otherwise add citation-validity success criteria to the most source-heavy aspect.
 
-Return JSON with `aspect_id`, `persona`, and `reason`. Copy the selected persona Markdown inline into `AspectSpec.aspect_agent_prompt` before calling MoeResearch; do not pass prompt paths to Rust/MCP.
+Return JSON with `id`, `persona`, and `reason`. Copy the selected persona Markdown inline into `AspectRequest.instructions` before calling MoeResearch; do not pass prompt paths to Rust/MCP.

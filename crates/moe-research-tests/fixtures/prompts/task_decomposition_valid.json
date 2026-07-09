@@ -1,31 +1,31 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "request_id": "req-fixture-1",
-  "user_question": "What are the leading Rust async runtimes and their tradeoffs?",
-  "aspect_tasks": [
-    {
-      "aspect": {
-        "aspect_id": "ecosystem-overview",
+  "task": {
+    "question": "What are the leading Rust async runtimes and their tradeoffs?",
+    "aspects": [
+      {
+        "id": "ecosystem-overview",
         "name": "Async runtime ecosystem",
         "role": "researcher",
-        "research_question": "Which async runtimes dominate the Rust ecosystem and how do they differ?",
+        "question": "Which async runtimes dominate the Rust ecosystem and how do they differ?",
         "scope": ["tokio", "async-std", "smol", "embassy"],
         "boundaries": ["exclude std-only abstractions"],
         "success_criteria": ["list 3-5 runtimes with primary use cases"],
-        "aspect_agent_prompt": "# Layer 2 Aspect Agent\n\nYou are a research aspect agent. Answer the research question with evidence-backed findings.\n",
-        "allowed_tools": ["search"],
+        "instructions": "# Layer 2 Aspect Agent\n\nYou are a research aspect agent. Answer the research question with evidence-backed findings.\n",
+        "tools": ["search"],
         "model_provider": "openai",
-        "search_provider": "exa"
-      },
-      "budget": {
-        "max_turns": 8,
-        "max_tool_calls": 12,
-        "max_search_calls": 6,
-        "timeout_ms": 120000
+        "search_provider": "exa",
+        "limits": {
+          "max_turns": 8,
+          "max_tool_calls": 12,
+          "max_search_calls": 6,
+          "timeout_ms": 120000
+        }
       }
-    }
-  ],
-  "budget": {
+    ]
+  },
+  "limits": {
     "max_agents": 5,
     "max_concurrent_agents": 2,
     "max_total_model_calls": 30,
@@ -33,42 +33,43 @@
     "total_timeout_ms": 300000,
     "max_tokens": null
   },
-  "model_policy": {
-    "allowed_providers": ["openai"],
-    "temperature": 0.2,
-    "max_tokens": null,
-    "require_tool_call_support": true
+  "policy": {
+    "model": {
+      "allowed_providers": ["openai"],
+      "temperature": 0.2,
+      "max_tokens": null,
+      "require_tool_call_support": true
+    },
+    "search": {
+      "allowed_providers": ["exa"],
+      "max_results_per_query": 5,
+      "freshness": null,
+      "depth": "balanced",
+      "content_level": "standard",
+      "recency": "default",
+      "category": null,
+      "language": null,
+      "region": null,
+      "include_domains": [],
+      "exclude_domains": []
+    },
+    "evidence": {
+      "require_evidence_for_findings": true,
+      "min_evidence_per_finding": 1
+    },
+    "output": {
+      "language": "en-US",
+      "max_findings_per_aspect": null
+    },
+    "execution": {
+      "allow_partial_results": true,
+      "fail_fast": false
+    }
   },
-  "search_policy": {
-    "allowed_providers": ["exa"],
-    "max_results_per_query": 5,
-    "freshness": null,
-    "depth": "balanced",
-    "content_level": "standard",
-    "recency": "default",
-    "category": null,
-    "language": null,
-    "region": null,
-    "include_domains": [],
-    "exclude_domains": []
-  },
-  "evidence_policy": {
-    "require_evidence_for_findings": true,
-    "min_evidence_per_finding": 1
-  },
-  "output_policy": {
-    "language": "en-US",
-    "max_findings_per_aspect": null
-  },
-  "shared_context": {
+  "context": {
     "summary": "Rust async runtime landscape",
     "known_facts": [],
     "excluded_assumptions": [],
     "prior_sources": []
-  },
-  "execution_policy": {
-    "allow_partial_results": true,
-    "fail_fast": false,
-    "timeout_ms": 120000
   }
 }

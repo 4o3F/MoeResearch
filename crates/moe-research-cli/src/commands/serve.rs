@@ -17,7 +17,7 @@ use moe_research_search::{
     ExaSearchProvider, GrokReasoningEffort as SearchGrokReasoningEffort, GrokSearchProvider,
     SearchService, TavilySearchProvider,
 };
-use moe_research_workflow::{AgentBudget, BudgetConfig, Limit, ResearchBudget};
+use moe_research_workflow::{AgentLimits, BudgetConfig, Limit, ResearchLimits};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Args)]
@@ -319,7 +319,7 @@ fn provider_model(kind: &str, name: &str, model: Option<&String>) -> Result<Stri
 
 fn build_workflow_budget(config: &ConfigBudgetConfig) -> BudgetConfig {
     BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_agents: map_limit(config.research.max_agents),
             max_concurrent_agents: map_limit(config.research.max_concurrent_agents),
             max_total_model_calls: map_limit(config.research.max_total_model_calls),
@@ -327,7 +327,7 @@ fn build_workflow_budget(config: &ConfigBudgetConfig) -> BudgetConfig {
             total_timeout_ms: map_limit(config.research.total_timeout_ms),
             max_tokens: map_limit(config.research.max_tokens),
         },
-        per_agent: AgentBudget {
+        per_agent: AgentLimits {
             max_turns: map_limit(config.per_agent.max_turns),
             max_tool_calls: map_limit(config.per_agent.max_tool_calls),
             max_search_calls: map_limit(config.per_agent.max_search_calls),

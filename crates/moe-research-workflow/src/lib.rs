@@ -13,7 +13,7 @@ pub mod validator;
 pub mod workflow;
 
 pub use agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
-pub use budget::{AgentBudget, BudgetConfig, ResearchBudget};
+pub use budget::{AgentLimits, BudgetConfig, ResearchLimits};
 pub use limit::{CountLimit, DurationLimitMs, Limit, TokenLimit};
 pub use policy::{
     EvidencePolicy, ExecutionPolicy, Freshness, ModelPolicy, OutputPolicy, SearchCategory,
@@ -26,7 +26,8 @@ pub use report::{
     ValidationStatus,
 };
 pub use research::{
-    AspectResearchRequest, AspectResearchTask, AspectSpec, DeepResearchRequest, ResearchContext,
+    AspectRequest, AspectResearchRequest, DeepResearchRequest, ResearchContext, ResearchPolicy,
+    ResearchTask,
 };
 pub use runtime_budget::{AgentBudgetGuard, ResearchBudgetGuard};
 pub use tool_policy::{SEARCH_TOOL_NAME, SearchToolArgs, ToolPolicyGuard, search_model_tool};

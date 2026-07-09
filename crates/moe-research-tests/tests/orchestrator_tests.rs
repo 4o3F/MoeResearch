@@ -14,14 +14,14 @@ use moe_research_search::{SearchRequest, SearchResponse, SearchResult};
 use moe_research_workflow::AgentRuntime;
 use moe_research_workflow::Limit;
 use moe_research_workflow::aspect_research;
-use moe_research_workflow::{AgentBudget, BudgetConfig, ResearchBudget};
 use moe_research_workflow::{AgentBudgetGuard, ResearchBudgetGuard};
+use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
 use moe_research_workflow::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
     OpenQuestion, SourceType,
 };
 use moe_research_workflow::{
-    AspectResearchRequest, AspectResearchTask, AspectSpec, ResearchContext,
+    AspectRequest, AspectResearchRequest, ResearchContext, ResearchPolicy,
 };
 use moe_research_workflow::{
     EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchCategory, SearchContentLevel,
@@ -31,8 +31,8 @@ use serde_json::json;
 
 fn unlimited_budget_config() -> BudgetConfig {
     BudgetConfig {
-        research: ResearchBudget::unlimited(),
-        per_agent: AgentBudget::unlimited(),
+        research: ResearchLimits::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     }
 }
 
@@ -61,6 +61,16 @@ fn search_policy() -> SearchPolicy {
     }
 }
 
+fn research_policy() -> ResearchPolicy {
+    ResearchPolicy {
+        model: model_policy(),
+        search: search_policy(),
+        evidence: evidence_policy(),
+        output: output_policy(),
+        execution: execution_policy(),
+    }
+}
+
 fn evidence_policy() -> EvidencePolicy {
     EvidencePolicy {
         require_evidence_for_findings: true,
@@ -75,11 +85,10 @@ fn output_policy() -> OutputPolicy {
     }
 }
 
-fn execution_policy(timeout_ms: Option<u64>) -> ExecutionPolicy {
+fn execution_policy() -> ExecutionPolicy {
     ExecutionPolicy {
         allow_partial_results: true,
         fail_fast: false,
-        timeout_ms: timeout_ms.map_or(Limit::unlimited(), Limit::limited),
     }
 }
 
@@ -259,30 +268,24 @@ fn aspect_prompt() -> String {
 
 fn aspect_request() -> AspectResearchRequest {
     AspectResearchRequest {
-        schema_version: "0.1".to_owned(),
+        schema_version: "0.2".to_owned(),
         request_id: "request-1".to_owned(),
-        task: AspectResearchTask {
-            aspect: AspectSpec {
-                aspect_id: "aspect-1".to_owned(),
-                name: "Aspect".to_owned(),
-                role: "researcher".to_owned(),
-                research_question: "What is true?".to_owned(),
-                scope: vec!["scope".to_owned()],
-                boundaries: vec![],
-                success_criteria: vec!["answer".to_owned()],
-                aspect_agent_prompt: aspect_prompt(),
-                allowed_tools: vec![ToolName("search".to_owned())],
-                model_provider: Some("model".to_owned()),
-                search_provider: Some("searcher".to_owned()),
-            },
-            budget: AgentBudget::unlimited(),
+        task: AspectRequest {
+            id: "aspect-1".to_owned(),
+            name: "Aspect".to_owned(),
+            role: "researcher".to_owned(),
+            question: "What is true?".to_owned(),
+            scope: vec!["scope".to_owned()],
+            boundaries: vec![],
+            success_criteria: vec!["answer".to_owned()],
+            instructions: aspect_prompt(),
+            tools: vec![ToolName("search".to_owned())],
+            model_provider: "model".to_owned(),
+            search_provider: Some("searcher".to_owned()),
+            limits: AgentLimits::unlimited(),
         },
-        shared_context: ResearchContext::empty(),
-        model_policy: model_policy(),
-        search_policy: search_policy(),
-        evidence_policy: evidence_policy(),
-        output_policy: output_policy(),
-        execution_policy: execution_policy(Some(180_000)),
+        policy: research_policy(),
+        context: ResearchContext::empty(),
     }
 }
 
@@ -409,8 +412,8 @@ fn evidence_from_tool_output(input: &[ModelInputItem], index: usize) -> Evidence
     serde_json::from_value(value["results"][index].clone()).expect("evidence result")
 }
 
-fn budget(max_turns: usize, max_tool_calls: usize, max_search_calls: usize) -> AgentBudget {
-    AgentBudget {
+fn budget(max_turns: usize, max_tool_calls: usize, max_search_calls: usize) -> AgentLimits {
+    AgentLimits {
         max_turns: Limit::limited(max_turns),
         max_tool_calls: Limit::limited(max_tool_calls),
         max_search_calls: Limit::limited(max_search_calls),
@@ -420,7 +423,7 @@ fn budget(max_turns: usize, max_tool_calls: usize, max_search_calls: usize) -> A
 
 #[test]
 fn accepts_minus_one_as_unlimited_agent_budget() {
-    let budget: AgentBudget = serde_json::from_value(json!({
+    let budget: AgentLimits = serde_json::from_value(json!({
         "max_turns": -1,
         "max_tool_calls": -1,
         "max_search_calls": -1,
@@ -499,7 +502,7 @@ fn rejects_zero_turns_zero_timeout_and_elapsed_timeout() {
         Err(Error::BudgetExceeded { .. })
     ));
 
-    let mut guard = AgentBudgetGuard::new(AgentBudget {
+    let mut guard = AgentBudgetGuard::new(AgentLimits {
         timeout_ms: Limit::limited(1),
         ..budget(1, 1, 1)
     })
@@ -516,7 +519,7 @@ fn rejects_zero_turns_zero_timeout_and_elapsed_timeout() {
 #[tokio::test]
 async fn rejects_invalid_request_fields() {
     let mut request = aspect_request();
-    request.task.aspect.research_question.clear();
+    request.task.question.clear();
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -533,13 +536,13 @@ async fn rejects_invalid_request_fields() {
 }
 
 /// Rust core never performs filesystem IO for prompts; Layer 1 supplies the
-/// system-prompt content inline as `AspectSpec.aspect_agent_prompt`. The
+/// system-prompt content inline as `AspectRequest.instructions`. The
 /// first input the model sees MUST be a System message whose body equals
 /// the request field byte-for-byte, with no further transformation.
 #[tokio::test]
-async fn aspect_agent_prompt_content_is_passed_as_system_message() {
+async fn instructions_content_is_passed_as_system_message() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt = "# Custom Agent\n\nFollow these rules.\n".to_owned();
+    request.task.instructions = "# Custom Agent\n\nFollow these rules.\n".to_owned();
 
     let model_calls = Arc::new(AtomicUsize::new(0));
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
@@ -572,7 +575,7 @@ async fn aspect_agent_prompt_content_is_passed_as_system_message() {
             &requests[0].input[0],
             ModelInputItem::Message(message)
                 if message.role == moe_research_model::ModelMessageRole::System
-                    && message.content == request.task.aspect.aspect_agent_prompt
+                    && message.content == request.task.instructions
         ),
         "first input must be System message equal to inline prompt content"
     );
@@ -584,7 +587,7 @@ async fn aspect_agent_prompt_content_is_passed_as_system_message() {
 #[tokio::test]
 async fn agent_runtime_rejects_empty_inline_prompt_before_dispatch() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt = String::new();
+    request.task.instructions = String::new();
 
     let (model_service, search_service, model_calls, _search_calls) = services(vec![]);
     let failure = AgentRuntime::new(
@@ -606,7 +609,7 @@ async fn agent_runtime_rejects_empty_inline_prompt_before_dispatch() {
 #[tokio::test]
 async fn agent_runtime_rejects_oversized_inline_prompt_before_dispatch() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt = "x".repeat(64 * 1024 + 1);
+    request.task.instructions = "x".repeat(64 * 1024 + 1);
 
     let (model_service, search_service, model_calls, _search_calls) = services(vec![]);
     let failure = AgentRuntime::new(
@@ -629,9 +632,9 @@ async fn agent_runtime_rejects_oversized_inline_prompt_before_dispatch() {
 /// Schema validation MUST reject an empty inline prompt before any agent loop
 /// runs.
 #[tokio::test]
-async fn aspect_agent_prompt_empty_string_is_rejected_at_schema_validation() {
+async fn instructions_empty_string_is_rejected_at_schema_validation() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt = String::new();
+    request.task.instructions = String::new();
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -650,9 +653,9 @@ async fn aspect_agent_prompt_empty_string_is_rejected_at_schema_validation() {
 /// Schema validation MUST reject an inline prompt larger than 64 KiB to keep
 /// a single MCP payload bounded.
 #[tokio::test]
-async fn aspect_agent_prompt_exceeding_max_bytes_is_rejected() {
+async fn instructions_exceeding_max_bytes_is_rejected() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt = "x".repeat(64 * 1024 + 1);
+    request.task.instructions = "x".repeat(64 * 1024 + 1);
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -671,8 +674,8 @@ async fn aspect_agent_prompt_exceeding_max_bytes_is_rejected() {
 #[tokio::test]
 async fn rejects_conflicting_domains() {
     let mut request = aspect_request();
-    request.search_policy.include_domains = vec!["Example.com".to_owned()];
-    request.search_policy.exclude_domains = vec!["example.com".to_owned()];
+    request.policy.search.include_domains = vec!["Example.com".to_owned()];
+    request.policy.search.exclude_domains = vec!["example.com".to_owned()];
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -691,7 +694,7 @@ async fn rejects_conflicting_domains() {
 #[tokio::test]
 async fn rejects_search_enabled_aspect_without_provider() {
     let mut request = aspect_request();
-    request.task.aspect.search_provider = None;
+    request.task.search_provider = None;
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -710,7 +713,7 @@ async fn rejects_search_enabled_aspect_without_provider() {
 #[tokio::test]
 async fn rejects_search_provider_not_allowed_by_policy() {
     let mut request = aspect_request();
-    request.task.aspect.search_provider = Some("blocked".to_owned());
+    request.task.search_provider = Some("blocked".to_owned());
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -731,7 +734,7 @@ async fn rejects_search_provider_not_allowed_by_policy() {
 #[tokio::test]
 async fn rejects_empty_search_provider_allowlist() {
     let mut request = aspect_request();
-    request.search_policy.allowed_providers.clear();
+    request.policy.search.allowed_providers.clear();
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -752,9 +755,9 @@ async fn rejects_empty_search_provider_allowlist() {
 #[tokio::test]
 async fn non_search_aspect_runs_without_search_provider() {
     let mut request = aspect_request();
-    request.task.aspect.allowed_tools.clear();
-    request.task.aspect.search_provider = None;
-    request.evidence_policy.require_evidence_for_findings = false;
+    request.task.tools.clear();
+    request.task.search_provider = None;
+    request.policy.evidence.require_evidence_for_findings = false;
     let (model_service, search_service, _model_calls, search_calls) =
         services(vec![final_response(
             serde_json::to_string(&AspectResearchResult {
@@ -790,21 +793,22 @@ async fn non_search_aspect_runs_without_search_provider() {
 }
 
 #[tokio::test]
-async fn rejects_execution_timeout_above_budget() {
+async fn rejects_agent_timeout_above_configured_limits() {
     let mut request = aspect_request();
-    request.task.budget.timeout_ms = Limit::limited(100);
-    request.execution_policy.timeout_ms = Limit::limited(101);
+    request.task.limits.timeout_ms = Limit::limited(101);
     let model_service = ModelService::new();
     let search_service = SearchService::new();
+    let budget_config = BudgetConfig {
+        research: ResearchLimits::unlimited(),
+        per_agent: AgentLimits {
+            timeout_ms: Limit::limited(100),
+            ..AgentLimits::unlimited()
+        },
+    };
 
-    let error = aspect_research(
-        request,
-        &model_service,
-        &search_service,
-        &unlimited_budget_config(),
-    )
-    .await
-    .expect_err("timeout conflict");
+    let error = aspect_research(request, &model_service, &search_service, &budget_config)
+        .await
+        .expect_err("timeout exceeds configured limits");
 
     assert!(matches!(error.error, Error::BudgetExceeded { .. }));
 }
@@ -838,11 +842,11 @@ async fn aspect_research_uses_configured_research_model_call_budget() {
         final_response(valid_report_json()),
     ]);
     let limits = BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_total_model_calls: Limit::limited(1),
-            ..ResearchBudget::unlimited()
+            ..ResearchLimits::unlimited()
         },
-        per_agent: AgentBudget::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     };
 
     let failure = aspect_research(request, &model_service, &search_service, &limits)
@@ -864,11 +868,11 @@ async fn aspect_research_uses_configured_research_search_budget() {
     let (model_service, search_service, model_calls, search_calls) =
         services(vec![tool_response("search")]);
     let limits = BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_total_search_calls: Limit::limited(0),
-            ..ResearchBudget::unlimited()
+            ..ResearchLimits::unlimited()
         },
-        per_agent: AgentBudget::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     };
 
     let failure = aspect_research(request, &model_service, &search_service, &limits)
@@ -1353,7 +1357,7 @@ async fn success_output_retains_budget_usage_and_token_usage() {
 #[tokio::test]
 async fn budget_failure_stops_after_completed_searches() {
     let mut request = aspect_request();
-    request.task.budget.max_search_calls = Limit::limited(2);
+    request.task.limits.max_search_calls = Limit::limited(2);
     let (model_service, search_service, _model_calls, search_calls) = services(vec![
         tool_response("search"),
         tool_response("search"),
@@ -1421,7 +1425,7 @@ async fn provider_failure_returns_error_after_prior_successful_search() {
 #[tokio::test]
 async fn budget_exhaustion_stops_before_actions() {
     let mut zero_turn_request = aspect_request();
-    zero_turn_request.task.budget.max_turns = Limit::limited(0);
+    zero_turn_request.task.limits.max_turns = Limit::limited(0);
     let (model_service, search_service, model_calls, search_calls) = services(vec![]);
 
     let error = AgentRuntime::new(
@@ -1439,7 +1443,7 @@ async fn budget_exhaustion_stops_before_actions() {
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 
     let mut request = aspect_request();
-    request.task.budget.max_search_calls = Limit::limited(0);
+    request.task.limits.max_search_calls = Limit::limited(0);
     let (model_service, search_service, model_calls, search_calls) =
         services(vec![tool_response("search")]);
 
@@ -1461,8 +1465,8 @@ async fn budget_exhaustion_stops_before_actions() {
 #[tokio::test]
 async fn slow_final_model_call_exhausts_effective_timeout() {
     let mut request = aspect_request();
-    request.task.budget.timeout_ms = Limit::limited(60_000);
-    request.execution_policy.timeout_ms = Limit::limited(50);
+    request.task.limits.timeout_ms = Limit::limited(60_000);
+    request.task.limits.timeout_ms = Limit::limited(50);
     let (model_service, search_service, model_calls, search_calls) = services_with_delay(
         vec![final_response("{}".to_owned())],
         Some(Duration::from_millis(250)),
@@ -1492,8 +1496,8 @@ async fn slow_final_model_call_exhausts_effective_timeout() {
 #[tokio::test]
 async fn lower_execution_timeout_is_enforced_before_search() {
     let mut request = aspect_request();
-    request.task.budget.timeout_ms = Limit::limited(60_000);
-    request.execution_policy.timeout_ms = Limit::limited(50);
+    request.task.limits.timeout_ms = Limit::limited(60_000);
+    request.task.limits.timeout_ms = Limit::limited(50);
     let (model_service, search_service, model_calls, search_calls) = services_with_delay(
         vec![tool_response("search")],
         Some(Duration::from_millis(250)),
@@ -1660,29 +1664,29 @@ async fn agent_loop_forwards_search_tool_call_time_params() {
     assert_eq!(requests[0].category, Some(SearchCategory::News));
 }
 
-/// When an aspect's `allowed_tools` is empty the tool guard MUST advertise no
+/// When an aspect's `tools` is empty the tool guard MUST advertise no
 /// tools, closing the gap where a model could still see denied tools.
 /// Regression guard for M13 (dynamic tool advertisement by policy).
 #[test]
-fn aspect_with_empty_allowed_tools_advertises_no_tools() {
+fn aspect_with_empty_tools_advertises_no_tools() {
     let mut request = aspect_request();
-    request.task.aspect.allowed_tools.clear();
-    let guard = moe_research_workflow::ToolPolicyGuard::new(&request.task.aspect);
+    request.task.tools.clear();
+    let guard = moe_research_workflow::ToolPolicyGuard::new(&request.task);
     assert!(
         guard.allowed_model_tools().is_empty(),
-        "tools list must be empty when allowed_tools is empty"
+        "tools list must be empty when tools is empty"
     );
 }
 
-/// Integration guard for M13: an aspect with empty `allowed_tools` MUST
+/// Integration guard for M13: an aspect with empty `tools` MUST
 /// reach the model provider with an actually empty `ModelRequest.tools`
 /// list, not merely a guard-level abstraction. This pins the wire shape.
 #[tokio::test]
-async fn aspect_with_empty_allowed_tools_sends_empty_model_tools() {
+async fn aspect_with_empty_tools_sends_empty_model_tools() {
     let mut request = aspect_request();
-    request.task.aspect.allowed_tools.clear();
-    request.task.aspect.search_provider = None;
-    request.evidence_policy.require_evidence_for_findings = false;
+    request.task.tools.clear();
+    request.task.search_provider = None;
+    request.policy.evidence.require_evidence_for_findings = false;
 
     let final_payload = serde_json::to_string(&AspectResearchResult {
         aspect_report: AspectReport {
@@ -1724,7 +1728,7 @@ async fn aspect_with_empty_allowed_tools_sends_empty_model_tools() {
     let requests = captured_requests.lock().expect("requests lock").clone();
     assert!(
         requests[0].tools.is_empty(),
-        "ModelRequest.tools must be empty when allowed_tools is empty"
+        "ModelRequest.tools must be empty when tools is empty"
     );
 }
 
@@ -1733,7 +1737,7 @@ async fn aspect_with_empty_allowed_tools_sends_empty_model_tools() {
 #[test]
 fn aspect_with_search_tool_advertises_only_search_tool() {
     let request = aspect_request();
-    let guard = moe_research_workflow::ToolPolicyGuard::new(&request.task.aspect);
+    let guard = moe_research_workflow::ToolPolicyGuard::new(&request.task);
     let tools = guard.allowed_model_tools();
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].name, "search");

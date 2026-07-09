@@ -1,31 +1,31 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "request_id": "deep-direct-fixture-1",
-  "user_question": "How should Claude Code call MoeResearch MCP tools directly?",
-  "aspect_tasks": [
-    {
-      "aspect": {
-        "aspect_id": "direct-call-contract",
+  "task": {
+    "question": "How should Claude Code call MoeResearch MCP tools directly?",
+    "aspects": [
+      {
+        "id": "direct-call-contract",
         "name": "Direct call contract",
         "role": "contract tester",
-        "research_question": "Does a direct Claude Code MCP deep payload deserialize?",
+        "question": "Does a direct Claude Code MCP deep payload deserialize?",
         "scope": ["MCP payload shape", "request object"],
         "boundaries": ["no JSON-RPC tools/call wrapper"],
         "success_criteria": ["deserialize as DeepResearchRequest"],
-        "aspect_agent_prompt": "# Aspect Agent\n\nReturn evidence-backed findings.",
-        "allowed_tools": ["search"],
+        "instructions": "# Aspect Agent\n\nReturn evidence-backed findings.",
+        "tools": ["search"],
         "model_provider": "openai",
-        "search_provider": "exa"
-      },
-      "budget": {
-        "max_turns": 6,
-        "max_tool_calls": 6,
-        "max_search_calls": 3,
-        "timeout_ms": 240000
+        "search_provider": "exa",
+        "limits": {
+          "max_turns": 6,
+          "max_tool_calls": 6,
+          "max_search_calls": 3,
+          "timeout_ms": 240000
+        }
       }
-    }
-  ],
-  "budget": {
+    ]
+  },
+  "limits": {
     "max_agents": 2,
     "max_concurrent_agents": 1,
     "max_total_model_calls": 12,
@@ -33,42 +33,43 @@
     "total_timeout_ms": 300000,
     "max_tokens": -1
   },
-  "model_policy": {
-    "allowed_providers": ["openai"],
-    "temperature": 0.2,
-    "max_tokens": null,
-    "require_tool_call_support": true
+  "policy": {
+    "model": {
+      "allowed_providers": ["openai"],
+      "temperature": 0.2,
+      "max_tokens": null,
+      "require_tool_call_support": true
+    },
+    "search": {
+      "allowed_providers": ["exa"],
+      "max_results_per_query": 5,
+      "freshness": null,
+      "depth": null,
+      "content_level": null,
+      "recency": null,
+      "category": null,
+      "language": null,
+      "region": null,
+      "include_domains": [],
+      "exclude_domains": []
+    },
+    "evidence": {
+      "require_evidence_for_findings": true,
+      "min_evidence_per_finding": 1
+    },
+    "output": {
+      "language": "en-US",
+      "max_findings_per_aspect": null
+    },
+    "execution": {
+      "allow_partial_results": true,
+      "fail_fast": false
+    }
   },
-  "search_policy": {
-    "allowed_providers": ["exa"],
-    "max_results_per_query": 5,
-    "freshness": null,
-    "depth": null,
-    "content_level": null,
-    "recency": null,
-    "category": null,
-    "language": null,
-    "region": null,
-    "include_domains": [],
-    "exclude_domains": []
-  },
-  "evidence_policy": {
-    "require_evidence_for_findings": true,
-    "min_evidence_per_finding": 1
-  },
-  "output_policy": {
-    "language": "en-US",
-    "max_findings_per_aspect": null
-  },
-  "shared_context": {
+  "context": {
     "summary": "Direct MCP deep fixture.",
     "known_facts": [],
     "excluded_assumptions": [],
     "prior_sources": []
-  },
-  "execution_policy": {
-    "allow_partial_results": true,
-    "fail_fast": false,
-    "timeout_ms": 240000
   }
 }

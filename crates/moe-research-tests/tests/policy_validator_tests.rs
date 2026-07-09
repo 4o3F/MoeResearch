@@ -1,11 +1,11 @@
 use moe_research_error::Error;
 use moe_research_model::ModelToolCall;
 use moe_research_net::Header;
-use moe_research_workflow::AspectSpec;
+use moe_research_workflow::AspectRequest;
 use moe_research_workflow::validate_output;
 use moe_research_workflow::{
-    AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
-    SourceType,
+    AgentLimits, AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType,
+    Importance, SourceType,
 };
 use moe_research_workflow::{
     EvidencePolicy, OutputPolicy, SearchCategory, SearchContentLevel, SearchDepth, SearchRecency,
@@ -32,19 +32,20 @@ fn output_policy() -> OutputPolicy {
     }
 }
 
-fn aspect_with_tools(allowed_tools: Vec<ToolName>) -> AspectSpec {
-    AspectSpec {
-        aspect_id: "market".to_owned(),
+fn aspect_with_tools(tools: Vec<ToolName>) -> AspectRequest {
+    AspectRequest {
+        id: "market".to_owned(),
         name: "Market".to_owned(),
         role: "researcher".to_owned(),
-        research_question: "What changed?".to_owned(),
+        question: "What changed?".to_owned(),
         scope: vec![],
         boundaries: vec![],
         success_criteria: vec![],
-        aspect_agent_prompt: aspect_prompt(),
-        allowed_tools,
-        model_provider: None,
+        instructions: aspect_prompt(),
+        tools,
+        model_provider: "openai".to_owned(),
         search_provider: Some("exa".to_owned()),
+        limits: AgentLimits::unlimited(),
     }
 }
 
@@ -56,19 +57,20 @@ fn call(name: &str, arguments: serde_json::Value) -> ModelToolCall {
     }
 }
 
-fn validator_aspect() -> AspectSpec {
-    AspectSpec {
-        aspect_id: "aspect-1".to_owned(),
+fn validator_aspect() -> AspectRequest {
+    AspectRequest {
+        id: "aspect-1".to_owned(),
         name: "Market".to_owned(),
         role: "researcher".to_owned(),
-        research_question: "What matters?".to_owned(),
+        question: "What matters?".to_owned(),
         scope: vec!["market".to_owned()],
         boundaries: Vec::new(),
         success_criteria: Vec::new(),
-        aspect_agent_prompt: aspect_prompt(),
-        allowed_tools: vec![ToolName("search".to_owned())],
-        model_provider: None::<String>,
+        instructions: aspect_prompt(),
+        tools: vec![ToolName("search".to_owned())],
+        model_provider: "openai".to_owned(),
         search_provider: Some("exa".to_owned()),
+        limits: AgentLimits::unlimited(),
     }
 }
 

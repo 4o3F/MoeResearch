@@ -28,11 +28,10 @@ You typically own these competitive dimensions: **真实竞争集框定 (real co
 ## Inputs
 
 ```json
-{ "aspect": "AspectSpec", "shared_context": "ResearchContext", "model_policy": "ModelPolicy",
-  "search_policy": "SearchPolicy", "evidence_policy": "EvidencePolicy", "output_policy": "OutputPolicy", "budget": "AgentBudget" }
+{ "task": "AspectRequest", "context": "ResearchContext", "policy": "ResearchPolicy", "limits": "AgentLimits" }
 ```
 
-`shared_context.summary` carries the `decision_intent`; keep every finding anchored to it.
+`context.summary` carries the `decision_intent`; keep every finding anchored to it.
 
 ## Available tool
 
@@ -40,7 +39,7 @@ You typically own these competitive dimensions: **真实竞争集框定 (real co
 { "name": "search", "arguments": { "query": "string", "max_results": "integer" } }
 ```
 
-The runtime resolves provider selection from `aspect.search_provider` and resolves freshness/language/region/domains from `SearchPolicy`. Search tool arguments must NOT include provider names or provider-native parameters.
+The runtime resolves provider selection from `task.search_provider` and resolves freshness/language/region/domains from `policy.search`. Search tool arguments must NOT include provider names or provider-native parameters.
 
 ## Output schema
 
@@ -84,7 +83,7 @@ For every enum field output exactly one allowed value; never invent synonyms. Fo
 ## Search-budget discipline
 
 - Treat search calls as scarce evidence probes, not a quota to spend. Start with a short query plan: 1–3 high-signal searches that map directly to the aspect question and success criteria.
-- If `aspect.search_provider` is `exa`, treat 3 searches as a hard practical ceiling for non-evidence-table aspects. Exa summaries/snippets can be long; extra searches increase provenance-copy risk more than they improve decision quality.
+- If `task.search_provider` is `exa`, treat 3 searches as a hard practical ceiling for non-evidence-table aspects. Exa summaries/snippets can be long; extra searches increase provenance-copy risk more than they improve decision quality.
 - After each search, decide whether the current evidence is enough to produce a bounded answer. If yes, stop searching immediately and synthesize.
 - Never spend the last available search call on broad recall, generic market background, or polishing. Preserve the remaining budget for synthesis, citation consistency, and final JSON validation.
 - When evidence is incomplete and the search budget is near exhaustion, do NOT search again by default. Lower confidence, state the gap in `limitations` / `open_questions`, and return the best supported result from existing evidence.
@@ -104,7 +103,7 @@ For every enum field output exactly one allowed value; never invent synonyms. Fo
 
 1. Stay within the assigned aspect `scope` and `boundaries`.
 2. Build focused queries from the aspect `question` and `success_criteria` before searching.
-3. Search only when evidence is needed; stop when `success_criteria` are met or budget is near exhaustion.
+3. Search only when evidence is needed; stop when `success_criteria` are met or limits are near exhaustion.
 4. Do not repeat a query unless the prior result was empty/malformed.
 5. If evidence is weak, lower `confidence` and add a `limitation`.
 

@@ -331,7 +331,7 @@ crates/
 - `moe-research-model` 与 `moe-research-search` 负责把具体厂商协议转换为本领域中立结构，不依赖 workflow policy 或 config。
 - 如果某个 provider 需要私有 serde DTO，应放在对应 provider 模块内部，不进入公共 `schema/` module。
 - `net/` 是所有 outbound network requests 的唯一出口，provider 不应绕过它直接创建 HTTP client。
-- `skills/` 与 `prompts/` 放 Markdown 资产，由 Layer 1 在生成 MCP 请求时**内联**进 `AspectSpec.aspect_agent_prompt` 字段；Rust core 不再在运行时读取 prompt 文件。
+- `skills/` 与 `prompts/` 放 Markdown 资产，由 Layer 1 在生成 MCP 请求时**内联**进 `AspectRequest.instructions` 字段；Rust core 不再在运行时读取 prompt 文件。
 - 当 `schema` 需要被多个独立 crate 复用，或 MCP server 需要单独发布、单独版本管理时，再将对应 module 提升为独立 crate。
 
 ### 10.1 MCP 边界
@@ -374,7 +374,7 @@ ToolError
 - `deep_research` 的 partial envelope 将失败 aspect 的已收集证据纳入 `data.evidence_index`，但失败 aspect 不进入 `completed_aspects` 或 `aspect_reports`。
 - `status=failed` 时，`data` 为 `null`，`error` 说明失败原因；`schema_validation_failed` 的 `error.message` 可包含经过整理的校验 code、JSON path 和可读诊断；运行期 model/search/tool call 诊断通过结构化 `tracing` 日志输出。
 - `run_id` 对 `deep_research` 成功或部分成功结果必填，并与 `DeepResearchResult.run_id` 一致；单 aspect 工具可返回 `null`，调用方应使用 `request_id` 与 `aspect_id` 关联日志。
-- terminal `deep_research` 若由 aspect failures 聚合导致，顶层 `error.code` 使用 `partial_result`，每个 aspect 的真实 `error_code`、`message` 和 `retryable` 写入 `error.failed_aspects`，顺序与请求中的 `aspect_tasks` 一致。
+- terminal `deep_research` 若由 aspect failures 聚合导致，顶层 `error.code` 使用 `partial_result`，每个 aspect 的真实 `error_code`、`message` 和 `retryable` 写入 `error.failed_aspects`，顺序与请求中的 `task.aspects` 一致。
 - terminal `partial_result` 的顶层 `error.retryable` 由所有 `error.failed_aspects[*].retryable` 聚合：仅当所有 aspect 失败都可重试时为 `true`。
 - `aspect_research` 失败、runtime 启动前的校验错误（例如无效输入、schema version 不支持）以及纯顶层 deep-research 失败返回稳定 `ToolError`，且 `error.failed_aspects=[]`。
 - Layer 3 对 Layer 2 透明提供标准化搜索结果，包括 query、source title、URL、snippet、summary、provider 和发布时间等字段。不得在 envelope 中返回 secrets、Authorization header、API key、完整 prompt 或 raw provider request/response body。
@@ -495,7 +495,7 @@ SearchResponse
 
 ### 10.5 Schema Version
 
-当前 workflow 接受的 `schema_version` 取值（见 `crates/moe-research-workflow/src/workflow.rs` 的 `SUPPORTED_SCHEMA_VERSIONS` 常量）：`0.1`。任何其他取值会触发 `ToolErrorCode::unsupported_schema_version`，并通过 MCP envelope 的 `error` 字段返回。
+当前 workflow 接受的 `schema_version` 取值（见 `crates/moe-research-workflow/src/workflow.rs` 的 `SUPPORTED_SCHEMA_VERSIONS` 常量）：`0.2`。任何其他取值会触发 `ToolErrorCode::unsupported_schema_version`，并通过 MCP envelope 的 `error` 字段返回。
 
 新增 schema version 时必须：
 
@@ -576,7 +576,7 @@ sequenceDiagram
 
 ## 12. Provider 可扩展性
 
-模型 provider 和搜索 provider 都应通过统一 trait 接入。Reasoning Layer 的模型 API provider 负责推理和工具调用格式适配，Retrieval Layer 的搜索 provider 负责搜索能力接入。两类 provider 都应支持通过配置文件设置 `base_url`、API key 来源、启用状态和超时；搜索执行 provider 由 `aspect.search_provider` 显式指定。
+模型 provider 和搜索 provider 都应通过统一 trait 接入。Reasoning Layer 的模型 API provider 负责推理和工具调用格式适配，Retrieval Layer 的搜索 provider 负责搜索能力接入。两类 provider 都应支持通过配置文件设置 `base_url`、API key 来源、启用状态和超时；搜索执行 provider 由 `task.search_provider` 或 `task.aspects[].search_provider` 显式指定。
 
 ### 12.1 Search Provider
 

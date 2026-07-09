@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use moe_research_error::{Error, Result};
 
-use super::budget::{AgentBudget, BudgetConfig, ResearchBudget};
+use super::budget::{AgentLimits, BudgetConfig, ResearchLimits};
 use super::limit::Limit;
 use super::policy::{
     EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
@@ -13,6 +13,7 @@ use super::policy::{
 use super::report::Evidence;
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResearchContext {
     pub summary: String,
     pub known_facts: Vec<String>,
@@ -34,24 +35,36 @@ impl ResearchContext {
     }
 }
 
-/// Specification of a single research aspect.
+/// Policies that shape one MoeResearch request without carrying resource limits.
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResearchPolicy {
+    pub model: ModelPolicy,
+    pub search: SearchPolicy,
+    pub evidence: EvidencePolicy,
+    pub output: OutputPolicy,
+    pub execution: ExecutionPolicy,
+}
+
+/// One runnable research aspect.
 ///
 /// Aspects are the unit of parallelism for deep research: each aspect runs
-/// inside its own agent loop with its own budget, tool allowlist, and
-/// provider selection. Layer 1 (the Claude Code skill) constructs one
-/// `AspectSpec` per dimension of the user's question.
+/// inside its own agent loop with its own limits, tool allowlist, and provider
+/// selection. Layer 1 (the Claude Code skill) constructs one `AspectRequest`
+/// per dimension of the user's question.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct AspectSpec {
+#[serde(deny_unknown_fields)]
+pub struct AspectRequest {
     /// Stable identifier used by the orchestrator to track per-aspect state
-    /// (budgets, evidence namespacing, failure records).
-    pub aspect_id: String,
+    /// (limits, evidence namespacing, failure records).
+    pub id: String,
     /// Human-readable aspect name surfaced to the model and final report.
     pub name: String,
     /// Short role description (e.g. "competitive landscape analyst") used in
     /// the aspect agent's system prompt.
     pub role: String,
     /// Concrete research question this aspect must answer.
-    pub research_question: String,
+    pub question: String,
     /// Topical scope guides for the aspect agent (in-scope topics).
     pub scope: Vec<String>,
     /// Explicit out-of-scope boundaries.
@@ -65,14 +78,16 @@ pub struct AspectSpec {
     /// the resolved Markdown verbatim as this field. Validation requires a
     /// non-empty string under `ASPECT_PROMPT_MAX_BYTES` (64 KiB) to guard
     /// against accidental payload bloat.
-    pub aspect_agent_prompt: String,
+    pub instructions: String,
     /// Tools the aspect agent is allowed to call (currently only `search`).
-    pub allowed_tools: Vec<ToolName>,
-    /// Explicit model provider selection; must satisfy `ModelPolicy`.
-    pub model_provider: Option<String>,
-    /// Explicit search provider selection (exactly one); must satisfy
-    /// `SearchPolicy`.
+    pub tools: Vec<ToolName>,
+    /// Explicit model provider selection; must satisfy `ResearchPolicy.model`.
+    pub model_provider: String,
+    /// Explicit search provider selection (exactly one when `tools` includes
+    /// `search`); must satisfy `ResearchPolicy.search`.
     pub search_provider: Option<String>,
+    /// Per-aspect resource and timeout limits.
+    pub limits: AgentLimits,
 }
 
 /// Upper bound on the inline aspect-agent prompt size, in bytes.
@@ -84,37 +99,31 @@ pub struct AspectSpec {
 pub(crate) const ASPECT_PROMPT_MAX_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-pub struct AspectResearchTask {
-    pub aspect: AspectSpec,
-    pub budget: AgentBudget,
+#[serde(deny_unknown_fields)]
+pub struct ResearchTask {
+    pub question: String,
+    pub aspects: Vec<AspectRequest>,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AspectResearchRequest {
     pub schema_version: String,
     pub request_id: String,
-    pub task: AspectResearchTask,
-    pub shared_context: ResearchContext,
-    pub model_policy: ModelPolicy,
-    pub search_policy: SearchPolicy,
-    pub evidence_policy: EvidencePolicy,
-    pub output_policy: OutputPolicy,
-    pub execution_policy: ExecutionPolicy,
+    pub task: AspectRequest,
+    pub policy: ResearchPolicy,
+    pub context: ResearchContext,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeepResearchRequest {
     pub schema_version: String,
     pub request_id: String,
-    pub user_question: String,
-    pub aspect_tasks: Vec<AspectResearchTask>,
-    pub budget: ResearchBudget,
-    pub model_policy: ModelPolicy,
-    pub search_policy: SearchPolicy,
-    pub evidence_policy: EvidencePolicy,
-    pub output_policy: OutputPolicy,
-    pub shared_context: ResearchContext,
-    pub execution_policy: ExecutionPolicy,
+    pub task: ResearchTask,
+    pub limits: ResearchLimits,
+    pub policy: ResearchPolicy,
+    pub context: ResearchContext,
 }
 
 pub(crate) struct WorkflowValidationContext<'a> {
@@ -129,18 +138,9 @@ impl AspectResearchRequest {
         ensure_non_empty("request_id", &self.request_id)?;
         ensure_schema_version_supported(&self.schema_version, ctx.supported_schema_versions)?;
 
-        self.search_policy.validate_for_search()?;
-
-        let parent_timeout = self.task.budget.timeout_ms;
-        validate_aspect_task(
-            &self.task,
-            &self.model_policy,
-            &self.search_policy,
-            &self.execution_policy,
-            parent_timeout,
-            ctx,
-            "execution timeout must not exceed agent budget timeout",
-        )
+        self.policy.search.validate_for_search()?;
+        validate_aspect_request(&self.task, &self.policy, ctx)?;
+        Ok(())
     }
 }
 
@@ -148,96 +148,70 @@ impl DeepResearchRequest {
     pub(crate) fn validate_for_execution(&self, ctx: &WorkflowValidationContext<'_>) -> Result<()> {
         ensure_non_empty("schema_version", &self.schema_version)?;
         ensure_non_empty("request_id", &self.request_id)?;
+        ensure_non_empty("task.question", &self.task.question)?;
         ensure_schema_version_supported(&self.schema_version, ctx.supported_schema_versions)?;
 
-        if self.aspect_tasks.is_empty() {
+        if self.task.aspects.is_empty() {
             return Err(Error::InvalidInput {
-                message: "aspect_tasks must not be empty".to_owned(),
+                message: "task.aspects must not be empty".to_owned(),
             });
         }
 
         let mut aspect_ids = BTreeSet::new();
-        for task in &self.aspect_tasks {
-            let aspect_id = task.aspect.aspect_id.as_str();
+        for aspect in &self.task.aspects {
+            let aspect_id = aspect.id.as_str();
             if !aspect_id.is_empty() && !aspect_ids.insert(aspect_id) {
                 return Err(Error::InvalidInput {
-                    message: format!("aspect.aspect_id must be unique: {aspect_id}"),
+                    message: format!("task.aspects[].id must be unique: {aspect_id}"),
                 });
             }
         }
 
-        self.budget.validate_against_config(ctx.budget_config)?;
+        self.limits.validate_against_config(ctx.budget_config)?;
 
-        if Limit::limited(self.aspect_tasks.len()).exceeds(self.budget.max_agents) {
+        if Limit::limited(self.task.aspects.len()).exceeds(self.limits.max_agents) {
             return Err(Error::BudgetExceeded {
                 message: "aspect task count exceeds max_agents".to_owned(),
             });
         }
 
-        if self
-            .execution_policy
-            .timeout_ms
-            .exceeds(self.budget.total_timeout_ms)
-        {
-            return Err(Error::BudgetExceeded {
-                message: "execution timeout must not exceed research budget timeout".to_owned(),
-            });
-        }
+        self.policy.search.validate_for_search()?;
 
-        self.search_policy.validate_for_search()?;
-
-        for task in &self.aspect_tasks {
-            validate_aspect_task(
-                task,
-                &self.model_policy,
-                &self.search_policy,
-                &self.execution_policy,
-                self.budget.total_timeout_ms,
-                ctx,
-                "aspect budget timeout exceeds research budget timeout",
-            )?;
+        for aspect in &self.task.aspects {
+            validate_aspect_request(aspect, &self.policy, ctx)?;
+            if aspect
+                .limits
+                .timeout_ms
+                .exceeds(self.limits.total_timeout_ms)
+            {
+                return Err(Error::BudgetExceeded {
+                    message: "aspect limits timeout exceeds research limits timeout".to_owned(),
+                });
+            }
         }
 
         Ok(())
     }
 }
 
-fn validate_aspect_task(
-    task: &AspectResearchTask,
-    model_policy: &ModelPolicy,
-    search_policy: &SearchPolicy,
-    execution_policy: &ExecutionPolicy,
-    parent_timeout: Limit<u64>,
+fn validate_aspect_request(
+    aspect: &AspectRequest,
+    policy: &ResearchPolicy,
     ctx: &WorkflowValidationContext<'_>,
-    timeout_violation_message: &str,
 ) -> Result<()> {
-    let aspect = &task.aspect;
-    ensure_non_empty("aspect.aspect_id", &aspect.aspect_id)?;
-    ensure_non_empty("aspect.name", &aspect.name)?;
-    ensure_non_empty("aspect.research_question", &aspect.research_question)?;
-    ensure_non_empty("aspect.aspect_agent_prompt", &aspect.aspect_agent_prompt)?;
-    if aspect.aspect_agent_prompt.len() > ASPECT_PROMPT_MAX_BYTES {
+    ensure_non_empty("task.id", &aspect.id)?;
+    ensure_non_empty("task.name", &aspect.name)?;
+    ensure_non_empty("task.question", &aspect.question)?;
+    ensure_non_empty("task.instructions", &aspect.instructions)?;
+    if aspect.instructions.len() > ASPECT_PROMPT_MAX_BYTES {
         return Err(Error::SchemaValidationFailed {
-            message: format!("aspect.aspect_agent_prompt exceeds {ASPECT_PROMPT_MAX_BYTES} bytes"),
+            message: format!("task.instructions exceeds {ASPECT_PROMPT_MAX_BYTES} bytes"),
         });
     }
-    ensure_runtime_tools_allowed(&aspect.allowed_tools, ctx.supported_tool_name)?;
-    validate_explicit_model_provider(aspect, model_policy)?;
-    validate_explicit_search_provider(aspect, search_policy, ctx.supported_tool_name)?;
-    task.budget.validate_against_config(ctx.budget_config)?;
-
-    // Treat an unset `execution_policy.timeout_ms` as "inherit the
-    // parent budget", so an `Unlimited` policy does not silently widen
-    // a finite parent budget.
-    let effective_timeout = match execution_policy.timeout_ms {
-        Limit::Unlimited => parent_timeout,
-        Limit::Limited(_) => execution_policy.timeout_ms,
-    };
-    if effective_timeout.exceeds(parent_timeout) {
-        return Err(Error::BudgetExceeded {
-            message: timeout_violation_message.to_owned(),
-        });
-    }
+    ensure_runtime_tools_allowed(&aspect.tools, ctx.supported_tool_name)?;
+    validate_explicit_model_provider(aspect, &policy.model)?;
+    validate_explicit_search_provider(aspect, &policy.search, ctx.supported_tool_name)?;
+    aspect.limits.validate_against_config(ctx.budget_config)?;
     Ok(())
 }
 
@@ -257,9 +231,9 @@ fn ensure_schema_version_supported(version: &str, supported: &[&str]) -> Result<
     })
 }
 
-fn validate_explicit_model_provider(aspect: &AspectSpec, policy: &ModelPolicy) -> Result<()> {
+fn validate_explicit_model_provider(aspect: &AspectRequest, policy: &ModelPolicy) -> Result<()> {
     let provider = validate_explicit_provider_name(
-        aspect.model_provider.as_deref(),
+        Some(aspect.model_provider.as_str()),
         "aspect must specify model_provider",
         "model_provider must be a non-empty provider name",
     )?;
@@ -276,12 +250,12 @@ fn validate_explicit_model_provider(aspect: &AspectSpec, policy: &ModelPolicy) -
 }
 
 fn validate_explicit_search_provider(
-    aspect: &AspectSpec,
+    aspect: &AspectRequest,
     policy: &SearchPolicy,
     supported_tool_name: &str,
 ) -> Result<()> {
     if !aspect
-        .allowed_tools
+        .tools
         .iter()
         .any(|tool| tool.0 == supported_tool_name)
     {

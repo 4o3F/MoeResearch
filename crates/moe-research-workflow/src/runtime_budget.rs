@@ -21,12 +21,12 @@ use std::time::Instant;
 
 use moe_research_error::{Error, Result};
 
-use crate::budget::{AgentBudget, ResearchBudget};
+use crate::budget::{AgentLimits, ResearchLimits};
 use crate::report::{AgentBudgetUsage, ResearchBudgetUsage, TokenUsage};
 
 #[derive(Clone, Debug)]
 pub struct AgentBudgetGuard {
-    budget: AgentBudget,
+    budget: AgentLimits,
     start_time: Instant,
     turns_used: usize,
     tool_calls_used: usize,
@@ -34,7 +34,7 @@ pub struct AgentBudgetGuard {
 }
 
 impl AgentBudgetGuard {
-    pub fn new(budget: AgentBudget) -> Result<Self> {
+    pub fn new(budget: AgentLimits) -> Result<Self> {
         budget.ensure_runnable()?;
         Ok(Self {
             budget,
@@ -156,7 +156,7 @@ impl AgentBudgetGuard {
 /// mutex because [`TokenUsage`] accumulation is not atomic, but the
 /// mutex is only acquired on provider replies (not on every tool turn).
 pub struct ResearchBudgetGuard {
-    budget: ResearchBudget,
+    budget: ResearchLimits,
     started: Instant,
     model_calls: AtomicU64,
     search_calls: AtomicU64,
@@ -181,11 +181,11 @@ impl std::fmt::Debug for ResearchBudgetGuard {
 impl ResearchBudgetGuard {
     /// Builds a new cross-aspect guard.
     ///
-    /// The supplied [`ResearchBudget`] is captured by value so subsequent
+    /// The supplied [`ResearchLimits`] is captured by value so subsequent
     /// reservations evaluate against an immutable snapshot of the requested
     /// caps.
     #[must_use]
-    pub fn new(budget: ResearchBudget) -> Arc<Self> {
+    pub fn new(budget: ResearchLimits) -> Arc<Self> {
         Arc::new(Self {
             budget,
             started: Instant::now(),
@@ -202,7 +202,7 @@ impl ResearchBudgetGuard {
     /// entry points should derive their guard from operator/request budgets.
     #[must_use]
     pub fn unlimited() -> Arc<Self> {
-        Self::new(ResearchBudget::unlimited())
+        Self::new(ResearchLimits::unlimited())
     }
 
     /// Records that one aspect has begun execution.
@@ -259,7 +259,7 @@ impl ResearchBudgetGuard {
     ///
     /// # Errors
     /// Returns [`Error::BudgetExceeded`] once the merged total exceeds
-    /// [`ResearchBudget::max_tokens`]. Providers that omit usage do not
+    /// [`ResearchLimits::max_tokens`]. Providers that omit usage do not
     /// advance the counter, matching the upstream provider contract that
     /// `usage = None` means "untracked", not "zero".
     ///

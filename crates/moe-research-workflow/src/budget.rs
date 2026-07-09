@@ -9,8 +9,8 @@ use super::report::ResearchBudgetUsage;
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BudgetConfig {
-    pub research: ResearchBudget,
-    pub per_agent: AgentBudget,
+    pub research: ResearchLimits,
+    pub per_agent: AgentLimits,
 }
 
 impl BudgetConfig {
@@ -49,7 +49,7 @@ impl BudgetConfig {
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ResearchBudget {
+pub struct ResearchLimits {
     pub max_agents: CountLimit,
     pub max_concurrent_agents: CountLimit,
     pub max_total_model_calls: CountLimit,
@@ -58,8 +58,8 @@ pub struct ResearchBudget {
     pub max_tokens: TokenLimit,
 }
 
-impl ResearchBudget {
-    /// Explicitly construct a research budget with no caps on any dimension.
+impl ResearchLimits {
+    /// Explicitly construct research limits with no caps on any dimension.
     /// Intended for tests and controlled environments only; production callers
     /// must declare each dimension to prevent unbounded resource use.
     #[must_use]
@@ -77,15 +77,15 @@ impl ResearchBudget {
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct AgentBudget {
+pub struct AgentLimits {
     pub max_turns: CountLimit,
     pub max_tool_calls: CountLimit,
     pub max_search_calls: CountLimit,
     pub timeout_ms: DurationLimitMs,
 }
 
-impl AgentBudget {
-    /// Explicitly construct an agent budget with no caps on any dimension.
+impl AgentLimits {
+    /// Explicitly construct agent limits with no caps on any dimension.
     /// Intended for tests and controlled environments only.
     #[must_use]
     pub fn unlimited() -> Self {
@@ -98,7 +98,7 @@ impl AgentBudget {
     }
 }
 
-impl ResearchBudget {
+impl ResearchLimits {
     pub(crate) fn validate_against_config(&self, limits: &BudgetConfig) -> Result<()> {
         ensure_budget_non_zero(
             "research budget requires at least one agent",
@@ -195,7 +195,7 @@ impl ResearchBudget {
     }
 }
 
-impl AgentBudget {
+impl AgentLimits {
     pub(crate) fn ensure_runnable(&self) -> Result<()> {
         ensure_budget_non_zero(
             "agent budget requires at least one model turn",

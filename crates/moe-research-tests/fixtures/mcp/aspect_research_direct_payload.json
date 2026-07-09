@@ -1,63 +1,62 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "request_id": "aspect-direct-fixture-1",
   "task": {
-    "aspect": {
-      "aspect_id": "direct-aspect",
-      "name": "Direct aspect payload",
-      "role": "contract tester",
-      "research_question": "Does a direct Claude Code MCP aspect payload deserialize?",
-      "scope": ["MCP payload shape"],
-      "boundaries": ["no provider-native request fields"],
-      "success_criteria": ["deserialize as AspectResearchRequest"],
-      "aspect_agent_prompt": "# Aspect Agent\n\nReturn evidence-backed findings.",
-      "allowed_tools": ["search"],
-      "model_provider": "openai",
-      "search_provider": "exa"
-    },
-    "budget": {
+    "id": "direct-aspect",
+    "name": "Direct aspect payload",
+    "role": "contract tester",
+    "question": "Does a direct Claude Code MCP aspect payload deserialize?",
+    "scope": ["MCP payload shape"],
+    "boundaries": ["no provider-native request fields"],
+    "success_criteria": ["deserialize as AspectResearchRequest"],
+    "instructions": "# Aspect Agent\n\nReturn evidence-backed findings.",
+    "tools": ["search"],
+    "model_provider": "openai",
+    "search_provider": "exa",
+    "limits": {
       "max_turns": 4,
       "max_tool_calls": 4,
       "max_search_calls": 2,
       "timeout_ms": 180000
     }
   },
-  "shared_context": {
+  "policy": {
+    "model": {
+      "allowed_providers": ["openai"],
+      "temperature": 0.2,
+      "max_tokens": null,
+      "require_tool_call_support": true
+    },
+    "search": {
+      "allowed_providers": ["exa"],
+      "max_results_per_query": 5,
+      "freshness": null,
+      "depth": null,
+      "content_level": null,
+      "recency": null,
+      "category": null,
+      "language": null,
+      "region": null,
+      "include_domains": [],
+      "exclude_domains": []
+    },
+    "evidence": {
+      "require_evidence_for_findings": true,
+      "min_evidence_per_finding": 1
+    },
+    "output": {
+      "language": "en-US",
+      "max_findings_per_aspect": null
+    },
+    "execution": {
+      "allow_partial_results": true,
+      "fail_fast": false
+    }
+  },
+  "context": {
     "summary": "Direct MCP aspect fixture.",
     "known_facts": [],
     "excluded_assumptions": [],
     "prior_sources": []
-  },
-  "model_policy": {
-    "allowed_providers": ["openai"],
-    "temperature": 0.2,
-    "max_tokens": null,
-    "require_tool_call_support": true
-  },
-  "search_policy": {
-    "allowed_providers": ["exa"],
-    "max_results_per_query": 5,
-    "freshness": null,
-    "depth": null,
-    "content_level": null,
-    "recency": null,
-    "category": null,
-    "language": null,
-    "region": null,
-    "include_domains": [],
-    "exclude_domains": []
-  },
-  "evidence_policy": {
-    "require_evidence_for_findings": true,
-    "min_evidence_per_finding": 1
-  },
-  "output_policy": {
-    "language": "en-US",
-    "max_findings_per_aspect": null
-  },
-  "execution_policy": {
-    "allow_partial_results": true,
-    "fail_fast": false,
-    "timeout_ms": 180000
   }
 }

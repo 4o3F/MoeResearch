@@ -160,7 +160,7 @@ Fields:
 | `retry_backoff_ms` | Backoff base in milliseconds. |
 | `user_agent` | HTTP user-agent value. Must be non-empty and valid as a header value. |
 
-`network.inactivity_timeout_ms` is an outbound provider inactivity timeout, not a total MCP tool duration. For `aspect_research`, set the outer MCP/client timeout higher than the effective aspect deadline (`execution_policy.timeout_ms` when finite, otherwise `task.budget.timeout_ms`) plus provider retry/backoff slack. For `deep_research`, size the outer timeout against the full research deadline (`budget.total_timeout_ms` when finite, otherwise your chosen operational cap), not just the per-aspect execution timeout. If the outer client aborts earlier, it may miss a later `ok` or `partial` envelope.
+`network.inactivity_timeout_ms` is an outbound provider inactivity timeout, not a total MCP tool duration. For `aspect_research`, set the outer MCP/client timeout higher than the effective aspect deadline (`task.limits.timeout_ms` when finite) plus provider retry/backoff slack. For `deep_research`, size the outer timeout against the full research deadline (`limits.total_timeout_ms` when finite, otherwise your chosen operational cap), not just the per-aspect timeout. If the outer client aborts earlier, it may miss a later `ok` or `partial` envelope.
 
 ## 6. Budget settings
 

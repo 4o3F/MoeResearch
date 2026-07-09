@@ -7,7 +7,7 @@ use std::time::Duration;
 use moe_research_error::Error;
 use moe_research_workflow::Limit;
 use moe_research_workflow::deep_research;
-use moe_research_workflow::{AgentBudget, BudgetConfig, ResearchBudget};
+use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
 use support::research::{
     deep_request, services, services_with_delay, services_with_token_usage, unlimited_budget_config,
 };
@@ -117,7 +117,7 @@ async fn all_aspects_failed_with_partial_evidence_returns_partial_result() {
 #[tokio::test]
 async fn all_aspects_failed_with_partial_evidence_and_partials_disabled_returns_error() {
     let mut request = deep_request(2);
-    request.execution_policy.allow_partial_results = false;
+    request.policy.execution.allow_partial_results = false;
     let services = services(&["aspect-1", "aspect-2"]);
 
     let failure = deep_research(
@@ -138,7 +138,7 @@ async fn all_aspects_failed_with_partial_evidence_and_partials_disabled_returns_
 #[tokio::test]
 async fn partial_results_disabled_returns_error() {
     let mut request = deep_request(3);
-    request.execution_policy.allow_partial_results = false;
+    request.policy.execution.allow_partial_results = false;
     let services = services(&["aspect-2"]);
 
     let failure = deep_research(
@@ -158,8 +158,8 @@ async fn partial_results_disabled_returns_error() {
 #[tokio::test]
 async fn fail_fast_stops_before_scheduling_remaining_aspects() {
     let mut request = deep_request(2);
-    request.budget.max_concurrent_agents = Limit::limited(1);
-    request.execution_policy.fail_fast = true;
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    request.policy.execution.fail_fast = true;
     let services = services(&["aspect-1"]);
 
     let result = deep_research(
@@ -182,9 +182,9 @@ async fn fail_fast_stops_before_scheduling_remaining_aspects() {
 #[tokio::test]
 async fn all_agent_budget_failures_preserve_failed_aspects() {
     let mut request = deep_request(2);
-    request.budget.max_concurrent_agents = Limit::limited(1);
-    for task in &mut request.aspect_tasks {
-        task.budget.max_search_calls = Limit::limited(0);
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    for task in &mut request.task.aspects {
+        task.limits.max_search_calls = Limit::limited(0);
     }
     let services = services(&[]);
 
@@ -220,7 +220,7 @@ async fn all_agent_budget_failures_preserve_failed_aspects() {
 #[tokio::test]
 async fn rejects_plan_exceeding_max_agents() {
     let mut request = deep_request(3);
-    request.budget.max_agents = Limit::limited(2);
+    request.limits.max_agents = Limit::limited(2);
     let services = services(&[]);
 
     let failure = deep_research(
@@ -242,11 +242,11 @@ async fn rejects_plan_when_effective_max_agents_cannot_cover_aspects() {
     let request = deep_request(3);
     let services = services(&[]);
     let limits = BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_agents: Limit::limited(2),
-            ..ResearchBudget::unlimited()
+            ..ResearchLimits::unlimited()
         },
-        per_agent: AgentBudget::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     };
 
     let failure = deep_research(request, &services.model, &services.search, &limits)
@@ -263,12 +263,12 @@ async fn research_concurrency_above_configured_limits_is_clamped() {
     let request = deep_request(3);
     let services = services(&[]);
     let limits = BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_agents: Limit::limited(3),
             max_concurrent_agents: Limit::limited(1),
-            ..ResearchBudget::unlimited()
+            ..ResearchLimits::unlimited()
         },
-        per_agent: AgentBudget::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     };
 
     let result = deep_research(request, &services.model, &services.search, &limits)
@@ -284,10 +284,10 @@ async fn rejects_agent_budget_above_configured_limits() {
     let request = deep_request(2);
     let services = services(&[]);
     let limits = BudgetConfig {
-        research: ResearchBudget::unlimited(),
-        per_agent: AgentBudget {
+        research: ResearchLimits::unlimited(),
+        per_agent: AgentLimits {
             max_turns: Limit::limited(5),
-            ..AgentBudget::unlimited()
+            ..AgentLimits::unlimited()
         },
     };
 
@@ -306,9 +306,9 @@ async fn rejects_agent_budget_above_configured_limits() {
 #[tokio::test]
 async fn global_search_budget_blocks_further_calls() {
     let mut request = deep_request(2);
-    request.budget.max_total_search_calls = Limit::limited(1);
-    request.budget.max_concurrent_agents = Limit::limited(1);
-    request.execution_policy.allow_partial_results = false;
+    request.limits.max_total_search_calls = Limit::limited(1);
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    request.policy.execution.allow_partial_results = false;
     let services = services(&[]);
 
     let failure = deep_research(
@@ -331,9 +331,9 @@ async fn global_search_budget_blocks_further_calls() {
 #[tokio::test]
 async fn global_model_budget_stops_before_extra_model_call() {
     let mut request = deep_request(2);
-    request.budget.max_total_model_calls = Limit::limited(2);
-    request.budget.max_concurrent_agents = Limit::limited(1);
-    request.execution_policy.allow_partial_results = false;
+    request.limits.max_total_model_calls = Limit::limited(2);
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    request.policy.execution.allow_partial_results = false;
     let services = services(&[]);
 
     let failure = deep_research(
@@ -354,16 +354,16 @@ async fn global_model_budget_stops_before_extra_model_call() {
 #[tokio::test]
 async fn request_unlimited_model_budget_inherits_config_cap() {
     let mut request = deep_request(2);
-    request.budget.max_total_model_calls = Limit::unlimited();
-    request.budget.max_concurrent_agents = Limit::limited(1);
-    request.execution_policy.allow_partial_results = false;
+    request.limits.max_total_model_calls = Limit::unlimited();
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    request.policy.execution.allow_partial_results = false;
     let services = services(&[]);
     let limits = BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_total_model_calls: Limit::limited(2),
-            ..ResearchBudget::unlimited()
+            ..ResearchLimits::unlimited()
         },
-        per_agent: AgentBudget::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     };
 
     let failure = deep_research(request, &services.model, &services.search, &limits)
@@ -379,16 +379,16 @@ async fn request_unlimited_model_budget_inherits_config_cap() {
 #[tokio::test]
 async fn config_model_budget_wins_when_request_budget_is_higher() {
     let mut request = deep_request(2);
-    request.budget.max_total_model_calls = Limit::limited(10);
-    request.budget.max_concurrent_agents = Limit::limited(1);
-    request.execution_policy.allow_partial_results = false;
+    request.limits.max_total_model_calls = Limit::limited(10);
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    request.policy.execution.allow_partial_results = false;
     let services = services(&[]);
     let limits = BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_total_model_calls: Limit::limited(2),
-            ..ResearchBudget::unlimited()
+            ..ResearchLimits::unlimited()
         },
-        per_agent: AgentBudget::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     };
 
     let failure = deep_research(request, &services.model, &services.search, &limits)
@@ -407,7 +407,7 @@ async fn config_model_budget_wins_when_request_budget_is_higher() {
 async fn global_token_budget_stops_when_total_exceeds_max() {
     use moe_research_workflow::TokenUsage;
     let mut request = deep_request(1);
-    request.budget.max_tokens = Limit::limited(100);
+    request.limits.max_tokens = Limit::limited(100);
     let services = services_with_token_usage(
         &[],
         Some(TokenUsage {
@@ -437,7 +437,7 @@ async fn global_token_budget_stops_when_total_exceeds_max() {
 async fn global_token_budget_falls_back_to_input_plus_output() {
     use moe_research_workflow::TokenUsage;
     let mut request = deep_request(1);
-    request.budget.max_tokens = Limit::limited(100);
+    request.limits.max_tokens = Limit::limited(100);
     let services = services_with_token_usage(
         &[],
         Some(TokenUsage {
@@ -490,8 +490,8 @@ fn token_usage_merge_counts_mixed_provider_reporting_formats() {
 async fn global_token_budget_blocks_dispatch_after_cap_is_reached() {
     use moe_research_workflow::TokenUsage;
     let mut request = deep_request(2);
-    request.budget.max_tokens = Limit::limited(100);
-    request.budget.max_concurrent_agents = Limit::limited(1);
+    request.limits.max_tokens = Limit::limited(100);
+    request.limits.max_concurrent_agents = Limit::limited(1);
     let services = services_with_token_usage(
         &[],
         Some(TokenUsage {
@@ -522,8 +522,8 @@ async fn global_token_budget_blocks_dispatch_after_cap_is_reached() {
 async fn request_budget_max_tokens_is_clamped_to_config_cap() {
     use moe_research_workflow::TokenUsage;
     let mut request = deep_request(1);
-    request.budget.max_concurrent_agents = Limit::limited(1);
-    request.budget.max_tokens = Limit::limited(1_000);
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    request.limits.max_tokens = Limit::limited(1_000);
     let services = services_with_token_usage(
         &[],
         Some(TokenUsage {
@@ -533,11 +533,11 @@ async fn request_budget_max_tokens_is_clamped_to_config_cap() {
         }),
     );
     let limits = BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_tokens: Limit::limited(150),
-            ..ResearchBudget::unlimited()
+            ..ResearchLimits::unlimited()
         },
-        per_agent: AgentBudget::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     };
 
     let result = deep_research(request, &services.model, &services.search, &limits)
@@ -554,10 +554,12 @@ async fn request_budget_max_tokens_is_clamped_to_config_cap() {
 #[tokio::test]
 async fn post_run_timeout_preserves_completed_aspect_when_partial_allowed() {
     let mut request = deep_request(3);
-    request.budget.max_concurrent_agents = Limit::limited(1);
-    request.budget.total_timeout_ms = Limit::limited(110);
-    request.execution_policy.fail_fast = true;
-    request.execution_policy.timeout_ms = Limit::limited(110);
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    request.limits.total_timeout_ms = Limit::limited(110);
+    for aspect in &mut request.task.aspects {
+        aspect.limits.timeout_ms = Limit::limited(110);
+    }
+    request.policy.execution.fail_fast = true;
     let services = services_with_delay(&["aspect-2"], Duration::from_millis(30));
 
     let result = deep_research(
@@ -591,9 +593,11 @@ async fn post_run_timeout_preserves_completed_aspect_when_partial_allowed() {
 #[tokio::test]
 async fn post_run_timeout_preserves_failed_aspect_evidence_when_none_completed() {
     let mut request = deep_request(1);
-    request.budget.max_concurrent_agents = Limit::limited(1);
-    request.budget.total_timeout_ms = Limit::limited(50);
-    request.execution_policy.timeout_ms = Limit::limited(50);
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    request.limits.total_timeout_ms = Limit::limited(50);
+    for aspect in &mut request.task.aspects {
+        aspect.limits.timeout_ms = Limit::limited(50);
+    }
     let services = services_with_delay(&["aspect-1"], Duration::from_millis(30));
 
     let result = deep_research(
@@ -620,8 +624,8 @@ async fn post_run_timeout_preserves_failed_aspect_evidence_when_none_completed()
 #[tokio::test]
 async fn concurrent_aspects_share_global_budget_guard() {
     let mut request = deep_request(2);
-    request.budget.max_concurrent_agents = Limit::limited(2);
-    request.budget.max_total_search_calls = Limit::limited(1);
+    request.limits.max_concurrent_agents = Limit::limited(2);
+    request.limits.max_total_search_calls = Limit::limited(1);
     let services = services(&[]);
 
     let result = deep_research(
