@@ -157,6 +157,8 @@ Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider
 
 Compact `deep_research` direct payload skeleton:
 
+Default skeleton = **standard** tier from `../prompts/layer1/common/budget-tiers.md` (Claude install: `./prompts/layer1/common/budget-tiers.md`). For `quick` or `deep`, substitute that tier’s numbers instead of editing ad hoc.
+
 ```json
 {
   "schema_version": "0.2",

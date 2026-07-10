@@ -77,6 +77,8 @@ PM runtime reminders:
 
 Compact `deep_research` direct payload skeleton:
 
+Default PM skeleton = **deep** tier from `../prompts/layer1/common/budget-tiers.md` (Claude install: `./prompts/layer1/common/budget-tiers.md`). Use `standard` or `quick` only when the user explicitly wants a cheaper run.
+
 ```json
 {
   "schema_version": "0.2",
@@ -156,6 +158,8 @@ Compact `deep_research` direct payload skeleton:
 ```
 
 Compact `aspect_research` direct payload skeleton:
+
+Retry skeleton uses the same per-aspect **deep** tier row from `../prompts/layer1/common/budget-tiers.md` unless the parent run used another named tier.
 
 ```json
 {
