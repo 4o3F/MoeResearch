@@ -1255,3 +1255,46 @@ Design stages 3–4 (runtime support then agent) map to plan Tasks 4–5 (D1/D2)
 | B1 | `agent_loop.rs` god-module density | Tasks 4–5 (`runtime/*`) |
 | B4 | `research.rs` mixed schema/normalize/prompt | Task 1 (`research/*`) |
 | B9 | `workflow.rs` scheduling + finalize density | Task 3 (`workflow/*`) |
+
+## Phase 3 retrospective
+
+- Branch: `fix/phase3-workflow-boundaries` (PR #37)
+- Findings closed: **B1** (agent_loop density), **B4** (research mixed roles), **B9** (workflow density)
+- Final tree:
+
+```
+crates/moe-research-workflow/src/budget.rs
+crates/moe-research-workflow/src/error_log_safe.rs
+crates/moe-research-workflow/src/lib.rs
+crates/moe-research-workflow/src/limit.rs
+crates/moe-research-workflow/src/policy.rs
+crates/moe-research-workflow/src/report/mod.rs
+crates/moe-research-workflow/src/report/validator.rs
+crates/moe-research-workflow/src/research/mod.rs
+crates/moe-research-workflow/src/research/plan.rs
+crates/moe-research-workflow/src/research/prompt.rs
+crates/moe-research-workflow/src/research/request.rs
+crates/moe-research-workflow/src/runtime/agent.rs
+crates/moe-research-workflow/src/runtime/budget.rs
+crates/moe-research-workflow/src/runtime/deadline.rs
+crates/moe-research-workflow/src/runtime/mod.rs
+crates/moe-research-workflow/src/runtime/model_turn.rs
+crates/moe-research-workflow/src/runtime/search_tool.rs
+crates/moe-research-workflow/src/workflow/aggregation.rs
+crates/moe-research-workflow/src/workflow/aspect.rs
+crates/moe-research-workflow/src/workflow/deep.rs
+crates/moe-research-workflow/src/workflow/mod.rs
+```
+
+- Residual clippy allows (pre-existing length; not silenced for this phase):
+  - `runtime/agent.rs` `execute_tool_call` — `#[allow(clippy::too_many_lines)]`
+  - `report/validator.rs` validate path — `#[allow(clippy::too_many_lines)]`
+- Commits:
+  - `363d4c2` research split
+  - `93fbc44` report nest
+  - `057229b` workflow aspect/deep/aggregation
+  - `8c582a5` runtime support modules
+  - `c2375e5` agent → runtime::agent
+  - (pending) docs/lib cleanup + this retrospective
+- Follow-ups deferred: dual limits residual (Phase 2 closed structurally), A7/A8/A9/B8 (Phase 4)
+- Process note: owner gate before each task commit; all tests remain in `moe-research-tests`; no production `#[cfg(test)]`

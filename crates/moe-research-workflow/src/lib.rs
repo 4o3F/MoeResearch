@@ -1,13 +1,14 @@
 //! Research workflow boundary for MoeResearch.
 
 pub mod budget;
-mod error_log_safe;
 pub mod limit;
 pub mod policy;
 pub mod report;
 pub mod research;
-mod runtime;
 pub mod workflow;
+
+mod error_log_safe;
+mod runtime;
 
 pub use budget::{AgentLimits, BudgetConfig, ResearchLimits};
 pub use limit::{CountLimit, DurationLimitMs, Limit, TokenLimit};

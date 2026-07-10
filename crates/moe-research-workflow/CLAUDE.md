@@ -10,6 +10,7 @@
 | 2026-07-09 | 更新 v0.2 控制面请求 schema：`task` / `limits` / `policy` / `context`。 |
 | 2026-07-09 | 增加 Phase 2 normalizer：请求/config limits 合并为 `EffectiveResearchPlan` / `EffectiveAspectPlan` 后再进入 runtime。 |
 | 2026-07-09 | 增加 Phase 3 `AspectPromptInput`：Layer 2 user prompt 只接收 LLM-visible 投影。 |
+| 2026-07-10 | Phase 3 责任边界重组：`research/`、`report/`、`workflow/`、`runtime/` 分目录；公开 API 路径与 schema 0.2 语义不变。 |
 
 ## 模块职责
 
@@ -21,8 +22,10 @@
 - 对外主函数：
   - `aspect_research(request, model_service, search_service, budget_config)`
   - `deep_research(request, model_service, search_service, budget_config)`
-- 核心运行时：`src/agent_loop.rs`
-- 多 aspect 编排：`src/workflow.rs`
+- 核心运行时：`src/runtime/agent.rs`（配套 `model_turn`、`search_tool`、`budget`、`deadline`）
+- 多 aspect 编排：`src/workflow/{aspect,deep,aggregation}.rs`
+- 请求/计划/prompt：`src/research/{request,plan,prompt}.rs`
+- 报告 + 校验：`src/report/{mod,validator}.rs`
 
 ## 对外接口
 
@@ -38,7 +41,7 @@
 ## 关键依赖与配置
 
 - 依赖 `moe-research-model::ModelService` 与 `moe-research-search::SearchService`。
-- `SUPPORTED_SCHEMA_VERSIONS = ["0.2"]`。
+- `SUPPORTED_SCHEMA_VERSIONS = ["0.2"]`（定义于 `src/research/request.rs`）。
 - 当前模型可见工具只有 `search`。
 - Deep research 并发由 normalized `limits.max_concurrent_agents` 控制。
 - 请求 limits 和 operator config limits 在 normalizer 中取更严格值；`Unlimited` 表示该层不加限制，不表示覆盖另一层有限值。
@@ -115,13 +118,11 @@ cargo test -p moe-research-tests schema
 
 - `Cargo.toml`
 - `src/lib.rs`
-- `src/research.rs`
-- `src/report.rs`
-- `src/workflow.rs`
-- `src/agent_loop.rs`
-- `src/policy.rs`
-- `src/tool_policy.rs`
 - `src/budget.rs`
-- `src/runtime_budget.rs`
 - `src/limit.rs`
-- `src/validator.rs`
+- `src/policy.rs`
+- `src/error_log_safe.rs`
+- `src/research/{mod,request,plan,prompt}.rs`
+- `src/report/{mod,validator}.rs`
+- `src/workflow/{mod,aspect,deep,aggregation}.rs`
+- `src/runtime/{mod,agent,budget,deadline,model_turn,search_tool}.rs`
