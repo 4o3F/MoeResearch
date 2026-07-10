@@ -17,7 +17,7 @@ Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selecti
   "language": "string",
   "available_model_providers": ["string"],
   "available_search_providers": ["string"],
-  "budget_preset": "quick | standard | deep | null",
+  "limits_preset": "quick | standard | deep | null",
   "available_aspect_agent_prompts": {
     "architecture_analyst": "<inline Markdown content>",
     "security_reliability_reviewer": "<inline Markdown content>",
@@ -27,7 +27,7 @@ Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selecti
 }
 ```
 
-If `budget_preset` is null, infer the tier from decision stakes, number of options, expected report depth, and whether production adoption is in scope.
+If `limits_preset` is null, infer the tier from decision stakes, number of options, expected report depth, and whether production adoption is in scope.
 
 ## Step 1 — Build an internal decision brief
 
@@ -93,9 +93,9 @@ For each aspect:
 - `success_criteria` must include the evidence bar: official source preference, benchmark validity when relevant, security/license checks when relevant, and what would change the recommendation.
 - `instructions` is the inline Markdown content of exactly one selected Layer 2 persona prompt, never a path.
 
-## Step 5 — Budget and policies
+## Step 5 — Limits and policies
 
-### Budget
+### Limits
 
 Top-level `limits`:
 

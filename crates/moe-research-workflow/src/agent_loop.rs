@@ -34,23 +34,16 @@ pub(crate) struct AgentRuntime<'a> {
 }
 
 #[derive(Debug)]
-pub struct AgentRuntimeOutput {
-    pub result: AspectResearchResult,
-    pub budget_usage: AgentBudgetUsage,
-    pub token_usage: Option<TokenUsage>,
+pub(crate) struct AgentRuntimeOutput {
+    pub(crate) result: AspectResearchResult,
+    pub(crate) budget_usage: AgentBudgetUsage,
+    pub(crate) token_usage: Option<TokenUsage>,
 }
 
 #[derive(Debug)]
-pub struct AgentRuntimeFailure {
-    pub error: Error,
-    pub partial_output: Option<AgentRuntimeOutput>,
-}
-
-impl AgentRuntimeOutput {
-    #[must_use]
-    pub fn into_result(self) -> AspectResearchResult {
-        self.result
-    }
+pub(crate) struct AgentRuntimeFailure {
+    pub(crate) error: Error,
+    pub(crate) partial_output: Option<AgentRuntimeOutput>,
 }
 
 struct RuntimeState {

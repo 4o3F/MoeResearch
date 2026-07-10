@@ -34,7 +34,7 @@ Use this profile for scholarly research that needs literature mapping, source qu
 1. Classify the capability from the user request.
 2. Read `../prompts/layer1/academic-deep-research/task-decomposition.md` and produce a `DeepResearchRequest`.
 3. Use `../prompts/layer1/academic-deep-research/agent-allocation.md` to assign Layer 2 personas.
-4. Pass selected persona Markdown inline as `AspectSpec.aspect_agent_prompt`.
+4. Pass selected persona Markdown inline as each `AspectRequest.instructions` value.
 5. Call `deep_research` for multi-aspect research, or `aspect_research` for a single focused retry.
 6. Apply common evidence modules from `../prompts/layer1/common/` for post-processing, claim ledger, host verification, evidence verification, and report annex.
 7. Synthesize with the final-report prompt matching the capability.

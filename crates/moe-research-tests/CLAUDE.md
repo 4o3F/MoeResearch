@@ -66,7 +66,7 @@ cargo test --workspace
 | `network_policy_tests.rs` | Debug 脱敏策略。 |
 | `wire_trace_tests.rs` | 网络 wire trace 与截断/脱敏。 |
 | `orchestrator_tests.rs` | agent loop、工具调用、预算、provider dispatch。 |
-| `policy_validator_tests.rs` | policy 与 output validator 行为。 |
+| `policy_validator_tests.rs` | 经由 public workflow 入口验证 policy 与 output validator 行为。 |
 | `schema_tests.rs` | JSON schema、wire format、runtime metadata 不泄漏。 |
 
 ## 常见问题 (FAQ)

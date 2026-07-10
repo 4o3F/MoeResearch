@@ -58,40 +58,6 @@ impl AgentBudgetGuard {
         Ok(())
     }
 
-    pub fn consume_tool_call(&mut self) -> Result<()> {
-        self.check_timeout()?;
-
-        if !self
-            .budget
-            .max_tool_calls
-            .permits_next(self.tool_calls_used)
-        {
-            return Err(Error::BudgetExceeded {
-                message: "agent tool call budget exhausted".to_owned(),
-            });
-        }
-
-        self.tool_calls_used += 1;
-        Ok(())
-    }
-
-    pub fn consume_search_call(&mut self) -> Result<()> {
-        self.check_timeout()?;
-
-        if !self
-            .budget
-            .max_search_calls
-            .permits_next(self.search_calls_used)
-        {
-            return Err(Error::BudgetExceeded {
-                message: "agent search call budget exhausted".to_owned(),
-            });
-        }
-
-        self.search_calls_used += 1;
-        Ok(())
-    }
-
     pub fn consume_search_tool_call(&mut self) -> Result<()> {
         self.check_timeout()?;
 
@@ -194,15 +160,6 @@ impl ResearchBudgetGuard {
             agents_started: AtomicUsize::new(0),
             token_usage: Mutex::new(None),
         })
-    }
-
-    /// Constructs a guard with no caps on any dimension.
-    ///
-    /// Intended for tests and controlled direct-runtime callers only. Workflow
-    /// entry points should derive their guard from operator/request budgets.
-    #[must_use]
-    pub fn unlimited() -> Arc<Self> {
-        Self::new(ResearchLimits::unlimited())
     }
 
     /// Records that one aspect has begun execution.

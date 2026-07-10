@@ -42,7 +42,7 @@ One MoeResearch aspect = one persona, 所以 profile §5 标段5 "Strategist + E
 
 > Per-tier 计数 vs. competitive：quick 2 (vs 2), standard 4 (vs 4), deep **6 (vs 5)** — 多 1 段（段5 ODI 域内单独成 aspect; competitive 的 ODI 与 capability matrix 同 aspect 合并）. Deep `max_agents=6` / `max_concurrent_agents=3` / `total_timeout_ms=1200000` (2 waves), per-aspect `timeout_ms=600000` 不变. 详 [`task-decomposition-product-capability.md`](task-decomposition-product-capability.md) Step 4.
 
-## Budget per aspect (hand off to `task-decomposition-product-capability.md` Step 4)
+## Limits per aspect (hand off to `task-decomposition-product-capability.md` Step 4)
 
 每 aspect 自带 `limits { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 4 (standard) / 3 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `limits`: deep `max_total_model_calls=40` / `max_total_search_calls=30`.
 

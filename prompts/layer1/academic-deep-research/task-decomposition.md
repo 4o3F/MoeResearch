@@ -17,7 +17,7 @@ Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selecti
   "language": "string",
   "available_model_providers": ["string"],
   "available_search_providers": ["string"],
-  "budget_preset": "quick | standard | deep | null",
+  "limits_preset": "quick | standard | deep | null",
   "available_aspect_agent_prompts": {
     "literature_reviewer": "<inline Markdown content>",
     "methods_critic": "<inline Markdown content>",
@@ -27,7 +27,7 @@ Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selecti
 }
 ```
 
-If `budget_preset` is null, infer the tier from the user's requested depth, stakes, deadline, and output format.
+If `limits_preset` is null, infer the tier from the user's requested depth, stakes, deadline, and output format.
 
 ## Step 1 — Build an internal research brief
 
@@ -90,9 +90,9 @@ For each aspect:
 - `success_criteria` must include the evidence bar: primary/source class preference, methodological appraisal, contradiction handling, and what to do when evidence is missing.
 - `instructions` is the inline Markdown content of exactly one selected Layer 2 persona prompt, never a path.
 
-## Step 5 — Budget and policies
+## Step 5 — Limits and policies
 
-### Budget
+### Limits
 
 Top-level `limits`:
 

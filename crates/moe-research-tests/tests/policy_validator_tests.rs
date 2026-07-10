@@ -1,27 +1,91 @@
-use moe_research_error::Error;
-use moe_research_model::ModelToolCall;
-use moe_research_net::Header;
-use moe_research_workflow::AspectRequest;
-use moe_research_workflow::validate_output;
+use async_trait::async_trait;
+use moe_research_error::{Error, Result};
+use moe_research_model::{ModelProvider, ModelRequest, ModelResponse, ModelService};
+use moe_research_search::SearchService;
+use moe_research_workflow::aspect_research;
 use moe_research_workflow::{
-    AgentLimits, AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType,
-    Importance, SourceType,
+    AgentLimits, AspectReport, AspectResearchRequest, AspectResearchResult, Confidence,
+    EvidencePolicy, ExecutionPolicy, Finding, FindingType, Importance, Limit, ModelPolicy,
+    OutputPolicy, ResearchContext, ResearchPolicy, SearchPolicy, SourceType,
 };
-use moe_research_workflow::{
-    EvidencePolicy, OutputPolicy, SearchCategory, SearchContentLevel, SearchDepth, SearchRecency,
-    ToolName,
-};
-use moe_research_workflow::{SEARCH_TOOL_NAME, ToolPolicyGuard, search_model_tool};
-use serde_json::json;
 
-fn aspect_prompt() -> String {
-    "# Aspect Agent\n\nDummy aspect agent prompt for tests.\n".to_owned()
+struct StaticModelProvider {
+    content: String,
 }
 
-fn evidence_policy() -> EvidencePolicy {
-    EvidencePolicy {
-        require_evidence_for_findings: true,
-        min_evidence_per_finding: 1,
+#[async_trait]
+impl ModelProvider for StaticModelProvider {
+    fn name(&self) -> &'static str {
+        "model"
+    }
+
+    async fn complete(&self, _request: ModelRequest) -> Result<ModelResponse> {
+        Ok(ModelResponse {
+            provider: "model".to_owned(),
+            model: None,
+            response_id: None,
+            content: Some(self.content.clone()),
+            tool_calls: Vec::new(),
+            output_items: Vec::new(),
+            usage: None,
+        })
+    }
+}
+
+fn aspect_request(output_policy: OutputPolicy) -> AspectResearchRequest {
+    AspectResearchRequest {
+        schema_version: "0.2".to_owned(),
+        request_id: "request-1".to_owned(),
+        task: moe_research_workflow::AspectRequest {
+            id: "aspect-1".to_owned(),
+            name: "Market".to_owned(),
+            role: "researcher".to_owned(),
+            question: "What matters?".to_owned(),
+            scope: vec!["market".to_owned()],
+            boundaries: Vec::new(),
+            success_criteria: Vec::new(),
+            instructions: "# Aspect Agent\n\nReturn AspectResearchResult JSON.".to_owned(),
+            tools: Vec::new(),
+            model_provider: "model".to_owned(),
+            search_provider: None,
+            limits: AgentLimits {
+                max_turns: Limit::limited(1),
+                max_tool_calls: Limit::limited(0),
+                max_search_calls: Limit::limited(0),
+                timeout_ms: Limit::limited(60_000),
+            },
+        },
+        policy: ResearchPolicy {
+            model: ModelPolicy {
+                allowed_providers: vec!["model".to_owned()],
+                temperature: Some(0.2),
+                max_tokens: None,
+                require_tool_call_support: false,
+            },
+            search: SearchPolicy {
+                allowed_providers: vec!["searcher".to_owned()],
+                max_results_per_query: 2,
+                freshness: None,
+                depth: None,
+                content_level: None,
+                recency: None,
+                category: None,
+                language: None,
+                region: None,
+                include_domains: Vec::new(),
+                exclude_domains: Vec::new(),
+            },
+            evidence: EvidencePolicy {
+                require_evidence_for_findings: false,
+                min_evidence_per_finding: 1,
+            },
+            output: output_policy,
+            execution: ExecutionPolicy {
+                allow_partial_results: true,
+                fail_fast: false,
+            },
+        },
+        context: ResearchContext::empty(),
     }
 }
 
@@ -32,46 +96,10 @@ fn output_policy() -> OutputPolicy {
     }
 }
 
-fn aspect_with_tools(tools: Vec<ToolName>) -> AspectRequest {
-    AspectRequest {
-        id: "market".to_owned(),
-        name: "Market".to_owned(),
-        role: "researcher".to_owned(),
-        question: "What changed?".to_owned(),
-        scope: vec![],
-        boundaries: vec![],
-        success_criteria: vec![],
-        instructions: aspect_prompt(),
-        tools,
-        model_provider: "openai".to_owned(),
-        search_provider: Some("exa".to_owned()),
-        limits: AgentLimits::unlimited(),
-    }
-}
-
-fn call(name: &str, arguments: serde_json::Value) -> ModelToolCall {
-    ModelToolCall {
-        id: "call-1".to_owned(),
-        name: name.to_owned(),
-        arguments,
-    }
-}
-
-fn validator_aspect() -> AspectRequest {
-    AspectRequest {
-        id: "aspect-1".to_owned(),
-        name: "Market".to_owned(),
-        role: "researcher".to_owned(),
-        question: "What matters?".to_owned(),
-        scope: vec!["market".to_owned()],
-        boundaries: Vec::new(),
-        success_criteria: Vec::new(),
-        instructions: aspect_prompt(),
-        tools: vec![ToolName("search".to_owned())],
-        model_provider: "openai".to_owned(),
-        search_provider: Some("exa".to_owned()),
-        limits: AgentLimits::unlimited(),
-    }
+fn model_service(content: String) -> ModelService {
+    let mut service = ModelService::new();
+    service.register(StaticModelProvider { content });
+    service
 }
 
 fn report() -> AspectReport {
@@ -80,15 +108,7 @@ fn report() -> AspectReport {
         aspect_name: "Market".to_owned(),
         question: "What matters?".to_owned(),
         scope: vec!["market".to_owned()],
-        findings: vec![Finding {
-            id: "finding-1".to_owned(),
-            claim: "A supported claim".to_owned(),
-            finding_type: FindingType::Fact,
-            importance: Importance::High,
-            confidence: Confidence::High,
-            evidence_refs: vec!["evidence-1".to_owned()],
-            contradicted_by: Vec::new(),
-        }],
+        findings: Vec::new(),
         assumptions: Vec::new(),
         risks: Vec::new(),
         counterarguments: Vec::new(),
@@ -98,325 +118,151 @@ fn report() -> AspectReport {
     }
 }
 
-fn evidence() -> Vec<Evidence> {
-    vec![Evidence {
-        id: "evidence-1".to_owned(),
-        source_title: "Source".to_owned(),
-        url: None,
-        provider: "fake".to_owned(),
-        query: "query".to_owned(),
-        snippet: "snippet".to_owned(),
-        summary: String::new(),
-        published_at: None,
-        retrieved_at: "2026-05-22T00:00:00Z".to_owned(),
-        supports_findings: vec!["finding-1".to_owned()],
-        source_type: SourceType::Documentation,
+fn finding(id: &str) -> Finding {
+    Finding {
+        id: id.to_owned(),
+        claim: "A claim".to_owned(),
+        finding_type: FindingType::Fact,
+        importance: Importance::High,
         confidence: Confidence::High,
-    }]
+        evidence_refs: Vec::new(),
+        contradicted_by: Vec::new(),
+    }
 }
 
-fn result(report: AspectReport, evidence: Vec<Evidence>) -> AspectResearchResult {
+fn result(report: AspectReport) -> AspectResearchResult {
     AspectResearchResult {
         aspect_report: report,
-        evidence,
+        evidence: Vec::new(),
     }
 }
 
-fn validate(
-    report: &AspectReport,
-) -> moe_research_error::Result<(
-    AspectResearchResult,
-    moe_research_workflow::ValidationStatus,
-)> {
-    validate_result(&result(report.clone(), evidence()))
-}
+async fn run_result(
+    result: AspectResearchResult,
+    output_policy: OutputPolicy,
+) -> std::result::Result<
+    moe_research_workflow::AspectResearchOutput,
+    Box<moe_research_workflow::AspectResearchFailure>,
+> {
+    let content = serde_json::to_string(&result).expect("serialize result");
+    let model_service = model_service(content);
+    let search_service = SearchService::new();
 
-fn validate_result(
-    result: &AspectResearchResult,
-) -> moe_research_error::Result<(
-    AspectResearchResult,
-    moe_research_workflow::ValidationStatus,
-)> {
-    validate_output(
-        &serde_json::to_string(result).expect("serialize result"),
-        &validator_aspect(),
-        &evidence(),
-        &evidence_policy(),
-        &output_policy(),
+    aspect_research(
+        aspect_request(output_policy),
+        &model_service,
+        &search_service,
+        &moe_research_workflow::BudgetConfig {
+            research: moe_research_workflow::ResearchLimits::unlimited(),
+            per_agent: AgentLimits::unlimited(),
+        },
     )
+    .await
 }
 
-#[test]
-fn accepts_valid_search_call() {
-    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
-        SEARCH_TOOL_NAME.to_owned(),
-    )]));
+#[tokio::test]
+async fn public_workflow_accepts_valid_report() {
+    let output = run_result(result(report()), output_policy())
+        .await
+        .expect("valid report");
 
-    let args = guard
-        .validate_search_call(&call(
-            SEARCH_TOOL_NAME,
-            json!({ "query": "rust async runtime", "max_results": 3 }),
-        ))
-        .expect("valid search call");
-
-    assert_eq!(args.query, "rust async runtime");
-    assert_eq!(args.max_results, Some(3));
+    assert_eq!(output.result.aspect_report.aspect_id, "aspect-1");
+    assert!(output.result.evidence.is_empty());
 }
 
-#[test]
-fn accepts_valid_search_call_with_provider_neutral_params() {
-    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
-        SEARCH_TOOL_NAME.to_owned(),
-    )]));
+#[tokio::test]
+async fn public_workflow_rejects_malformed_json() {
+    let model_service = model_service("{not json".to_owned());
+    let search_service = SearchService::new();
 
-    let args = guard
-        .validate_search_call(&call(
-            SEARCH_TOOL_NAME,
-            json!({
-                "query": "rust async runtime",
-                "max_results": 3,
-                "depth": "balanced",
-                "content_level": "standard",
-                "recency": "fresh",
-                "category": "news"
-            }),
-        ))
-        .expect("valid search call");
-
-    assert_eq!(args.depth, Some(SearchDepth::Balanced));
-    assert_eq!(args.content_level, Some(SearchContentLevel::Standard));
-    assert_eq!(args.recency, Some(SearchRecency::Fresh));
-    assert_eq!(args.category, Some(SearchCategory::News));
-}
-
-#[test]
-fn rejects_unknown_tool_and_disallowed_search() {
-    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
-        SEARCH_TOOL_NAME.to_owned(),
-    )]));
-    assert!(matches!(
-        guard.validate_search_call(&call("exa_search", json!({ "query": "test" }))),
-        Err(Error::ToolPolicyDenied { .. })
-    ));
-
-    let disallowed_guard = ToolPolicyGuard::new(&aspect_with_tools(vec![]));
-    assert!(matches!(
-        disallowed_guard.validate_search_call(&call(SEARCH_TOOL_NAME, json!({ "query": "test" }))),
-        Err(Error::ToolPolicyDenied { .. })
-    ));
-}
-
-#[test]
-fn rejects_empty_query_and_malformed_arguments() {
-    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
-        SEARCH_TOOL_NAME.to_owned(),
-    )]));
-
-    assert!(matches!(
-        guard.validate_search_call(&call(SEARCH_TOOL_NAME, json!({ "query": "   " }))),
-        Err(Error::ToolPolicyDenied { .. })
-    ));
-
-    assert!(matches!(
-        guard.validate_search_call(&call(SEARCH_TOOL_NAME, json!({ "max_results": 3 }))),
-        Err(Error::ToolPolicyDenied { .. })
-    ));
-
-    assert!(matches!(
-        guard.validate_search_call(&call(
-            SEARCH_TOOL_NAME,
-            json!({ "query": "test", "max_results": 0 })
-        )),
-        Err(Error::ToolPolicyDenied { .. })
-    ));
-}
-
-#[test]
-fn rejects_provider_field_in_search_tool_args() {
-    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
-        SEARCH_TOOL_NAME.to_owned(),
-    )]));
-
-    assert!(matches!(
-        guard.validate_search_call(&call(
-            SEARCH_TOOL_NAME,
-            json!({ "query": "rust async runtime", "max_results": 3, "provider": "exa" }),
-        )),
-        Err(Error::ToolPolicyDenied { .. })
-    ));
-}
-
-#[test]
-fn rejects_provider_specific_fields_in_search_tool_args() {
-    let guard = ToolPolicyGuard::new(&aspect_with_tools(vec![ToolName(
-        SEARCH_TOOL_NAME.to_owned(),
-    )]));
-
-    for arguments in [
-        json!({ "query": "test", "type": "auto" }),
-        json!({ "query": "test", "contents": { "highlights": true } }),
-        json!({ "query": "test", "maxAgeHours": 24 }),
-        json!({ "query": "test", "provider_overrides": {} }),
-    ] {
-        assert!(matches!(
-            guard.validate_search_call(&call(SEARCH_TOOL_NAME, arguments)),
-            Err(Error::ToolPolicyDenied { .. })
-        ));
-    }
-}
-
-#[test]
-fn search_model_tool_uses_provider_neutral_schema() {
-    let tool = search_model_tool();
-
-    assert_eq!(tool.name, SEARCH_TOOL_NAME);
-    assert!(tool.input_schema.get("title").is_some());
-    let schema = tool.input_schema.to_string();
-    assert!(schema.contains("query"));
-    assert!(schema.contains("depth"));
-    assert!(schema.contains("content_level"));
-    assert!(schema.contains("recency"));
-    assert!(schema.contains("category"));
-    assert!(schema.contains("low_latency"));
-    assert!(schema.contains("high_recall"));
-    assert!(!schema.contains("maxAgeHours"));
-    assert!(!schema.contains("deep-lite"));
-    assert!(!schema.contains("deep\""));
-    assert!(!schema.contains("deep-reasoning"));
-}
-
-#[test]
-fn accepts_valid_report() {
-    let (validated, status) = validate(&report()).expect("valid report");
-
-    assert_eq!(validated.aspect_report.aspect_id, "aspect-1");
-    assert!(status.ok);
-    assert!(status.issues.is_empty());
-}
-
-#[test]
-fn rejects_malformed_json() {
-    let err = validate_output(
-        "{not json",
-        &validator_aspect(),
-        &evidence(),
-        &evidence_policy(),
-        &output_policy(),
+    let err = aspect_research(
+        aspect_request(output_policy()),
+        &model_service,
+        &search_service,
+        &moe_research_workflow::BudgetConfig {
+            research: moe_research_workflow::ResearchLimits::unlimited(),
+            per_agent: AgentLimits::unlimited(),
+        },
     )
+    .await
     .expect_err("malformed JSON must fail");
 
-    assert!(matches!(err, Error::SchemaValidationFailed { .. }));
+    assert!(matches!(err.error, Error::SchemaValidationFailed { .. }));
+    assert!(err.partial_output.is_none());
 }
 
-#[test]
-fn rejects_wrong_aspect_id() {
+#[tokio::test]
+async fn public_workflow_rejects_wrong_aspect_id() {
     let mut report = report();
     report.aspect_id = "other".to_owned();
 
-    let err = validate(&report).expect_err("wrong aspect id must fail");
+    let err = run_result(result(report), output_policy())
+        .await
+        .expect_err("wrong aspect id must fail");
 
-    assert!(matches!(err, Error::SchemaValidationFailed { .. }));
+    assert!(matches!(err.error, Error::SchemaValidationFailed { .. }));
 }
 
-#[test]
-fn rejects_missing_evidence_refs() {
+#[tokio::test]
+async fn public_workflow_rejects_too_many_findings() {
     let mut report = report();
-    report.findings[0].evidence_refs.clear();
-
-    let err = validate(&report).expect_err("missing evidence refs must fail");
-
-    assert!(matches!(err, Error::SchemaValidationFailed { .. }));
-}
-
-#[test]
-fn rejects_unknown_evidence_ref() {
-    let mut report = report();
-    report.findings[0].evidence_refs = vec!["missing".to_owned()];
-
-    let err = validate(&report).expect_err("unknown evidence ref must fail");
-
-    assert!(matches!(err, Error::SchemaValidationFailed { .. }));
-}
-
-/// When the selected evidence diverges from the search-tool candidate,
-/// the error message MUST name every mismatched field so operators can
-/// see the full diff without re-running. The validator surfaces issues
-/// in declaration order, with the first issue feeding the
-/// `SchemaValidationFailed.message`.
-#[test]
-fn rejects_mutated_evidence_provenance_with_field_names() {
-    let mut selected = evidence();
-    // Rewrite both summary and snippet — the model paraphrasing case
-    // we observed in real Layer 2 runs.
-    selected[0].summary = "model paraphrased the original markdown".to_owned();
-    selected[0].snippet = "shortened snippet".to_owned();
-
-    let err =
-        validate_result(&result(report(), selected)).expect_err("mutated provenance must fail");
-
-    let Error::SchemaValidationFailed { message } = err else {
-        panic!("expected SchemaValidationFailed, got {err:?}");
-    };
-    assert!(
-        message.contains("mutated_evidence_provenance"),
-        "message must carry the issue code, got `{message}`"
-    );
-    assert!(
-        message.contains("snippet") && message.contains("summary"),
-        "message must name every mismatched field, got `{message}`"
-    );
-    assert!(
-        message.contains("evidence[0]"),
-        "message must include the path to the offending evidence, got `{message}`"
-    );
-}
-
-#[test]
-fn rejects_too_many_findings() {
-    let mut report = report();
-    report.findings.push(report.findings[0].clone());
+    report.findings = vec![finding("finding-1"), finding("finding-2")];
     let mut output_policy = output_policy();
     output_policy.max_findings_per_aspect = Some(1);
 
-    let err = validate_output(
-        &serde_json::to_string(&result(report, evidence())).expect("serialize result"),
-        &validator_aspect(),
-        &evidence(),
-        &evidence_policy(),
-        &output_policy,
-    )
-    .expect_err("too many findings must fail");
+    let err = run_result(result(report), output_policy)
+        .await
+        .expect_err("too many findings must fail");
 
-    assert!(matches!(err, Error::SchemaValidationFailed { .. }));
+    assert!(matches!(err.error, Error::SchemaValidationFailed { .. }));
 }
 
-#[test]
-fn safe_header_debug_redacts_sensitive_headers() {
-    let authorization = format!(
-        "{:?}",
-        Header {
-            name: "Authorization".to_owned(),
-            value: "Bearer secret".to_owned(),
-        }
-    );
-    let api_key = format!(
-        "{:?}",
-        Header {
-            name: "x-api-key".to_owned(),
-            value: "secret".to_owned(),
-        }
-    );
-    let content_type = format!(
-        "{:?}",
-        Header {
-            name: "content-type".to_owned(),
-            value: "application/json".to_owned(),
-        }
-    );
+#[tokio::test]
+async fn public_workflow_rejects_selected_evidence_not_seen_in_search_output() {
+    let mut report = report();
+    report.findings = vec![Finding {
+        id: "finding-1".to_owned(),
+        claim: "A supported claim".to_owned(),
+        finding_type: FindingType::Fact,
+        importance: Importance::High,
+        confidence: Confidence::High,
+        evidence_refs: vec!["evidence-1".to_owned()],
+        contradicted_by: Vec::new(),
+    }];
+    let mut request = aspect_request(output_policy());
+    request.policy.evidence.require_evidence_for_findings = true;
+    let result = AspectResearchResult {
+        aspect_report: report,
+        evidence: vec![moe_research_workflow::Evidence {
+            id: "evidence-1".to_owned(),
+            source_title: "Source".to_owned(),
+            url: None,
+            provider: "manual".to_owned(),
+            query: "query".to_owned(),
+            snippet: "snippet".to_owned(),
+            summary: String::new(),
+            published_at: None,
+            retrieved_at: "2026-05-22T00:00:00Z".to_owned(),
+            supports_findings: vec!["finding-1".to_owned()],
+            source_type: SourceType::Official,
+            confidence: Confidence::High,
+        }],
+    };
+    let content = serde_json::to_string(&result).expect("serialize result");
+    let model_service = model_service(content);
+    let search_service = SearchService::new();
 
-    assert!(authorization.contains("[REDACTED]"));
-    assert!(!authorization.contains("Bearer secret"));
-    assert!(api_key.contains("[REDACTED]"));
-    assert!(!api_key.contains("secret"));
-    assert!(content_type.contains("application/json"));
+    let err = aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        &moe_research_workflow::BudgetConfig {
+            research: moe_research_workflow::ResearchLimits::unlimited(),
+            per_agent: AgentLimits::unlimited(),
+        },
+    )
+    .await
+    .expect_err("manual evidence not returned by search must fail");
+
+    assert!(matches!(err.error, Error::SchemaValidationFailed { .. }));
 }

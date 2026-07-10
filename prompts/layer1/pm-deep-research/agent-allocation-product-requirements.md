@@ -91,7 +91,7 @@ This overlay does not add a new persona or aspect. It tightens success criteria 
 >
 > Quick 段1+段2 (PR-FAQ + ODI) 是经典最小集 ("有没有用户痛点 + 写得出一段 PR 吗"); standard 加段3+段4 (能不能做 + 怎么做) 是评审会最小集; deep 加段5-段8 (需求 + 度量 + 证据 + 实验) 是开发 input deck.
 
-## Budget per aspect (hand off to `task-decomposition-product-requirements.md` Step 4)
+## Limits per aspect (hand off to `task-decomposition-product-requirements.md` Step 4)
 
 每 aspect 自带 `limits { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 5 (standard) / 6 (deep, only for full aspects that need enumeration); **段3 cagan micro-aspect (任一 tier) 用更小限额 `max_turns=5` / `max_tool_calls=5` / `max_search_calls=3`**（单 1 类风险，bounded 限额强制收敛，并降低 provenance mutation 风险）; `metrics-tree` / `open-questions-experiments` 同样使用 search=3 ceiling；per-aspect `timeout_ms` = **600000 恒**. Top-level `limits`: deep `max_agents=11` / `max_total_model_calls=80` / `max_total_search_calls=60` / `total_timeout_ms=2400000`; standard `max_agents=7` / `max_total_model_calls=42` / `max_total_search_calls=32` / `total_timeout_ms=1800000`. If an aspect reaches limits, retry sequentially once with `context.prior_sources`; do not raise the search cap.
 

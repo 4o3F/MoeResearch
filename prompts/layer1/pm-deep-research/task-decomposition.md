@@ -20,7 +20,7 @@ Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selecti
   "target_product": "string | null",
   "available_model_providers": ["string"],
   "available_search_providers": ["string"],
-  "budget_preset": "quick | standard | deep | deep_evidence_pack | null",
+  "limits_preset": "quick | standard | deep | deep_evidence_pack | null",
   "available_aspect_agent_prompts": {
     "experience-analyst": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-experience-analyst.md>",
     "strategist": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-strategist.md>"
@@ -28,7 +28,7 @@ Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selecti
 }
 ```
 
-If `budget_preset` is null, infer the tier yourself from §1 below.
+If `limits_preset` is null, infer the tier yourself from §1 below.
 
 ## Step 1 — Infer `decision_intent` (mandatory, before any decomposition)
 

@@ -713,6 +713,7 @@ fn layer1_task_decomposition_prompts_do_not_emit_removed_request_fields() {
             "\"output_policy\"",
             "\"execution_policy\"",
             "\"budget\"",
+            "budget_preset",
             "execution_policy.timeout_ms",
             "schema_version=\"0.1\"",
             "schema_version\": \"0.1\"",

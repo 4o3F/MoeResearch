@@ -29,11 +29,11 @@
 主要导出：
 
 - 请求：`AspectResearchRequest`, `DeepResearchRequest`, `AspectRequest`, `ResearchTask`, `ResearchContext`, `ResearchPolicy`
-- 报告：`AspectResearchResult`, `DeepResearchResult`, `AspectReport`, `Finding`, `Evidence`, `OpenQuestion`, `AspectFailure`
+- 报告：`AspectResearchOutput`, `AspectResearchFailure`, `AspectResearchResult`, `DeepResearchResult`, `AspectReport`, `Finding`, `Evidence`, `OpenQuestion`, `AspectFailure`, `DeepResearchFailure`
 - 策略：`ModelPolicy`, `SearchPolicy`, `EvidencePolicy`, `OutputPolicy`, `ExecutionPolicy`, `ToolName`
 - 限额：`BudgetConfig`, `ResearchLimits`, `AgentLimits`, `Limit`
-- 运行时：`AgentBudgetGuard`, `ResearchBudgetGuard`
-- 工具：`SEARCH_TOOL_NAME`, `SearchToolArgs`, `search_model_tool`
+
+运行时 guard、tool policy、validator 不从 crate root 暴露；外部调用方应通过 `aspect_research()` / `deep_research()` 进入 normalizer 后的执行路径。
 
 ## 关键依赖与配置
 

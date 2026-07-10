@@ -38,7 +38,7 @@ One MoeResearch aspect carries exactly one `instructions` persona prompt, so the
 
 **Build-intent overlay (any tier where `decision_intent = build`)**: append `build-cost-version-history` (strategist). Judging "should we build X" requires a build-cost estimate from competitor iteration cadence, not just user value. Treat the changelog as the competitor's *deeds* (TM-12 say-vs-do): what they ship, how many versions, how often, reveals true investment priority.
 
-## Budget per aspect (hand off to `task-decomposition.md` Step 4)
+## Limits per aspect (hand off to `task-decomposition.md` Step 4)
 
 Each aspect carries its own `limits { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. The discriminating values per tier are: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 always**. Top-level `limits` and `total_timeout_ms = ceil(max_agents / max_concurrent_agents) × 600000` are computed in `task-decomposition.md` Step 4.
 

@@ -17,7 +17,7 @@ Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selecti
   "language": "string",
   "available_model_providers": ["string"],
   "available_search_providers": ["string"],
-  "budget_preset": "quick | standard | deep",
+  "limits_preset": "quick | standard | deep",
   "available_aspect_agent_prompts": {
     "default": "<inline Markdown content of prompts/layer2/aspect-agent.md>"
   }

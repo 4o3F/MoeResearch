@@ -41,7 +41,7 @@ Use host tools in this order:
 
 WebSearch snippets alone are not enough for a high-impact claim. If the page cannot be fetched or inspected, mark the claim `not_checked` or `partial`, lower confidence, and disclose the limitation.
 
-## Bounded Budget
+## Bounded host verification limits
 
 Default ceiling per report:
 

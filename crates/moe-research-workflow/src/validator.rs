@@ -395,17 +395,6 @@ fn evidence_ids_for_log(evidence: &[Evidence]) -> Vec<String> {
         .collect()
 }
 
-pub fn validate_output(
-    content: &str,
-    aspect: &AspectRequest,
-    candidate_evidence: &[Evidence],
-    evidence_policy: &EvidencePolicy,
-    output_policy: &OutputPolicy,
-) -> Result<(AspectResearchResult, ValidationStatus)> {
-    OutputValidator::new(aspect, evidence_policy, output_policy)
-        .validate_content(content, candidate_evidence)
-}
-
 fn issue(code: &str, message: &str, path: impl Into<String>) -> ValidationIssue {
     ValidationIssue {
         code: code.to_owned(),
