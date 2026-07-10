@@ -9,7 +9,6 @@ pub mod report;
 pub mod research;
 mod runtime_budget;
 mod tool_policy;
-mod validator;
 pub mod workflow;
 
 pub use budget::{AgentLimits, BudgetConfig, ResearchLimits};

@@ -9,6 +9,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use crate::error_log_safe::{error_message_for_log, safe_model_identifier_for_log};
 use crate::limit::{DurationLimitMs, Limit};
 use crate::policy::SearchPolicy;
+use crate::report::OutputValidator;
 use crate::report::{
     AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, SourceType,
     TokenUsage,
@@ -16,7 +17,6 @@ use crate::report::{
 use crate::research::{ASPECT_PROMPT_MAX_BYTES, AspectPromptInput, EffectiveAspectPlan};
 use crate::runtime_budget::{AgentBudgetGuard, ResearchBudgetGuard};
 use crate::tool_policy::{SearchToolArgs, ToolPolicyGuard};
-use crate::validator::OutputValidator;
 use moe_research_error::{Error, Result};
 use moe_research_model::ModelService;
 use moe_research_model::{

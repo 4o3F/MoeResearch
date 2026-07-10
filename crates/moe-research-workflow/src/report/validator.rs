@@ -2,11 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use moe_research_error::{Error, Result};
 
+use super::{AspectReport, AspectResearchResult, Evidence, ValidationIssue, ValidationStatus};
 use crate::error_log_safe::{json_error_message_for_log, safe_evidence_id_for_log};
 use crate::policy::{EvidencePolicy, OutputPolicy};
-use crate::report::{
-    AspectReport, AspectResearchResult, Evidence, ValidationIssue, ValidationStatus,
-};
 use crate::research::AspectRequest;
 
 pub struct OutputValidator<'a> {

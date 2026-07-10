@@ -1,6 +1,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+mod validator;
+
+pub(crate) use validator::OutputValidator;
+
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct AspectReport {
     pub aspect_id: String,
