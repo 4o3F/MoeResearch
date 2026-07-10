@@ -1512,3 +1512,24 @@ PR description should list closed findings and any deferred cut-lines.
 - Response changes limited to public error **message strings** (additive clarity) and CLI output; envelope schema fields unchanged.
 - New branch required.
 - Depends on Phases 1–3.
+
+## Phase 4 retrospective
+
+- Date closed: 2026-07-10
+- Branch: `fix/phase4-hardening` (PR #38)
+- Findings closed:
+  - **A7** soft result DTO unknown-field policy + schema tests + docs
+  - **A11** MCP partial-path `expect` → structured match
+  - **A9** budget messages name dimension + effective cap; `effective_limits_applied` tracing; docs
+  - **A8** `moeresearch check --show-providers` (no MCP tool)
+  - **B8** pure helper tests in `moe-research-tests` (`pure_helper_tests.rs`); public pure helpers `effective_research_limits` / `provenance_mismatch_fields`
+  - **B11** skipped — already `error_log_safe` from Phase 2
+  - **B10** Grok provider split: `provider/grok/{mod,sse,map,excerpt}.rs` (was 729 LOC flat)
+  - **B13** academic/technical skills: provider discovery + budget ceiling bullets
+  - **B14** removed obsolete `too_many_lines` allows (agent, validator, check module); kept clap `struct_excessive_bools` + assets allow
+- Deferred: none material for this phase
+- Notes:
+  - Owner override on B8: no production `#[cfg(test)]`; test crate only
+  - No envelope schema extensions; schema 0.2 request fields stable
+  - Process: implement → controller review → owner review → commit/push → PR update
+- Full gate: `cargo fmt --all -- --check`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings` green
