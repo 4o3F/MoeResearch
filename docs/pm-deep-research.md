@@ -131,13 +131,26 @@ moeresearch assets install research-skills --dry-run
 moeresearch assets install research-skills
 ```
 
-This creates the Claude Code discovery layout:
+This creates the Claude Code discovery layout (PM profile plus shared Generic roots and other profiles):
 
 ```text
 ~/.claude/skills/deep-research/
   SKILL.md
-  prompts/layer1/pm-deep-research/
-  prompts/layer2/pm-deep-research/
+  prompts/
+    layer1/
+      task-decomposition.md
+      final-report.md
+      common/
+      pm-deep-research/
+      academic-deep-research/
+      technical-evaluation/
+    layer2/
+      aspect-agent.md
+      search-planner.md
+      evidence-extractor.md
+      pm-deep-research/
+      academic-deep-research/
+      technical-evaluation/
 ```
 
 For a project-local Claude Code skill:
@@ -158,11 +171,15 @@ moeresearch assets install research-skills \
   --layout repo
 ```
 
-Generic layout preserves sibling `skills/` and `prompts/` directories:
+Generic layout preserves sibling `skills/` and `prompts/` directories, including PM profile assets and shared Generic roots:
 
 ```text
+~/.config/moeresearch/assets/skills/deep-research.md
 ~/.config/moeresearch/assets/skills/pm-deep-research.md
+~/.config/moeresearch/assets/prompts/layer1/task-decomposition.md
+~/.config/moeresearch/assets/prompts/layer1/final-report.md
 ~/.config/moeresearch/assets/prompts/layer1/pm-deep-research/
+~/.config/moeresearch/assets/prompts/layer2/aspect-agent.md
 ~/.config/moeresearch/assets/prompts/layer2/pm-deep-research/
 ```
 
@@ -293,11 +310,14 @@ Expected user-level layout:
 
 ```text
 ~/.claude/skills/deep-research/SKILL.md
+~/.claude/skills/deep-research/prompts/layer1/task-decomposition.md
+~/.claude/skills/deep-research/prompts/layer1/final-report.md
 ~/.claude/skills/deep-research/prompts/layer1/pm-deep-research/
+~/.claude/skills/deep-research/prompts/layer2/aspect-agent.md
 ~/.claude/skills/deep-research/prompts/layer2/pm-deep-research/
 ```
 
-For generic clients, ensure the installed repo-like asset root contains both `skills/pm-deep-research.md` and the sibling `prompts/` tree.
+For generic clients, ensure the installed repo-like asset root contains `skills/deep-research.md` / `skills/pm-deep-research.md` and the sibling `prompts/` tree including Generic roots (`layer1/task-decomposition.md`, `layer1/final-report.md`, `layer2/aspect-agent.md`).
 
 ## What This Does Not Do
 
@@ -315,4 +335,4 @@ PM DeepResearch is one profile inside the installed MoeResearch research skill a
 moeresearch assets install research-skills
 ```
 
-The same asset also installs Academic DeepResearch prompts, Technical Evaluation prompts, and common evidence modules. Rust/MCP tool schemas remain domain-neutral; profile routing and methodology stay in Skill and prompt Markdown.
+The same asset also installs Academic DeepResearch prompts, Technical Evaluation prompts, Generic root prompts (`task-decomposition.md`, `final-report.md`, `aspect-agent.md`), and common evidence modules. Rust/MCP tool schemas remain domain-neutral; profile routing and methodology stay in Skill and prompt Markdown.

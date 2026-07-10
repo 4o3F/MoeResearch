@@ -89,6 +89,17 @@ Before reading the selected profile prompt, produce this internal routing plan:
 
 Then read only the selected profile's task-decomposition prompt and continue the normal workflow. Common evidence modules are available under `../prompts/layer1/common/` for all specialized profiles.
 
+Before Generic execution, verify these assets resolve from the skill workspace:
+- `../prompts/layer1/task-decomposition.md`
+- `../prompts/layer1/final-report.md`
+- `../prompts/layer2/aspect-agent.md`
+
+If any are missing, stop and instruct the user to run
+`moeresearch assets install research-skills` for this `moeresearch` version.
+Do not improvise Generic orchestration without those files.
+
+Installed Claude Code layout rewrites skill-relative paths to `./prompts/...` under `~/.claude/skills/deep-research/`; repo/manual layout keeps sibling `../prompts/...` paths from `skills/deep-research.md`.
+
 ## Inputs
 
 ```json
