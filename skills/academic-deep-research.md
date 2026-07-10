@@ -50,8 +50,18 @@ Use this profile for scholarly research that needs literature mapping, source qu
 
 Academic profile uses the shared frozen host contract: `../prompts/layer1/common/partial-status-host-contract.md` (Claude install: `./prompts/layer1/common/partial-status-host-contract.md`). Do not restate the five envelope rules inline.
 
+### Operational checklist
+
+- Prefer `deep_research` for multi-aspect work; use `aspect_research` only for a single focused retry.
+- On `deep_research` partial: keep completed aspects; one `aspect_research` retry per failed aspect max.
+- On `aspect_research` partial: preserve frozen evidence; fix Layer-1 prompt/schema bugs before retrying `schema_validation_failed`.
+- After MoeResearch returns, continue with `../prompts/layer1/common/` evidence modules; host WebSearch/WebFetch remains `HV-*` only.
+- If MCP tools or required prompts are missing: stop and direct the user to `moeresearch mcp register` / `moeresearch assets install research-skills`.
+
 ## Assets
 
-Layer 1: `task-decomposition.md`, `agent-allocation.md`, `final-report-literature-review.md`, `final-report-evidence-synthesis.md`, `final-report-paper-evaluation.md`, `final-report-research-gap-map.md`.
+Layer 1 (profile): `../prompts/layer1/academic-deep-research/task-decomposition.md`, `agent-allocation.md`, `final-report-literature-review.md`, `final-report-evidence-synthesis.md`, `final-report-paper-evaluation.md`, `final-report-research-gap-map.md`, `final-report-study-design-background.md` (when present).
 
-Layer 2: `persona-literature-reviewer.md`, `persona-methods-critic.md`, `persona-evidence-synthesizer.md`, `persona-citation-verifier.md`.
+Layer 1 (common): `../prompts/layer1/common/evidence-postprocess.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, `report-annex.md`, `partial-status-host-contract.md`, `budget-tiers.md`.
+
+Layer 2: `../prompts/layer2/academic-deep-research/persona-literature-reviewer.md`, `persona-methods-critic.md`, `persona-evidence-synthesizer.md`, `persona-citation-verifier.md`.

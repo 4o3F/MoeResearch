@@ -1,4 +1,6 @@
-# MoeResearch / Lapis 架构文档
+# MoeResearch 架构文档
+
+仓库本地代号：Lapis。crate / 二进制权威命名为 `moe-research-*` 与 `moeresearch`。
 
 ## 项目愿景
 
