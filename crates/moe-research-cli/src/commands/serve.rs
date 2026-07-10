@@ -5,7 +5,7 @@ use std::process;
 use std::sync::Arc;
 
 use clap::{Args, ValueEnum};
-use moe_research_config::{GrokReasoningEffort, MoeResearchConfig, load_config};
+use moe_research_config::{MoeResearchConfig, load_config};
 use moe_research_error::{Error, Result};
 use moe_research_model::{ModelService, OpenAiProvider};
 use moe_research_net::NetworkClient;
@@ -15,7 +15,9 @@ use moe_research_search::{
 };
 use tracing_subscriber::EnvFilter;
 
-use crate::compose::build_workflow_budget;
+use crate::compose::{
+    build_workflow_budget, map_grok_reasoning_effort, provider_api_key, provider_model,
+};
 
 #[derive(Debug, Args)]
 pub struct ServeArgs {
@@ -276,42 +278,4 @@ fn build_search_service(
     }
 
     Ok(service)
-}
-
-fn map_grok_reasoning_effort(
-    effort: GrokReasoningEffort,
-) -> moe_research_search::GrokReasoningEffort {
-    match effort {
-        GrokReasoningEffort::None => moe_research_search::GrokReasoningEffort::None,
-        GrokReasoningEffort::Low => moe_research_search::GrokReasoningEffort::Low,
-        GrokReasoningEffort::Medium => moe_research_search::GrokReasoningEffort::Medium,
-        GrokReasoningEffort::High => moe_research_search::GrokReasoningEffort::High,
-    }
-}
-
-fn provider_api_key(kind: &str, name: &str, api_key_env: Option<&String>) -> Result<String> {
-    let api_key_env = api_key_env.ok_or_else(|| Error::ProviderUnavailable {
-        provider: format!("{kind}:{name}"),
-        message: "enabled provider must set api_key_env".to_owned(),
-        retryable: false,
-    })?;
-
-    env::var(api_key_env).map_err(|_| Error::ProviderUnavailable {
-        provider: format!("{kind}:{name}"),
-        message: format!("environment variable {api_key_env} is not set"),
-        retryable: false,
-    })
-}
-
-fn provider_model(kind: &str, name: &str, model: Option<&String>) -> Result<String> {
-    let Some(model) = model
-        .as_ref()
-        .map(|value| value.trim())
-        .filter(|model| !model.is_empty())
-    else {
-        return Err(Error::ConfigInvalid {
-            message: format!("{kind}.providers.{name}.model must be set"),
-        });
-    };
-    Ok(model.to_owned())
 }

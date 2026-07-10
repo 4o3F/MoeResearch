@@ -1218,6 +1218,7 @@ version = "0.2.7"
 dependencies = [
  "async-trait",
  "flate2",
+ "moe-research-cli",
  "moe-research-config",
  "moe-research-error",
  "moe-research-mcp",
