@@ -6,6 +6,7 @@
 )]
 
 mod commands;
+mod compose;
 mod onboarding;
 
 use clap::{Parser, Subcommand};

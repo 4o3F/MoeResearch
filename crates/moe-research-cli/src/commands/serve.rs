@@ -5,9 +5,7 @@ use std::process;
 use std::sync::Arc;
 
 use clap::{Args, ValueEnum};
-use moe_research_config::{
-    ConfigLimit, GrokReasoningEffort, LimitsConfig, MoeResearchConfig, load_config,
-};
+use moe_research_config::{GrokReasoningEffort, MoeResearchConfig, load_config};
 use moe_research_error::{Error, Result};
 use moe_research_model::{ModelService, OpenAiProvider};
 use moe_research_net::NetworkClient;
@@ -15,8 +13,9 @@ use moe_research_net::reqwest_client::ReqwestNetworkClient;
 use moe_research_search::{
     ExaSearchProvider, GrokSearchProvider, SearchService, TavilySearchProvider,
 };
-use moe_research_workflow::{AgentLimits, BudgetConfig, Limit, ResearchLimits};
 use tracing_subscriber::EnvFilter;
+
+use crate::compose::build_workflow_budget;
 
 #[derive(Debug, Args)]
 pub struct ServeArgs {
@@ -315,30 +314,4 @@ fn provider_model(kind: &str, name: &str, model: Option<&String>) -> Result<Stri
         });
     };
     Ok(model.to_owned())
-}
-
-fn build_workflow_budget(config: &LimitsConfig) -> BudgetConfig {
-    BudgetConfig {
-        research: ResearchLimits {
-            max_agents: map_limit(config.research.max_agents),
-            max_concurrent_agents: map_limit(config.research.max_concurrent_agents),
-            max_total_model_calls: map_limit(config.research.max_total_model_calls),
-            max_total_search_calls: map_limit(config.research.max_total_search_calls),
-            total_timeout_ms: map_limit(config.research.total_timeout_ms),
-            max_tokens: map_limit(config.research.max_tokens),
-        },
-        per_agent: AgentLimits {
-            max_turns: map_limit(config.per_agent.max_turns),
-            max_tool_calls: map_limit(config.per_agent.max_tool_calls),
-            max_search_calls: map_limit(config.per_agent.max_search_calls),
-            timeout_ms: map_limit(config.per_agent.timeout_ms),
-        },
-    }
-}
-
-fn map_limit<T>(limit: ConfigLimit<T>) -> Limit<T> {
-    match limit {
-        ConfigLimit::Limited(value) => Limit::limited(value),
-        ConfigLimit::Unlimited => Limit::unlimited(),
-    }
 }
