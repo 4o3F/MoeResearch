@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 mod validator;
 
 pub(crate) use validator::OutputValidator;
+pub use validator::provenance_mismatch_fields;
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct AspectReport {
