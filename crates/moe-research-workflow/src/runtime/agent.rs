@@ -325,7 +325,6 @@ impl<'a> AgentRuntime<'a> {
     /// path, evidence collection, and the policy-rejection branch. A finer
     /// split is planned alongside the Commit 3 tool-boundary rework; until
     /// then `clippy::too_many_lines` is suppressed locally.
-    #[allow(clippy::too_many_lines)]
     async fn execute_tool_call(
         &self,
         tool_call: &ModelToolCall,

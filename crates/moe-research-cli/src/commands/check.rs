@@ -1,5 +1,3 @@
-#![allow(clippy::too_many_lines)]
-
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -221,10 +219,7 @@ fn check_show_providers(config: &MoeResearchConfig) -> Vec<CheckRow> {
             Some("docs/configuration.md".to_owned()),
         )
     } else {
-        CheckRow::pass(
-            "providers:model",
-            format!("enabled: {}", models.join(", ")),
-        )
+        CheckRow::pass("providers:model", format!("enabled: {}", models.join(", ")))
     });
     rows.push(if searches.is_empty() {
         CheckRow::warn(
