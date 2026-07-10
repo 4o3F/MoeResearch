@@ -410,6 +410,55 @@ fn check_disabled_search_provider_does_not_require_env_var() {
 }
 
 #[test]
+fn check_show_providers_lists_enabled_model_and_search() {
+    let config_path = temp_path("show-providers.toml");
+    let config = BASE_CONFIG
+        .replace(
+            "[model.providers.openai]\nenabled = false",
+            "[model.providers.openai]\nenabled = true",
+        )
+        .replace("api_key_env = \"OPENAI_API_KEY\"", "api_key_env = \"PATH\"")
+        .replace(
+            "[search.providers.exa]\nenabled = false",
+            "[search.providers.exa]\nenabled = true",
+        )
+        .replace("api_key_env = \"EXA_API_KEY\"", "api_key_env = \"PATH\"");
+    write_config(&config_path, &config);
+
+    let output = moe_research_command()
+        .args(["check", "--config"])
+        .arg(&config_path)
+        .args(["--no-mcp", "--show-providers"])
+        .output()
+        .expect("run check --show-providers");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let _ = std::fs::remove_file(&config_path);
+
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(stdout.is_empty(), "stdout: {stdout}");
+    assert!(stderr.contains("providers:model"), "stderr: {stderr}");
+    assert!(stderr.contains("enabled: openai"), "stderr: {stderr}");
+    assert!(stderr.contains("providers:search"), "stderr: {stderr}");
+    assert!(stderr.contains("enabled: exa"), "stderr: {stderr}");
+}
+
+#[test]
+fn check_help_mentions_show_providers() {
+    let output = moe_research_command()
+        .args(["check", "--help"])
+        .output()
+        .expect("run check --help");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "help text: {text}");
+    assert!(text.contains("show-providers"), "help text: {text}");
+}
+
+#[test]
 fn onboard_enable_openai_writes_config_and_logs_registration_step() {
     let config_path = temp_path("onboard-openai.toml");
 

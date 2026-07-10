@@ -124,6 +124,7 @@ fn run_check_and_registration(args: &OnboardArgs, config_path: &Path) -> Result<
         json: false,
         live: false,
         no_mcp: false,
+        show_providers: false,
     })?;
 
     if args.register_mcp {

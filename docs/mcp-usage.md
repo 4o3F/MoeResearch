@@ -470,6 +470,9 @@ Client-side checks:
 - `task.model_provider` or `task.aspects[].model_provider` is included in `policy.model.allowed_providers`.
 - If search is enabled, `task.search_provider` or `task.aspects[].search_provider` is included in `policy.search.allowed_providers`.
 - Provider names match the MCP server environment you are calling.
+- Discover enabled providers on the host with:
+  `moeresearch check --config <path> --show-providers --no-mcp`
+  Provider names in requests must match these enabled config keys (e.g. `openai`, `grok`, `exa`, `tavily`).
 - Inspect `retryable`: retry transient provider-side failures, but fix configuration, environment, or policy failures before retrying.
 
 ### `tool_policy_denied`
