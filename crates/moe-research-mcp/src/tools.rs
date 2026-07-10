@@ -224,17 +224,5 @@ fn tool_error_retryable(error: &Error, failed_aspects: &[AspectFailure]) -> bool
 }
 
 fn tool_error_code(code: ErrorCode) -> ToolErrorCode {
-    match code {
-        ErrorCode::InvalidInput => ToolErrorCode::InvalidInput,
-        ErrorCode::UnsupportedSchemaVersion => ToolErrorCode::UnsupportedSchemaVersion,
-        ErrorCode::ConfigInvalid => ToolErrorCode::ConfigInvalid,
-        ErrorCode::ProviderUnavailable => ToolErrorCode::ProviderUnavailable,
-        ErrorCode::NetworkFailed => ToolErrorCode::NetworkFailed,
-        ErrorCode::BudgetExceeded => ToolErrorCode::BudgetExceeded,
-        ErrorCode::ToolPolicyDenied => ToolErrorCode::ToolPolicyDenied,
-        ErrorCode::SchemaValidationFailed => ToolErrorCode::SchemaValidationFailed,
-        ErrorCode::Timeout => ToolErrorCode::Timeout,
-        ErrorCode::PartialResult => ToolErrorCode::PartialResult,
-        ErrorCode::Internal => ToolErrorCode::Internal,
-    }
+    ToolErrorCode::from(code)
 }

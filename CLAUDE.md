@@ -78,7 +78,7 @@ graph TD
 
 | 模块 | 职责 | 入口与关键文件 | 测试线索 |
 | --- | --- | --- | --- |
-| `crates/moe-research-cli` | CLI 二进制、配置初始化、健康检查、MCP 注册、服务启动 | `src/main.rs`, `src/commands/*`, `src/onboarding/*` | `cli_onboarding_tests.rs`, `mcp_tests.rs` |
+| `crates/moe-research-cli` | CLI 二进制、配置初始化、健康检查、MCP 注册、**composition 在 `src/compose.rs`**、serve host | `src/main.rs`, `src/lib.rs`, `src/compose.rs`, `src/commands/*`, `src/onboarding/*` | `cli_compose_tests.rs`, `cli_onboarding_tests.rs`, `cli_assets_tests.rs`, `mcp_tests.rs` |
 | `crates/moe-research-config` | TOML 配置加载、provider/env 校验、配置 limit 编码 | `src/lib.rs`, `src/types.rs`, `src/loader.rs`, `src/limit.rs` | `config_tests.rs` |
 | `crates/moe-research-error` | 统一错误类型、错误码、retryable 与公共安全消息 | `src/lib.rs` | 被所有集成测试间接覆盖 |
 | `crates/moe-research-mcp` | MCP server、工具路由、响应 envelope | `src/server.rs`, `src/tools.rs`, `src/envelope.rs` | `mcp_tests.rs`, `schema_tests.rs` |

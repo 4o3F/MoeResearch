@@ -25,6 +25,12 @@ This guide contains repository layout and local development commands for contrib
 
 The workspace default member is `crates/moe-research-cli`, and the binary name is `moeresearch`.
 
+- `crates/moe-research-cli` is the binary entrypoint and composition root.
+  - Host commands live under `src/commands/` (`serve`, `init`, `check`, `onboard`, `mcp`, `assets`).
+  - Config → runtime wiring lives in `src/compose.rs` (`map_limit`, budget build, provider registration, Grok effort mapping).
+  - `commands/serve.rs` loads config, initializes logging, calls `compose`, then `moe_research_mcp::serve_stdio`.
+  - Pure composition mapping tests live in `crates/moe-research-tests` (`cli_compose_tests.rs`), not in CLI sources.
+
 ## 2. Requirements
 
 - Rust toolchain with Rust 2024 edition support.

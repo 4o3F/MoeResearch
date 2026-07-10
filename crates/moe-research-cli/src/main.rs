@@ -5,10 +5,8 @@
     clippy::missing_panics_doc
 )]
 
-mod commands;
-mod onboarding;
-
 use clap::{Parser, Subcommand};
+use moe_research_cli::commands;
 use moe_research_error::{Error, Result};
 use tracing_subscriber::EnvFilter;
 

@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 async-trait.workspace = true
 flate2.workspace = true
+moe-research-cli = { path = "../moe-research-cli" }
 moe-research-config = { path = "../moe-research-config" }
 moe-research-error = { path = "../moe-research-error" }
 moe-research-mcp = { path = "../moe-research-mcp" }

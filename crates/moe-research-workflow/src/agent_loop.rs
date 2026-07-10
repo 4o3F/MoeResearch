@@ -6,8 +6,8 @@ use schemars::schema_for;
 use serde_json::json;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
+use crate::error_log_safe::{error_message_for_log, safe_model_identifier_for_log};
 use crate::limit::{DurationLimitMs, Limit};
-use crate::log_safe::{error_message_for_log, safe_model_identifier_for_log};
 use crate::policy::SearchPolicy;
 use crate::report::{
     AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, SourceType,

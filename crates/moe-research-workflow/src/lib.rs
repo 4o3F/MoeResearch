@@ -2,8 +2,8 @@
 
 mod agent_loop;
 pub mod budget;
+mod error_log_safe;
 pub mod limit;
-mod log_safe;
 pub mod policy;
 pub mod report;
 pub mod research;
