@@ -1,108 +1,48 @@
-//! Workflow orchestration for standalone aspect and multi-aspect deep research.
-//!
-//! This module owns the execution boundary: validate incoming requests, derive
-//! the effective research limits from operator config and request limits, run
-//! aspect agents, then aggregate successes and failures into the public result.
-
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use futures::{StreamExt, stream};
 use uuid::Uuid;
 
-use crate::agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
 use crate::budget::BudgetConfig;
 use crate::error_log_safe::error_message_for_log;
-use crate::report::{
-    AgentBudgetUsage, AspectFailure, AspectReport, AspectResearchResult, Confidence,
-    ConfidenceSummary, CoverageSummary, DeepResearchResult, Evidence, OpenQuestion,
-    ResearchBudgetUsage, TokenUsage,
-};
+use crate::report::{AspectFailure, CoverageSummary, DeepResearchResult};
 use crate::research::{
-    AspectResearchRequest, DeepResearchRequest, EffectiveAspectPlan, EffectiveResearchPlan,
-    SUPPORTED_SCHEMA_VERSIONS, WorkflowValidationContext, effective_research_limits,
+    DeepResearchRequest, EffectiveAspectPlan, EffectiveResearchPlan, SUPPORTED_SCHEMA_VERSIONS,
+    WorkflowValidationContext,
 };
-use crate::runtime_budget::ResearchBudgetGuard;
-use crate::tool_policy::SEARCH_TOOL_NAME;
+use crate::runtime::{
+    AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput, ResearchBudgetGuard, SEARCH_TOOL_NAME,
+};
 use moe_research_error::{Error, Result};
 use moe_research_model::ModelService;
 use moe_research_search::SearchService;
 
-/// Public output from a standalone `aspect_research` run.
-#[derive(Debug)]
-pub struct AspectResearchOutput {
-    pub result: AspectResearchResult,
-    pub budget_usage: AgentBudgetUsage,
-    pub token_usage: Option<TokenUsage>,
-}
+use super::aggregation::{
+    DeepResearchRun, aspect_failure, confidence_summary, order_failures_by_request,
+    record_aspect_result,
+};
 
-impl AspectResearchOutput {
-    fn from_runtime(output: AgentRuntimeOutput) -> Self {
-        Self {
-            result: output.result,
-            budget_usage: output.budget_usage,
-            token_usage: output.token_usage,
-        }
-    }
-}
-
-/// Public failure from a standalone `aspect_research` run.
 #[derive(Debug)]
-pub struct AspectResearchFailure {
+pub struct DeepResearchFailure {
     pub error: Error,
-    pub partial_output: Option<AspectResearchOutput>,
+    pub failed_aspects: Vec<AspectFailure>,
 }
 
-impl AspectResearchFailure {
-    fn top_level(error: Error) -> Box<Self> {
+impl DeepResearchFailure {
+    pub(super) fn top_level(error: Error) -> Box<Self> {
         Box::new(Self {
             error,
-            partial_output: None,
+            failed_aspects: Vec::new(),
         })
     }
 
-    fn from_runtime(failure: AgentRuntimeFailure) -> Box<Self> {
+    pub(super) fn with_aspects(error: Error, failed_aspects: Vec<AspectFailure>) -> Box<Self> {
         Box::new(Self {
-            error: failure.error,
-            partial_output: failure
-                .partial_output
-                .map(AspectResearchOutput::from_runtime),
+            error,
+            failed_aspects,
         })
     }
-}
-
-/// Runs one aspect agent.
-///
-/// `AspectResearchRequest` has no request-level [`ResearchLimits`], so the
-/// standalone tool inherits the operator `limits.research` caps from config.
-/// The request task still supplies the per-agent turn/tool/search limits.
-pub async fn aspect_research(
-    request: AspectResearchRequest,
-    model_service: &ModelService,
-    search_service: &SearchService,
-    budget_config: &BudgetConfig,
-) -> std::result::Result<AspectResearchOutput, Box<AspectResearchFailure>> {
-    let plan = request
-        .normalize_for_execution(&WorkflowValidationContext {
-            budget_config,
-            supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
-            supported_tool_name: SEARCH_TOOL_NAME,
-        })
-        .map_err(AspectResearchFailure::top_level)?;
-    let allow_partial_results = plan.policy.execution.allow_partial_results;
-    let research_budget =
-        ResearchBudgetGuard::new(effective_research_limits(&budget_config.research, None));
-    research_budget.record_agent_started();
-    run_aspect_runtime(plan, model_service, search_service, research_budget)
-        .await
-        .map(AspectResearchOutput::from_runtime)
-        .map_err(|failure| {
-            let mut failure = AspectResearchFailure::from_runtime(failure);
-            if !allow_partial_results {
-                failure.partial_output = None;
-            }
-            failure
-        })
 }
 
 /// Runs a Layer 1 deep-research plan.
@@ -230,56 +170,12 @@ pub async fn deep_research(
     result
 }
 
-#[derive(Debug)]
-pub struct DeepResearchFailure {
-    pub error: Error,
-    pub failed_aspects: Vec<AspectFailure>,
-}
-
-impl DeepResearchFailure {
-    fn top_level(error: Error) -> Box<Self> {
-        Box::new(Self {
-            error,
-            failed_aspects: Vec::new(),
-        })
-    }
-
-    fn with_aspects(error: Error, failed_aspects: Vec<AspectFailure>) -> Box<Self> {
-        Box::new(Self {
-            error,
-            failed_aspects,
-        })
-    }
-}
-
-struct DeepResearchRun {
-    completed: Vec<String>,
-    failures: Vec<AspectFailure>,
-    aspect_reports: Vec<AspectReport>,
-    evidence_by_id: BTreeMap<String, Evidence>,
-    open_questions: Vec<OpenQuestion>,
-    budget_usage: ResearchBudgetUsage,
-}
-
-impl DeepResearchRun {
-    fn new() -> Self {
-        Self {
-            completed: Vec::new(),
-            failures: Vec::new(),
-            aspect_reports: Vec::new(),
-            evidence_by_id: BTreeMap::new(),
-            open_questions: Vec::new(),
-            budget_usage: ResearchBudgetUsage::zero(),
-        }
-    }
-}
-
 /// Executes every aspect with one shared research-level guard.
 ///
 /// The request passed here already carries the effective merged limits. Its
 /// concurrency cap controls scheduling, while the shared `ResearchBudgetGuard`
 /// reserves global model/search/token capacity before provider dispatch.
-async fn execute_aspects(
+pub(super) async fn execute_aspects(
     request: &EffectiveResearchPlan,
     model_service: &ModelService,
     search_service: &SearchService,
@@ -323,7 +219,7 @@ async fn execute_aspects(
     run
 }
 
-async fn run_aspect_runtime(
+pub(super) async fn run_aspect_runtime(
     request: EffectiveAspectPlan,
     model_service: &ModelService,
     search_service: &SearchService,
@@ -334,7 +230,7 @@ async fn run_aspect_runtime(
         .await
 }
 
-fn aspect_requests(request: &EffectiveResearchPlan) -> Vec<EffectiveAspectPlan> {
+pub(super) fn aspect_requests(request: &EffectiveResearchPlan) -> Vec<EffectiveAspectPlan> {
     request
         .task
         .aspects
@@ -350,84 +246,8 @@ fn aspect_requests(request: &EffectiveResearchPlan) -> Vec<EffectiveAspectPlan> 
         .collect()
 }
 
-fn record_aspect_result(
-    run: &mut DeepResearchRun,
-    aspect_id: &str,
-    result: std::result::Result<AgentRuntimeOutput, AgentRuntimeFailure>,
-    allow_partial_results: bool,
-) {
-    match result {
-        Ok(result) => record_aspect_success(run, result),
-        Err(mut failure) => {
-            let aspect_error = aspect_failure(aspect_id, &failure.error);
-            let partial_evidence_count = failure
-                .partial_output
-                .as_ref()
-                .map_or(0, |output| output.result.evidence.len());
-            let preserve_partial_evidence = allow_partial_results && partial_evidence_count > 0;
-            tracing::warn!(
-                event = "aspect_failed",
-                status = "failed",
-                aspect_id,
-                error_code = failure.error.code().as_str(),
-                error_message = %error_message_for_log(&failure.error),
-                retryable = failure.error.retryable(),
-                partial_evidence_count,
-                preserve_partial_evidence,
-                "aspect failed"
-            );
-            if allow_partial_results && let Some(mut output) = failure.partial_output.take() {
-                namespace_aspect_evidence(&mut output.result);
-                for evidence in &output.result.evidence {
-                    run.evidence_by_id
-                        .entry(evidence.id.clone())
-                        .or_insert_with(|| evidence.clone());
-                }
-            }
-            run.failures.push(aspect_error);
-        }
-    }
-}
-
-fn record_aspect_success(run: &mut DeepResearchRun, mut output: AgentRuntimeOutput) {
-    namespace_aspect_evidence(&mut output.result);
-    run.completed
-        .push(output.result.aspect_report.aspect_id.clone());
-    run.open_questions
-        .extend(output.result.aspect_report.open_questions.clone());
-    for evidence in &output.result.evidence {
-        run.evidence_by_id
-            .entry(evidence.id.clone())
-            .or_insert_with(|| evidence.clone());
-    }
-    run.aspect_reports.push(output.result.aspect_report);
-}
-
-fn namespace_aspect_evidence(result: &mut AspectResearchResult) {
-    let aspect_id = result.aspect_report.aspect_id.clone();
-    let mut remapped_ids = BTreeMap::new();
-
-    for evidence in &mut result.evidence {
-        let original_id = evidence.id.clone();
-        let namespaced_id = format!("{aspect_id}:{original_id}");
-        evidence.id.clone_from(&namespaced_id);
-        remapped_ids.insert(original_id, namespaced_id);
-    }
-
-    for finding in &mut result.aspect_report.findings {
-        for evidence_ref in &mut finding.evidence_refs {
-            if let Some(namespaced_id) = remapped_ids.get(evidence_ref) {
-                *evidence_ref = namespaced_id.clone();
-            }
-        }
-    }
-}
-
 /// Finalizes a `DeepResearchRun` into either a `DeepResearchResult` or a
 /// terminal error, honoring the `allow_partial_results` execution policy.
-///
-/// `request` is borrowed so the partial-result decision can read the policy
-/// without taking ownership of the deep-research request.
 fn finalize_deep_result(
     request: &EffectiveResearchPlan,
     run: DeepResearchRun,
@@ -458,10 +278,6 @@ fn finalize_deep_result(
 
 /// Builds the public `DeepResearchResult` from the request shape and the
 /// accumulated `DeepResearchRun` state.
-///
-/// `request` is borrowed because we only need `task.aspects.len()` for the
-/// coverage summary; `run` is consumed because the aggregated reports and
-/// evidence are moved into the result.
 fn deep_result(
     request: &EffectiveResearchPlan,
     run: DeepResearchRun,
@@ -486,48 +302,4 @@ fn deep_result(
         coverage_summary,
         budget_usage: run.budget_usage,
     }
-}
-
-fn order_failures_by_request(
-    request: &EffectiveResearchPlan,
-    failures: Vec<AspectFailure>,
-) -> Vec<AspectFailure> {
-    let mut by_aspect_id = failures
-        .into_iter()
-        .map(|failure| (failure.aspect_id.clone(), failure))
-        .collect::<BTreeMap<_, _>>();
-
-    request
-        .task
-        .aspects
-        .iter()
-        .filter_map(|aspect| by_aspect_id.remove(&aspect.id))
-        .collect()
-}
-
-/// Builds the per-aspect failure record embedded inside a partial or failed
-/// `DeepResearchResult`.
-///
-/// `error_code` is the `snake_case` transport-neutral `ErrorCode` identifier
-/// rather than `Debug` output, so external clients can dispatch on a stable
-/// string. `message` is the same redacted summary used in the public envelope.
-fn aspect_failure(aspect_id: &str, error: &Error) -> AspectFailure {
-    AspectFailure {
-        aspect_id: aspect_id.to_owned(),
-        error_code: error.code().as_str().to_owned(),
-        message: error.public_message(),
-        retryable: error.retryable(),
-    }
-}
-
-fn confidence_summary(aspect_reports: &[AspectReport]) -> ConfidenceSummary {
-    let mut summary = ConfidenceSummary::zero();
-    for report in aspect_reports {
-        match report.confidence {
-            Confidence::High => summary.high += 1,
-            Confidence::Medium => summary.medium += 1,
-            Confidence::Low => summary.low += 1,
-        }
-    }
-    summary
 }

@@ -85,7 +85,7 @@ graph TD
 | `crates/moe-research-model` | 模型 provider 抽象与 OpenAI Responses SSE 适配 | `src/provider.rs`, `src/service.rs`, `src/openai.rs`, `src/types.rs` | `model_tests.rs` |
 | `crates/moe-research-net` | 统一网络客户端、JSON/SSE、重试、超时、脱敏与 wire trace | `src/client.rs`, `src/reqwest_client.rs`, `src/log_safe.rs` | `network_policy_tests.rs`, `wire_trace_tests.rs` |
 | `crates/moe-research-search` | 搜索 provider 抽象与 Exa/Grok/Tavily 适配 | `src/provider.rs`, `src/service.rs`, `src/provider/*` | `search_tests.rs` |
-| `crates/moe-research-workflow` | 研究请求/报告 schema、agent loop、policy、budget、validator、deep research 编排 | `src/workflow.rs`, `src/agent_loop.rs`, `src/research.rs`, `src/report.rs` | `deep_research_tests.rs`, `orchestrator_tests.rs`, `policy_validator_tests.rs` |
+| `crates/moe-research-workflow` | 研究请求/报告 schema、agent loop、policy、budget、validator、deep research 编排 | `src/workflow/`, `src/runtime/`, `src/research/`, `src/report/` | `deep_research_tests.rs`, `orchestrator_tests.rs`, `policy_validator_tests.rs` |
 | `crates/moe-research-tests` | 集成测试 crate 与 mock support | `tests/*.rs`, `tests/support/*` | `cargo test -p moe-research-tests` |
 | `docs` | 用户、配置、MCP 与开发说明 | `docs/*.md` | 文档同步检查依赖人工 review |
 | `prompts` | Layer 1 / Layer 2 prompt 资产 | `prompts/layer1/*`, `prompts/layer2/*` | 由 skill 工作流和 schema 测试间接约束 |
