@@ -1,6 +1,17 @@
 # Layer 1 Common Module: Claim Ledger
 
-Domain-neutral audit trail for claims that affect conclusions, recommendations, risk posture, or confidence.
+Domain-neutral audit trail for claims that affect conclusions, recommendations, risk posture, or confidence. Skill-layer module only — do not require a Rust/MoeResearch schema change. Build the ledger from `DeepResearchResult`, `evidence_index`, draft report text, and evidence post-processing output.
+
+## Purpose
+
+Create a compact audit trail for load-bearing claims. The ledger is not a longer bibliography. It answers:
+
+- What claim is being made?
+- Where does it appear?
+- What evidence supports it?
+- Has support, conflict, freshness, source independence, and domain validity been checked?
+- Was any host-side WebSearch/WebFetch/browser/manual verification used, and did it change the claim?
+- Should the claim stay in the body, be downgraded, move to open questions, or be abstained?
 
 ## Scope
 
@@ -29,7 +40,7 @@ Domain-neutral audit trail for claims that affect conclusions, recommendations, 
   "support_status": "supported|partial|unsupported|not_checked",
   "contradiction_status": "no_conflict_found|conflict_resolved|conflict_unresolved|not_checked",
   "freshness_status": "current|stale|date_unknown|not_time_sensitive",
-  "academic_status": "not_academic|peer_reviewed|preprint|accepted|under_review|retracted_or_concern|unclear",
+  "academic_status": "not_academic|peer_reviewed|preprint|accepted|under_review|desk_rejected|retracted_or_concern|unclear",
   "technical_status": "not_technical|official_docs_checked|repo_checked|release_checked|benchmark_checked|security_checked|license_checked|unclear",
   "independence_status": "independent|vendor_owned|practitioner_self_report|community|unknown",
   "confidence": "high|medium|low",
@@ -43,6 +54,8 @@ Domain-neutral audit trail for claims that affect conclusions, recommendations, 
 1. Extract atomic claims; split compound claims when evidence support differs.
 2. Preserve exact meaning. Do not strengthen weak wording.
 3. Mark recommendations, risk judgments, causal claims, quantitative claims, scientific claims, security claims, benchmark claims, and current-state claims as load-bearing by default.
-4. `evidence_refs` may contain only frozen MoeResearch evidence IDs.
-5. Host WebSearch/WebFetch/browser/manual rows use `host_verification_refs` with `HV-*`; they never replace MoeResearch evidence IDs.
-6. Unsupported load-bearing claims cannot remain as facts in the body. Narrow, downgrade, move to open questions, or abstain.
+4. Claims supported only by community / Low / Unknown evidence can stay as sentiment or hypotheses, not facts.
+5. `evidence_refs` may contain only frozen MoeResearch evidence IDs.
+6. Host WebSearch/WebFetch/browser/manual rows use `host_verification_refs` with `HV-*`; they never replace MoeResearch evidence IDs.
+7. If a host verification row changes confidence or wording, preserve the original claim meaning in `claim_text` and reflect the change through `confidence`, `confidence_reason`, and `action`.
+8. Unsupported load-bearing claims cannot remain as facts in the body. Narrow, downgrade, move to open questions, or abstain.
