@@ -15,6 +15,11 @@ const SKILL_PATH: &str = "skills/deep-research.md";
 const PM_SKILL_PATH: &str = "skills/pm-deep-research.md";
 const ACADEMIC_SKILL_PATH: &str = "skills/academic-deep-research.md";
 const TECHNICAL_SKILL_PATH: &str = "skills/technical-evaluation.md";
+const GENERIC_LAYER1_TASK: &str = "prompts/layer1/task-decomposition.md";
+const GENERIC_LAYER1_FINAL: &str = "prompts/layer1/final-report.md";
+const GENERIC_LAYER2_ASPECT: &str = "prompts/layer2/aspect-agent.md";
+const GENERIC_LAYER2_SEARCH_PLANNER: &str = "prompts/layer2/search-planner.md";
+const GENERIC_LAYER2_EVIDENCE_EXTRACTOR: &str = "prompts/layer2/evidence-extractor.md";
 const COMMON_PATH: &str = "prompts/layer1/common/evidence-postprocess.md";
 const PM_LAYER1_PATH: &str = "prompts/layer1/pm-deep-research/task-decomposition.md";
 const PM_LAYER2_PATH: &str = "prompts/layer2/pm-deep-research/persona-strategist.md";
@@ -30,6 +35,11 @@ const EXPECTED_FILES: &[&str] = &[
     PM_SKILL_PATH,
     ACADEMIC_SKILL_PATH,
     TECHNICAL_SKILL_PATH,
+    GENERIC_LAYER1_TASK,
+    GENERIC_LAYER1_FINAL,
+    GENERIC_LAYER2_ASPECT,
+    GENERIC_LAYER2_SEARCH_PLANNER,
+    GENERIC_LAYER2_EVIDENCE_EXTRACTOR,
     COMMON_PATH,
     PM_LAYER1_PATH,
     PM_LAYER2_PATH,
@@ -279,6 +289,46 @@ fn assets_install_default_claude_code_layout_rewrites_skill_prompt_paths() {
             .join("prompts/layer2/pm-deep-research/persona-strategist.md")
             .is_file()
     );
+    assert!(skill_root.join("prompts/layer1/task-decomposition.md").is_file());
+    assert!(skill_root.join("prompts/layer1/final-report.md").is_file());
+    assert!(skill_root.join("prompts/layer2/aspect-agent.md").is_file());
+    assert!(skill_root.join("prompts/layer2/search-planner.md").is_file());
+    assert!(skill_root.join("prompts/layer2/evidence-extractor.md").is_file());
+}
+
+#[test]
+fn packaging_allowlists_are_isomorphic() {
+    let rust_source = fs::read_to_string(workspace().join("crates/moe-research-cli/src/commands/assets.rs"))
+        .expect("read assets.rs");
+    let node_source = fs::read_to_string(workspace().join("scripts/package-research-skills-assets.mjs"))
+        .expect("read package script");
+
+    let rust_files = extract_string_literals_in_const_block(&rust_source, "ALLOWED_ASSET_FILES");
+    let rust_prefixes = extract_string_literals_in_const_block(&rust_source, "ALLOWED_ASSET_PREFIXES");
+    let node_files = extract_string_literals_in_const_block(&node_source, "ALLOWED_FILES");
+    let node_prefixes = extract_string_literals_in_const_block(&node_source, "ALLOWED_PREFIXES");
+
+    assert_eq!(
+        rust_files, node_files,
+        "ALLOWED_ASSET_FILES and ALLOWED_FILES must be isomorphic"
+    );
+    assert_eq!(
+        rust_prefixes, node_prefixes,
+        "ALLOWED_ASSET_PREFIXES and ALLOWED_PREFIXES must be isomorphic"
+    );
+
+    for expected in [
+        GENERIC_LAYER1_TASK,
+        GENERIC_LAYER1_FINAL,
+        GENERIC_LAYER2_ASPECT,
+        GENERIC_LAYER2_SEARCH_PLANNER,
+        GENERIC_LAYER2_EVIDENCE_EXTRACTOR,
+    ] {
+        assert!(
+            rust_files.contains(expected),
+            "shared allowlist missing Generic path {expected}"
+        );
+    }
 }
 
 #[test]
@@ -637,7 +687,15 @@ fn fixture_content(path: &str) -> Vec<u8> {
 fn is_research_asset_path(path: &str) -> bool {
     matches!(
         path,
-        SKILL_PATH | PM_SKILL_PATH | ACADEMIC_SKILL_PATH | TECHNICAL_SKILL_PATH
+        SKILL_PATH
+            | PM_SKILL_PATH
+            | ACADEMIC_SKILL_PATH
+            | TECHNICAL_SKILL_PATH
+            | GENERIC_LAYER1_TASK
+            | GENERIC_LAYER1_FINAL
+            | GENERIC_LAYER2_ASPECT
+            | GENERIC_LAYER2_SEARCH_PLANNER
+            | GENERIC_LAYER2_EVIDENCE_EXTRACTOR
     ) || path.starts_with("prompts/layer1/common/")
         || path.starts_with("prompts/layer1/pm-deep-research/")
         || path.starts_with("prompts/layer2/pm-deep-research/")
@@ -645,6 +703,80 @@ fn is_research_asset_path(path: &str) -> bool {
         || path.starts_with("prompts/layer2/academic-deep-research/")
         || path.starts_with("prompts/layer1/technical-evaluation/")
         || path.starts_with("prompts/layer2/technical-evaluation/")
+}
+
+fn extract_string_literals_in_const_block(source: &str, const_name: &str) -> BTreeSet<String> {
+    // Locate `NAME =` / `NAME:` declaration, then scan from the initializer `[`
+    // so Rust type signatures like `&[&str]` do not terminate early.
+    let decl_patterns = [format!("const {const_name}"), format!("{const_name} =")];
+    let mut search_from = 0;
+    let decl_start = loop {
+        let relative = source[search_from..]
+            .find(const_name)
+            .unwrap_or_else(|| panic!("const block not found: {const_name}"));
+        let absolute = search_from + relative;
+        let line_start = source[..absolute].rfind('\n').map_or(0, |idx| idx + 1);
+        let line_end = source[absolute..]
+            .find('\n')
+            .map_or(source.len(), |idx| absolute + idx);
+        let line = &source[line_start..line_end];
+        if decl_patterns.iter().any(|pattern| line.contains(pattern.as_str()))
+            && (line.contains('=') || line.contains(':'))
+        {
+            break absolute;
+        }
+        search_from = absolute + const_name.len();
+    };
+
+    let after_decl = &source[decl_start..];
+    let bracket_rel = after_decl
+        .find('[')
+        .unwrap_or_else(|| panic!("const initializer not found for {const_name}"));
+    // Prefer the last `[` on the declaration/initializer header line so
+    // `const NAME: &[&str] = &[` starts at the array literal, not the type.
+    let header_line_end = after_decl[bracket_rel..]
+        .find('\n')
+        .map_or(after_decl.len(), |idx| bracket_rel + idx);
+    let header = &after_decl[..header_line_end];
+    let array_start = header.rfind('[').expect("array start");
+    let body = &after_decl[array_start + 1..];
+    let mut values = BTreeSet::new();
+    let mut depth = 1_i32;
+    let mut index = 0;
+    let bytes = body.as_bytes();
+    while index < bytes.len() {
+        let byte = bytes[index];
+        match byte {
+            b'[' => depth += 1,
+            b']' => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            b'"' | b'\'' => {
+                let quote = byte;
+                index += 1;
+                let start = index;
+                while index < bytes.len() && bytes[index] != quote {
+                    index += 1;
+                }
+                if index >= bytes.len() {
+                    break;
+                }
+                let value = &body[start..index];
+                if value.contains('/') || value.ends_with(".md") {
+                    values.insert(value.to_owned());
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    if depth != 0 {
+        panic!("unterminated const block for {const_name}");
+    }
+    values
 }
 
 fn archive_bytes(files: &[FixtureFile], extra_file: Option<&FixtureFile>) -> Vec<u8> {
