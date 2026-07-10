@@ -89,6 +89,17 @@ Before reading the selected profile prompt, produce this internal routing plan:
 
 Then read only the selected profile's task-decomposition prompt and continue the normal workflow. Common evidence modules are available under `../prompts/layer1/common/` for all specialized profiles.
 
+Before Generic execution, verify these assets resolve from the skill workspace:
+- `../prompts/layer1/task-decomposition.md`
+- `../prompts/layer1/final-report.md`
+- `../prompts/layer2/aspect-agent.md`
+
+If any are missing, stop and instruct the user to run
+`moeresearch assets install research-skills` for this `moeresearch` version.
+Do not improvise Generic orchestration without those files.
+
+Installed Claude Code layout rewrites skill-relative paths to `./prompts/...` under `~/.claude/skills/deep-research/`; repo/manual layout keeps sibling `../prompts/...` paths from `skills/deep-research.md`.
+
 ## Inputs
 
 ```json
@@ -142,11 +153,11 @@ The skill produces a Markdown report for the user and may also persist intermedi
 
 When calling Claude Code MCP tools such as `mcp__moeresearch__deep_research` or `mcp__moeresearch__aspect_research`, pass the MoeResearch request object as the tool arguments directly. Do not include the outer JSON-RPC `tools/call` wrapper and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
 
-Raw MCP clients use the JSON-RPC wrapper documented in `docs/mcp-usage.md`; Claude Code direct tool calls do not.
-
 Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider-native request bodies must never appear in Skill payloads. Use provider names only; Rust config/env resolves secrets.
 
 Compact `deep_research` direct payload skeleton:
+
+Default skeleton = **standard** tier from `../prompts/layer1/common/budget-tiers.md` (Claude install: `./prompts/layer1/common/budget-tiers.md`). For `quick` or `deep`, substitute that tier’s numbers instead of editing ad hoc.
 
 ```json
 {
@@ -240,9 +251,9 @@ For `aspect_research`, use the same `schema_version`, `request_id`, `policy`, an
 
 ## Failure handling
 
-- If Rust returns `partial`, write a partial report and include failed aspects with reasons.
-- If Rust returns `failed`, report the stable error code, retryable status, and the smallest safe next action.
-- If evidence is insufficient, do not invent conclusions. Return a gap list and recommended follow-up searches.
+Apply the shared frozen host contract in `../prompts/layer1/common/partial-status-host-contract.md` (Claude install layout: `./prompts/layer1/common/partial-status-host-contract.md`).
+
+Do not copy or reinterpret the five envelope rules inline. If the common module is missing, stop and run `moeresearch assets install research-skills` for this `moeresearch` version.
 
 ## Quality bar
 

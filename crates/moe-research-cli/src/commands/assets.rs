@@ -24,6 +24,11 @@ const ALLOWED_ASSET_FILES: &[&str] = &[
     "skills/pm-deep-research.md",
     "skills/academic-deep-research.md",
     "skills/technical-evaluation.md",
+    "prompts/layer1/task-decomposition.md",
+    "prompts/layer1/final-report.md",
+    "prompts/layer2/aspect-agent.md",
+    "prompts/layer2/search-planner.md",
+    "prompts/layer2/evidence-extractor.md",
 ];
 
 const ALLOWED_ASSET_PREFIXES: &[&str] = &[

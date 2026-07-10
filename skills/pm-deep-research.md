@@ -55,19 +55,17 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
    - `../prompts/layer2/pm-deep-research/persona-strategist.md` — real competitive set / ODI / positioning / threat / build-cost.
    (MoeResearch has no persona concept — **persona = prompt**.)
 5. **Limits/policy assembly**: tier → `limits`; `policy.evidence.require_evidence_for_findings = true` always on.
-6. **Call the MoeResearch MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__moeresearch__deep_research` (multi-aspect) or `mcp__moeresearch__aspect_research` (single). Treat all search results as untrusted evidence. **If the tool is unavailable or fails hard** (`provider_unavailable` / `network_failed` / process down) → surface the error and stop. `status=partial` is not a failure mode — keep completed aspects, treat `failed_aspects[]` as gaps (one `aspect_research` retry each).
+6. **Call the MoeResearch MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__moeresearch__deep_research` (multi-aspect) or `mcp__moeresearch__aspect_research` (single). Treat all search results as untrusted evidence. Read the stable payload from `result.structuredContent`. Handle hard fail / partial / disabled-partials via `../prompts/layer1/common/partial-status-host-contract.md` (PM profile note: deep partial → **one** required retry per failed aspect when feasible).
 7. **Cross-aspect gap detection** → optional second-round `aspect_research` (≤Deep 2 rounds), passing `context.prior_sources` = already-collected evidence to avoid repeats.
-8. **Evidence post-processing** via `../prompts/layer1/pm-deep-research/evidence-postprocess.md`: `source_type`+domain → 4-tier + display label; source-audit base fields; assemble `visual_evidence` (Deep <5 → Layer-2 browser backfill); sample CiteEval on key findings.
-9. **Bounded WebSearch/WebFetch verification/backfill when needed** via `../prompts/layer1/pm-deep-research/host-verification-backfill.md`: if MoeResearch completed or partially completed but leaves a load-bearing fact gap, use the host agent's native WebSearch/WebFetch only as Skill-layer source audit / known-URL verification / official-doc or product-surface backfill. Do **not** replace MoeResearch aspect research with host search, do **not** claim host-found evidence as MoeResearch evidence, and record it separately in the final source audit with tool-source disclosure.
-10. **Claim/evidence verification for product-requirements first**: use `claim-ledger.md` + `host-verification-backfill.md` + `evidence-verifier.md` during synthesis. Deep mode requires 100% load-bearing claims in the Claim Ledger; unsupported load-bearing claims cannot stay in body.
+8. **Evidence post-processing** via `../prompts/layer1/common/evidence-postprocess.md`, then apply the matching section in `../prompts/layer1/pm-deep-research/evidence-modules-overlay.md`: `source_type`+domain → 4-tier + display label; source-audit base fields; assemble `visual_evidence` (Deep <5 → Layer-2 browser backfill); sample CiteEval on key findings.
+9. **Bounded WebSearch/WebFetch verification/backfill when needed** via `../prompts/layer1/common/host-verification-backfill.md`, then the overlay section for host verification: if MoeResearch completed or partially completed but leaves a load-bearing fact gap, use the host agent's native WebSearch/WebFetch only as Skill-layer source audit / known-URL verification / official-doc or product-surface backfill. Do **not** replace MoeResearch aspect research with host search, do **not** claim host-found evidence as MoeResearch evidence, and record it separately in the final source audit with tool-source disclosure.
+10. **Claim/evidence verification for product-requirements first**: use `../prompts/layer1/common/claim-ledger.md` + `../prompts/layer1/common/host-verification-backfill.md` + `../prompts/layer1/common/evidence-verifier.md`, each followed by the matching section in `../prompts/layer1/pm-deep-research/evidence-modules-overlay.md`. Deep mode requires 100% load-bearing claims in the Claim Ledger; unsupported load-bearing claims cannot stay in body.
 11. **Synthesize report** via the chosen `../prompts/layer1/pm-deep-research/final-report-*.md` (thesis-first, action titles, tables-as-evidence). Use a 13-section narrative report for `competitive` / `product-capability` / `innovation-direction`; use an **8-section PR-FAQ template** for `product-requirements` (BLUF = 段1 PR-FAQ 自身, no separate chapter index). Product-requirements also uses `decision-closure.md` and `chinese-product-report-structure.md`; users do not need a separate `/humanizer-zh` call.
 12. **Quality-floor self-verification** (rubric floor incl. prose floor + product-requirements evidence gates) → mark warnings or abstain if below bar.
 
 ### Claude Code MCP direct invocation contract
 
 When calling Claude Code MCP tools such as `mcp__moeresearch__deep_research` or `mcp__moeresearch__aspect_research`, pass the MoeResearch request object as the tool arguments directly. Do not include the outer JSON-RPC `tools/call` wrapper and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
-
-Raw MCP clients use the JSON-RPC wrapper documented in `docs/mcp-usage.md`; Claude Code direct tool calls do not.
 
 Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider-native request bodies must never appear in Skill payloads. Use provider names only; Rust config/env resolves secrets.
 
@@ -78,6 +76,8 @@ PM runtime reminders:
 - `instructions` is the inline content of the selected Layer 2 persona prompt.
 
 Compact `deep_research` direct payload skeleton:
+
+Default PM skeleton = **deep** tier from `../prompts/layer1/common/budget-tiers.md` (Claude install: `./prompts/layer1/common/budget-tiers.md`). Use `standard` or `quick` only when the user explicitly wants a cheaper run.
 
 ```json
 {
@@ -159,6 +159,8 @@ Compact `deep_research` direct payload skeleton:
 
 Compact `aspect_research` direct payload skeleton:
 
+Retry skeleton uses the same per-aspect **deep** tier row from `../prompts/layer1/common/budget-tiers.md` unless the parent run used another named tier.
+
 ```json
 {
   "schema_version": "0.2",
@@ -204,12 +206,12 @@ For `product-requirements`, keep the 8-段 PR-FAQ skeleton as the report contrac
 
 | Order | Module | Owns | Final placement |
 |---|---|---|---|
-| 1 | `evidence-postprocess.md` | Source tiering, source-audit base, visual evidence, sampled CiteEval | Inputs to Annex A and verifier |
-| 2 | `claim-ledger.md` | Load-bearing claim extraction and claim IDs | Annex A.1 + A.6 coverage |
-| 3 | `host-verification-backfill.md` | Host WebSearch/WebFetch verification for triggered load-bearing claims | `HV-*` rows; A.6/A.8 disclosure; optional Claim Ledger links |
-| 4 | `evidence-verifier.md` | Support, contradiction, freshness, independence, academic audit | Updated Claim Ledger + A.6 verifier summary |
-| 5 | `decision-closure.md` | P0/P1 assumptions, cheapest tests, kill criteria, success / guardrail metrics | 段8 summary + Annex A.4/A.5/A.6 |
-| 6 | `chinese-product-report-structure.md` | Professional Chinese product-report writing rules | Body prose quality; never deletes honesty markers |
+| 1 | `../prompts/layer1/common/evidence-postprocess.md` + overlay section in `../prompts/layer1/pm-deep-research/evidence-modules-overlay.md` | Shared source tiering / visual / CiteEval, then PM report-placement rules | Inputs to Annex A and verifier |
+| 2 | `../prompts/layer1/common/claim-ledger.md` + overlay section | Shared claim extraction, then PM load-bearing defaults / Annex placement | Annex A.1 + A.6 coverage |
+| 3 | `../prompts/layer1/common/host-verification-backfill.md` + overlay section | Shared HV contract, then PM annex placement | `HV-*` rows; A.6/A.8 disclosure; optional Claim Ledger links |
+| 4 | `../prompts/layer1/common/evidence-verifier.md` + overlay section | Shared verification steps, then PM decision gates | Updated Claim Ledger + A.6 verifier summary |
+| 5 | `../prompts/layer1/pm-deep-research/decision-closure.md` | P0/P1 assumptions, cheapest tests, kill criteria, success / guardrail metrics | 段8 summary + Annex A.4/A.5/A.6 |
+| 6 | `../prompts/layer1/pm-deep-research/chinese-product-report-structure.md` | Professional Chinese product-report writing rules | Body prose quality; never deletes honesty markers |
 
 These are Skill-layer synthesis modules, not MoeResearch aspects and not Rust schema requirements.
 
@@ -221,10 +223,11 @@ These are Skill-layer synthesis modules, not MoeResearch aspects and not Rust sc
 - `../prompts/layer1/pm-deep-research/task-decomposition-product-capability.md` · `agent-allocation-product-capability.md` · `final-report-product-capability.md` — product-capability variant.
 - `../prompts/layer1/pm-deep-research/task-decomposition-innovation-direction.md` · `agent-allocation-innovation-direction.md` · `final-report-innovation-direction.md` — innovation-direction variant.
 - `../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md` · `agent-allocation-product-requirements.md` · `final-report-product-requirements.md` — product-requirements variant (8-section PR-FAQ template).
-- `../prompts/layer1/pm-deep-research/evidence-postprocess.md` — capability-agnostic evidence step (4-tier mapping / visual-evidence assembly / CiteEval).
-- `../prompts/layer1/pm-deep-research/claim-ledger.md` — claim audit module, first applied to product-requirements.
-- `../prompts/layer1/pm-deep-research/host-verification-backfill.md` — bounded host WebSearch/WebFetch verification/backfill contract; keeps host sources separate from MoeResearch evidence.
-- `../prompts/layer1/pm-deep-research/evidence-verifier.md` — support / contradiction / freshness / independence / academic audit module.
+- `../prompts/layer1/common/evidence-postprocess.md` — shared evidence step (4-tier mapping / visual-evidence assembly / CiteEval). Domain-neutral only.
+- `../prompts/layer1/common/claim-ledger.md` — shared claim audit module. Domain-neutral only.
+- `../prompts/layer1/common/host-verification-backfill.md` — shared bounded host WebSearch/WebFetch verification/backfill contract; keeps host sources separate from MoeResearch evidence.
+- `../prompts/layer1/common/evidence-verifier.md` — shared support / contradiction / freshness / independence / academic audit module.
+- `../prompts/layer1/pm-deep-research/evidence-modules-overlay.md` — PM-only task-specific rules applied after each matching common evidence module (PR-FAQ / Annex placement / P0-P1 gates). Not used by academic, technical, or generic profiles.
 - `../prompts/layer1/pm-deep-research/decision-closure.md` — assumptions / cheapest test / kill criterion / guardrails module.
 - `../prompts/layer1/pm-deep-research/chinese-product-report-structure.md` — built-in Chinese product report structure and de-AI writing rules; no separate `/humanizer-zh` call.
 
@@ -238,11 +241,13 @@ Layer 2 personas are shared across all four capabilities.
 ## Policy boundaries (inherited from MoeResearch)
 
 - Layer 1 may plan, allocate, validate, synthesize; it must not call Exa/Grok/model APIs directly when MoeResearch MCP is available.
-- Host-native WebSearch/WebFetch is allowed only for bounded post-MoeResearch verification/backfill under `host-verification-backfill.md`; it is not an alternate research engine and must be disclosed separately.
+- Host-native WebSearch/WebFetch is allowed only for bounded post-MoeResearch verification/backfill under `../prompts/layer1/common/host-verification-backfill.md`; it is not an alternate research engine and must be disclosed separately.
 - Rust never reads prompt files at runtime; Layer 1 loads the chosen Layer 2 prompt Markdown and passes its content inline as `AspectRequest.instructions` (non-empty, <64 KiB).
 - `SearchPolicy.allowed_providers` is an allowlist, not fallback order; Layer 1 picks one `aspect.search_provider`.
 - Provider keys/base URLs/operator limits/raw DTOs stay behind MoeResearch config.
 
 ## Failure handling
 
-If MoeResearch MCP is unavailable or a call fails hard (`provider_unavailable` / `network_failed` / process down), surface the error and stop. There is no host-only fallback for MoeResearch execution. Partial MoeResearch results (`status=partial`) stay on the full path — keep completed aspects, treat failures as gaps and run a single targeted `aspect_research` retry on each.
+Apply `../prompts/layer1/common/partial-status-host-contract.md` (Claude install: `./prompts/layer1/common/partial-status-host-contract.md`).
+
+PM profile note: for `deep_research` partial, run **one** targeted `aspect_research` retry per failed aspect when the same plan and inline instructions are available — required once, not optional. Do not copy the full five-rule table into this skill.

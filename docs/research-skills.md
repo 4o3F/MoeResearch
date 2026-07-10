@@ -1,6 +1,6 @@
 # MoeResearch Research Skills
 
-MoeResearch has one Rust MCP backend and one Markdown asset installer. The asset slug is `research-skills`; the installed Markdown assets include PM DeepResearch, Academic DeepResearch, Technical Evaluation, and common evidence modules.
+MoeResearch has one Rust MCP backend and one Markdown asset installer. The asset slug is `research-skills`; the installed Markdown assets include Generic DeepResearch roots, PM DeepResearch, Academic DeepResearch, Technical Evaluation, and common evidence modules.
 
 ## Backend vs Markdown Skill Assets
 
@@ -15,7 +15,10 @@ MoeResearch has one Rust MCP backend and one Markdown asset installer. The asset
 | PM DeepResearch | Product, competitor, roadmap, PRD, market, innovation research. | `prompts/layer1/pm-deep-research/`, `prompts/layer2/pm-deep-research/` |
 | Academic DeepResearch | Literature review, evidence synthesis, paper evaluation, research gaps. | `prompts/layer1/academic-deep-research/`, `prompts/layer2/academic-deep-research/` |
 | Technical Evaluation | Library/framework comparison, architecture evaluation, dependency risk, migration assessment. | `prompts/layer1/technical-evaluation/`, `prompts/layer2/technical-evaluation/` |
-| Common evidence modules | Evidence tiering, claim ledger, host verification, verifier, annex. | `prompts/layer1/common/` |
+| Generic DeepResearch | Multi-aspect research that does not fit PM/academic/technical. | `prompts/layer1/task-decomposition.md`, `prompts/layer1/final-report.md`, `prompts/layer2/aspect-agent.md` |
+| Common evidence modules | Evidence tiering, claim ledger, host verification, verifier, annex, partial-status host contract, budget tiers. | `prompts/layer1/common/` |
+
+Optional Generic Layer-2 helpers (not required when `aspect-agent.md` is inlined): `prompts/layer2/search-planner.md`, `prompts/layer2/evidence-extractor.md`.
 
 ## Installation
 
@@ -34,17 +37,22 @@ Default install target:
   SKILL.md
   prompts/
     layer1/
+      task-decomposition.md
+      final-report.md
       common/
       pm-deep-research/
       academic-deep-research/
       technical-evaluation/
     layer2/
+      aspect-agent.md
+      search-planner.md
+      evidence-extractor.md
       pm-deep-research/
       academic-deep-research/
       technical-evaluation/
 ```
 
-Claude Code receives one discoverable `deep-research` skill directory for the unified research entry and simplicity. Academic and technical profiles are installed as prompts inside that directory and are selected by explicit profile instructions or routing guidance; they are not installed as separate sibling Skill directories in the first release. The unified routing reference in repo/manual layout is `skills/deep-research.md`.
+Claude Code receives one discoverable `deep-research` skill directory for the unified research entry and simplicity. Profile prompts (PM, academic, technical) and Generic root prompts are installed inside that directory and are selected by explicit profile instructions or routing guidance; they are not installed as separate sibling Skill directories in the first release. The unified routing reference in repo/manual layout is `skills/deep-research.md`.
 
 ## Repo Layout
 
@@ -71,6 +79,8 @@ This preserves sibling `skills/` and `prompts/` directories.
 - Paper / literature / citation / evidence synthesis / research gap / methodology → Academic DeepResearch.
 - Library / framework / architecture / dependency / migration / benchmark / security evaluation → Technical Evaluation.
 - Other multi-aspect research → generic deep-research.
+
+After `moeresearch assets install research-skills`, Generic prompts (`task-decomposition.md`, `final-report.md`, `aspect-agent.md`) must be present under the skill prompts tree. If they are missing, reinstall assets for the matching `moeresearch` binary version.
 
 ## Troubleshooting
 

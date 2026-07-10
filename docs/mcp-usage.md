@@ -139,20 +139,20 @@ Fields:
 
 ### 5.3 `ResearchLimits` and `AgentLimits`
 
-Top-level research limits:
+Top-level research limits (example = **standard** tier):
 
 ```json
 {
-  "max_agents": 5,
+  "max_agents": 4,
   "max_concurrent_agents": 2,
-  "max_total_model_calls": 30,
+  "max_total_model_calls": 32,
   "max_total_search_calls": 20,
-  "total_timeout_ms": 1200000,
+  "total_timeout_ms": 600000,
   "max_tokens": -1
 }
 ```
 
-Per-aspect limits:
+Per-aspect limits (example = **standard** tier):
 
 ```json
 {
@@ -164,6 +164,18 @@ Per-aspect limits:
 ```
 
 The server takes the stricter value between request limits and operator configuration limits. `-1` means that layer does not add a cap; it does not override a finite cap from another layer.
+
+### Recommended Layer-1 budget tiers
+
+Shipped skill source of truth: `prompts/layer1/common/budget-tiers.md` (installed with the research-skills pack). Skills load that module; this section mirrors it for MCP developers.
+
+| Tier | Top-level `limits` (`deep_research`) | Per-aspect `task.aspects[].limits` / `task.limits` |
+| --- | --- | --- |
+| `quick` | agents 2, concurrent 1, model calls 12, search calls 8, total_timeout_ms 300000, max_tokens -1 | turns 4, tool_calls 4, search_calls 2, timeout_ms 180000 |
+| `standard` | agents 4, concurrent 2, model calls 32, search calls 20, total_timeout_ms 600000, max_tokens -1 | turns 8, tool_calls 12, search_calls 6, timeout_ms 600000 |
+| `deep` | agents 6, concurrent 3, model calls 70, search calls 56, total_timeout_ms 1260000, max_tokens -1 | turns 8, tool_calls 8, search_calls 4, timeout_ms 600000 |
+
+Profile defaults: generic/academic/technical → `standard`; PM DeepResearch → `deep`.
 
 ### 5.4 `ResearchPolicy`
 
@@ -299,11 +311,11 @@ Use `deep_research` for a multi-aspect plan.
     ]
   },
   "limits": {
-    "max_agents": 5,
+    "max_agents": 4,
     "max_concurrent_agents": 2,
-    "max_total_model_calls": 30,
+    "max_total_model_calls": 32,
     "max_total_search_calls": 20,
-    "total_timeout_ms": 1200000,
+    "total_timeout_ms": 600000,
     "max_tokens": -1
   },
   "policy": {
@@ -357,6 +369,24 @@ Envelope fields:
 | `error` | `ToolError` or null | Public-safe error when status is `failed`; also present for `aspect_research` partial failures. |
 
 `status=partial` is possible when `policy.execution.allow_partial_results=true` and usable evidence was collected before a terminal failure. For `deep_research`, `data.failed_aspects` describes failed aspect-level work and `data.evidence_index` may include evidence from failed aspects. For `aspect_research`, `data` contains collected evidence with no findings while `error` preserves the original failure metadata.
+
+### Partial-status host contract (frozen)
+
+Schema 0.2 intentionally keeps deep vs aspect partial asymmetry. Do not “normalize” envelopes in the client by dropping fields.
+
+**Shipped host source of truth:** Layer 1 assets install `prompts/layer1/common/partial-status-host-contract.md` with the research-skills pack. Skills must load that module after install; they must not depend on this `docs/` file (repo docs are not part of the asset install).
+
+This section mirrors the shipped contract for developers reading the MCP guide:
+
+| Case | `status` | `data` | `error` | Host must |
+| --- | --- | --- | --- | --- |
+| `deep_research` partial | `partial` | present (`completed_aspects`, `aspect_reports`, `failed_aspects`, `evidence_index`, …) | **null** | Keep completed aspects; treat `failed_aspects[]` as gaps; at most one `aspect_research` retry per failed aspect |
+| `aspect_research` partial | `partial` | present (frozen evidence; findings usually empty) | **present** | Use `data`; do not treat as pure hard-fail discard; inspect `error.retryable` / code for one retry |
+| Partials disabled (`allow_partial_results=false`) | `failed` | null / no partial payload | present | Stop; no partial report path |
+| Hard transport/config failure | `failed` | null | present | Surface stable code; no host-only substitute for MoeResearch execution |
+
+Claude Code direct tools: read `result.structuredContent`.
+Raw MCP: unwrap `tools/call` result per §4.2, then the same envelope.
 
 ## 9. Result object schemas
 

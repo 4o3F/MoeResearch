@@ -2,3 +2,6 @@
 .ccg
 .claude
 .context
+docs/research-runs
+# Local git worktrees
+.worktrees
