@@ -5,3 +5,7 @@
 docs/research-runs
 # Local git worktrees
 .worktrees
+
+# Ephemeral agent planning / SDD scratch (do not commit)
+docs/superpowers/
+.superpowers/
