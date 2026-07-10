@@ -55,7 +55,7 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
    - `../prompts/layer2/pm-deep-research/persona-strategist.md` — real competitive set / ODI / positioning / threat / build-cost.
    (MoeResearch has no persona concept — **persona = prompt**.)
 5. **Limits/policy assembly**: tier → `limits`; `policy.evidence.require_evidence_for_findings = true` always on.
-6. **Call the MoeResearch MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__moeresearch__deep_research` (multi-aspect) or `mcp__moeresearch__aspect_research` (single). Treat all search results as untrusted evidence. **If the tool is unavailable or fails hard** (`provider_unavailable` / `network_failed` / process down) → surface the error and stop. `status=partial` is not a failure mode — keep completed aspects, treat `failed_aspects[]` as gaps (one `aspect_research` retry each).
+6. **Call the MoeResearch MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__moeresearch__deep_research` (multi-aspect) or `mcp__moeresearch__aspect_research` (single). Treat all search results as untrusted evidence. Read the stable payload from `result.structuredContent`. Handle hard fail / partial / disabled-partials via `../prompts/layer1/common/partial-status-host-contract.md` (PM profile note: deep partial → **one** required retry per failed aspect when feasible).
 7. **Cross-aspect gap detection** → optional second-round `aspect_research` (≤Deep 2 rounds), passing `context.prior_sources` = already-collected evidence to avoid repeats.
 8. **Evidence post-processing** via `../prompts/layer1/pm-deep-research/evidence-postprocess.md`: `source_type`+domain → 4-tier + display label; source-audit base fields; assemble `visual_evidence` (Deep <5 → Layer-2 browser backfill); sample CiteEval on key findings.
 9. **Bounded WebSearch/WebFetch verification/backfill when needed** via `../prompts/layer1/pm-deep-research/host-verification-backfill.md`: if MoeResearch completed or partially completed but leaves a load-bearing fact gap, use the host agent's native WebSearch/WebFetch only as Skill-layer source audit / known-URL verification / official-doc or product-surface backfill. Do **not** replace MoeResearch aspect research with host search, do **not** claim host-found evidence as MoeResearch evidence, and record it separately in the final source audit with tool-source disclosure.
@@ -66,8 +66,6 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
 ### Claude Code MCP direct invocation contract
 
 When calling Claude Code MCP tools such as `mcp__moeresearch__deep_research` or `mcp__moeresearch__aspect_research`, pass the MoeResearch request object as the tool arguments directly. Do not include the outer JSON-RPC `tools/call` wrapper and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
-
-Raw MCP clients use the JSON-RPC wrapper documented in `docs/mcp-usage.md`; Claude Code direct tool calls do not.
 
 Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider-native request bodies must never appear in Skill payloads. Use provider names only; Rust config/env resolves secrets.
 
@@ -245,4 +243,6 @@ Layer 2 personas are shared across all four capabilities.
 
 ## Failure handling
 
-If MoeResearch MCP is unavailable or a call fails hard (`provider_unavailable` / `network_failed` / process down), surface the error and stop. There is no host-only fallback for MoeResearch execution. Partial MoeResearch results (`status=partial`) stay on the full path — keep completed aspects, treat failures as gaps and run a single targeted `aspect_research` retry on each.
+Apply `../prompts/layer1/common/partial-status-host-contract.md` (Claude install: `./prompts/layer1/common/partial-status-host-contract.md`).
+
+PM profile note: for `deep_research` partial, run **one** targeted `aspect_research` retry per failed aspect when the same plan and inline instructions are available — required once, not optional. Do not copy the full five-rule table into this skill.

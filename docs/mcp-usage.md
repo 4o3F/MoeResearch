@@ -358,6 +358,24 @@ Envelope fields:
 
 `status=partial` is possible when `policy.execution.allow_partial_results=true` and usable evidence was collected before a terminal failure. For `deep_research`, `data.failed_aspects` describes failed aspect-level work and `data.evidence_index` may include evidence from failed aspects. For `aspect_research`, `data` contains collected evidence with no findings while `error` preserves the original failure metadata.
 
+### Partial-status host contract (frozen)
+
+Schema 0.2 intentionally keeps deep vs aspect partial asymmetry. Do not “normalize” envelopes in the client by dropping fields.
+
+**Shipped host source of truth:** Layer 1 assets install `prompts/layer1/common/partial-status-host-contract.md` with the research-skills pack. Skills must load that module after install; they must not depend on this `docs/` file (repo docs are not part of the asset install).
+
+This section mirrors the shipped contract for developers reading the MCP guide:
+
+| Case | `status` | `data` | `error` | Host must |
+| --- | --- | --- | --- | --- |
+| `deep_research` partial | `partial` | present (`completed_aspects`, `aspect_reports`, `failed_aspects`, `evidence_index`, …) | **null** | Keep completed aspects; treat `failed_aspects[]` as gaps; at most one `aspect_research` retry per failed aspect |
+| `aspect_research` partial | `partial` | present (frozen evidence; findings usually empty) | **present** | Use `data`; do not treat as pure hard-fail discard; inspect `error.retryable` / code for one retry |
+| Partials disabled (`allow_partial_results=false`) | `failed` | null / no partial payload | present | Stop; no partial report path |
+| Hard transport/config failure | `failed` | null | present | Surface stable code; no host-only substitute for MoeResearch execution |
+
+Claude Code direct tools: read `result.structuredContent`.
+Raw MCP: unwrap `tools/call` result per §4.2, then the same envelope.
+
 ## 9. Result object schemas
 
 ```text
