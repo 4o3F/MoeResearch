@@ -31,6 +31,8 @@ impl<'a> OutputValidator<'a> {
         content: &str,
         candidate_evidence: &[Evidence],
     ) -> Result<(AspectResearchResult, ValidationStatus)> {
+        // Soft deserialize: unknown model keys are dropped (see report module docs).
+        // Missing required fields and later semantic validation still fail closed.
         let result = match serde_json::from_str::<AspectResearchResult>(content) {
             Ok(result) => result,
             Err(error) => {
@@ -117,7 +119,6 @@ impl<'a> OutputValidator<'a> {
         })
     }
 
-    #[allow(clippy::too_many_lines)]
     fn validate_report(
         &self,
         report: &AspectReport,
@@ -357,7 +358,8 @@ fn validate_selected_evidence(
 /// `mismatched fields: summary, snippet` rather than having to fix one
 /// field, re-run, and rediscover the next one. The order matches the
 /// schema declaration so a stable diff appears in logs.
-fn provenance_mismatch_fields(selected: &Evidence, candidate: &Evidence) -> Vec<&'static str> {
+#[must_use]
+pub fn provenance_mismatch_fields(selected: &Evidence, candidate: &Evidence) -> Vec<&'static str> {
     let mut fields = Vec::new();
     if selected.source_title != candidate.source_title {
         fields.push("source_title");

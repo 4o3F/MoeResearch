@@ -868,6 +868,14 @@ async fn aspect_research_uses_configured_research_model_call_budget() {
         .expect_err("configured research model budget should cap aspect_research");
 
     assert!(matches!(&failure.error, Error::BudgetExceeded { .. }));
+    let message = failure.error.public_message();
+    assert!(
+        message.contains("budget exceeded")
+            && message.contains("max_total_model_calls")
+            && message.contains("effective cap 1")
+            && !message.contains('/'),
+        "budget message should name dimension and stay public-safe: {message}"
+    );
     let partial = failure.partial_output.expect("partial evidence output");
     assert_eq!(partial.result.evidence.len(), 1);
     assert!(partial.result.aspect_report.findings.is_empty());

@@ -784,3 +784,91 @@ fn assert_direct_tool_payload(value: &Value) {
         assert!(value.get(wrapper_key).is_none(), "unexpected {wrapper_key}");
     }
 }
+
+#[test]
+fn aspect_research_result_drops_unknown_fields_on_deserialize() {
+    let json = r#"{
+        "aspect_report": {
+            "aspect_id": "a1",
+            "aspect_name": "A",
+            "question": "Q?",
+            "scope": [],
+            "findings": [],
+            "assumptions": [],
+            "risks": [],
+            "counterarguments": [],
+            "open_questions": [],
+            "confidence": "medium",
+            "limitations": [],
+            "model_extra_key": "must-be-dropped"
+        },
+        "evidence": [],
+        "future_extension": {"nested": true}
+    }"#;
+
+    let decoded: AspectResearchResult =
+        serde_json::from_str(json).expect("soft deserialize must accept unknown fields");
+    assert_eq!(decoded.aspect_report.aspect_id, "a1");
+    assert!(decoded.evidence.is_empty());
+
+    // Round-trip must not re-emit unknown keys.
+    let reencoded = serde_json::to_value(&decoded).expect("serialize");
+    assert!(reencoded.get("future_extension").is_none());
+    assert!(
+        reencoded
+            .get("aspect_report")
+            .and_then(|v| v.get("model_extra_key"))
+            .is_none()
+    );
+}
+
+#[test]
+fn aspect_research_result_rejects_missing_required_fields() {
+    let json = r#"{
+        "aspect_report": {
+            "aspect_id": "a1",
+            "aspect_name": "A",
+            "question": "Q?",
+            "scope": [],
+            "findings": [],
+            "assumptions": [],
+            "risks": [],
+            "counterarguments": [],
+            "open_questions": [],
+            "confidence": "medium"
+        },
+        "evidence": []
+    }"#;
+    // limitations is required on AspectReport
+    let err = serde_json::from_str::<AspectResearchResult>(json)
+        .expect_err("missing required field must fail");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("limitations") || msg.contains("missing field"),
+        "unexpected error: {msg}"
+    );
+}
+
+#[test]
+fn request_dtos_still_deny_unknown_fields() {
+    let mut value = serde_json::to_value(AspectResearchRequest {
+        schema_version: "0.2".to_owned(),
+        request_id: "r1".to_owned(),
+        task: aspect(),
+        context: ResearchContext::empty(),
+        policy: research_policy(&["openai"], &["exa"]),
+    })
+    .expect("serialize valid request");
+    value
+        .as_object_mut()
+        .expect("request object")
+        .insert("unexpected_request_field".to_owned(), json!(true));
+
+    let err = serde_json::from_value::<AspectResearchRequest>(value)
+        .expect_err("request side must deny unknown fields");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unknown field") || msg.contains("unexpected"),
+        "unexpected error: {msg}"
+    );
+}

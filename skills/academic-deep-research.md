@@ -55,6 +55,8 @@ Academic profile uses the shared frozen host contract: `../prompts/layer1/common
 - Prefer `deep_research` for multi-aspect work; use `aspect_research` only for a single focused retry.
 - On `deep_research` partial: keep completed aspects; one `aspect_research` retry per failed aspect max.
 - On `aspect_research` partial: preserve frozen evidence; fix Layer-1 prompt/schema bugs before retrying `schema_validation_failed`.
+- Provider names must match host config; operators can list them with `moeresearch check --show-providers --no-mcp`.
+- Operator TOML limit ceilings can tighten request limits; see `budget_exceeded` in `docs/mcp-usage.md`.
 - After MoeResearch returns, continue with `../prompts/layer1/common/` evidence modules; host WebSearch/WebFetch remains `HV-*` only.
 - If MCP tools or required prompts are missing: stop and direct the user to `moeresearch mcp register` / `moeresearch assets install research-skills`.
 

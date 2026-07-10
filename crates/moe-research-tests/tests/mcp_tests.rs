@@ -238,7 +238,13 @@ async fn aspect_research_budget_failure_envelope_returns_partial_with_tool_error
     assert!(data.aspect_report.limitations[0].contains("budget_exceeded"));
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::BudgetExceeded);
-    assert_eq!(error.message, "agent search call budget exhausted");
+    assert!(
+        error.message.contains("budget exceeded")
+            && error.message.contains("max_search_calls")
+            && error.message.contains("effective cap 2"),
+        "unexpected budget message: {}",
+        error.message
+    );
     assert_eq!(error.aspect_id.as_deref(), Some("aspect-1"));
     assert!(!error.retryable);
     assert!(error.failed_aspects.is_empty());
@@ -540,12 +546,9 @@ async fn deep_research_all_agent_budget_failures_include_failed_aspects() {
             .iter()
             .all(|failure| failure.error_code == "budget_exceeded")
     );
-    assert!(
-        error
-            .failed_aspects
-            .iter()
-            .all(|failure| failure.message == "agent search call budget exhausted")
-    );
+    assert!(error.failed_aspects.iter().all(|failure| {
+        failure.message.contains("budget exceeded") && failure.message.contains("max_search_calls")
+    }));
     assert_eq!(model_calls.load(Ordering::SeqCst), 2);
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 }

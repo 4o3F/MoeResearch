@@ -1,9 +1,20 @@
+//! Result / report DTOs returned to MCP clients and parsed from model final JSON.
+//!
+//! # Unknown-field policy
+//!
+//! Request and policy DTOs use `serde(deny_unknown_fields)` so Layer 1 typos fail closed.
+//! **Result DTOs intentionally do not.** Model final outputs frequently include extra keys;
+//! unknown fields are dropped on deserialize. Required known fields remain mandatory, and
+//! `OutputValidator` enforces semantic constraints (evidence refs, provenance, policy caps).
+//! Do not add `deny_unknown_fields` here without a product decision to break flexible models.
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 mod validator;
 
 pub(crate) use validator::OutputValidator;
+pub use validator::provenance_mismatch_fields;
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct AspectReport {
@@ -232,12 +243,18 @@ impl ConfidenceSummary {
     }
 }
 
+/// Model-facing final aspect payload.
+///
+/// Soft on unknown fields (see module docs). Required fields still must be present.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct AspectResearchResult {
     pub aspect_report: AspectReport,
     pub evidence: Vec<Evidence>,
 }
 
+/// Runtime-assembled deep research payload (not model-parsed as a whole).
+///
+/// Also soft on unknown fields for forward-compatible client decode.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct DeepResearchResult {
     pub run_id: String,

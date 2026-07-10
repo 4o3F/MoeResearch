@@ -150,13 +150,14 @@ fn normalize_aspect_request(
     Ok(normalized)
 }
 
-/// Merges operator config and optional Layer 1 request limits.
+/// Merges operator config and optional Layer 1 request limits (stricter-wins).
 ///
 /// Each field chooses the stricter limit. `Unlimited` means the corresponding
 /// layer does not constrain that dimension, so a finite limit from the other
 /// layer wins. If both layers are unlimited, the effective field remains
 /// unlimited; no hidden hard cap is introduced here.
-pub(crate) fn effective_research_limits(
+#[must_use]
+pub fn effective_research_limits(
     configured: &ResearchLimits,
     requested: Option<&ResearchLimits>,
 ) -> ResearchLimits {

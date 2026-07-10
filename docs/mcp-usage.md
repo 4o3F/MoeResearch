@@ -409,6 +409,12 @@ DeepResearchResult
 
 Runtime usage objects are result-only. They are not accepted in request schemas.
 
+### Unknown-field policy (request vs result)
+
+- **Requests / policies (`schema_version` 0.2):** `deny_unknown_fields`. Extra keys are rejected as `invalid_input` / schema parse failures at the MCP boundary.
+- **Model final JSON (`AspectResearchResult` and nested report types):** unknown fields are **dropped**. Missing required known fields fail parse → `schema_validation_failed`. Semantic checks (evidence provenance, finding refs, output policy) run after successful deserialize.
+- Rationale: models may emit non-schema commentary keys; failing closed on extras increases false partials without improving evidence integrity.
+
 `Evidence.source_type` values are exactly:
 
 ```text
@@ -464,6 +470,9 @@ Client-side checks:
 - `task.model_provider` or `task.aspects[].model_provider` is included in `policy.model.allowed_providers`.
 - If search is enabled, `task.search_provider` or `task.aspects[].search_provider` is included in `policy.search.allowed_providers`.
 - Provider names match the MCP server environment you are calling.
+- Discover enabled providers on the host with:
+  `moeresearch check --config <path> --show-providers --no-mcp`
+  Provider names in requests must match these enabled config keys (e.g. `openai`, `grok`, `exa`, `tavily`).
 - Inspect `retryable`: retry transient provider-side failures, but fix configuration, environment, or policy failures before retrying.
 
 ### `tool_policy_denied`
@@ -482,9 +491,21 @@ Client-side checks:
 - Keep `max_concurrent_agents <= max_agents` when both are finite.
 - Keep each aspect timeout within the parent research timeout when both are finite.
 
+**Requested vs effective limits**
+
+- Operator TOML (`[limits.research]` / `[limits.per_agent]`) is a hard ceiling.
+- Layer 1 request limits may only tighten a run; they never raise the operator ceiling.
+- `Unlimited` / `-1` on one layer means “this layer adds no cap”, not “ignore the other layer”.
+- Effective caps are applied in the workflow normalizer before the agent loop.
+- On failure, `error.message` names the exhausted dimension and the effective cap (public-safe), e.g. `budget exceeded: max_turns exhausted (effective cap 3)`. Full requested vs effective projections are available in server logs (`effective_limits_applied`), not as new envelope fields in schema 0.2.
+- `aspect_research` has no top-level research `limits` object; it inherits operator research ceilings for shared counters and merges per-agent limits only.
+- Success-path `data.budget_usage` (deep) reports consumption, not the cap table.
+
 ### `schema_validation_failed`
 
 The final structured result failed validation. If evidence was already collected and partial results are allowed, `aspect_research` may return `status=partial` with frozen evidence and this error metadata; `deep_research` partials carry failed aspect metadata in `data.failed_aspects` and keep top-level `error: null`.
+
+- Extra unknown keys in model final JSON are ignored; missing required result fields or failed semantic validation are not.
 
 Client-side checks:
 

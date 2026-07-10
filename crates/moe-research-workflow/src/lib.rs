@@ -20,11 +20,11 @@ pub use report::{
     AgentBudgetUsage, AspectFailure, AspectReport, AspectResearchResult, Confidence,
     ConfidenceSummary, CoverageSummary, DeepResearchResult, Evidence, Finding, FindingType,
     Importance, OpenQuestion, ResearchBudgetUsage, SourceType, TokenUsage, ValidationIssue,
-    ValidationStatus,
+    ValidationStatus, provenance_mismatch_fields,
 };
 pub use research::{
     AspectRequest, AspectResearchRequest, DeepResearchRequest, ResearchContext, ResearchPolicy,
-    ResearchTask,
+    ResearchTask, effective_research_limits,
 };
 pub use workflow::{
     AspectResearchFailure, AspectResearchOutput, DeepResearchFailure, aspect_research,

@@ -241,11 +241,22 @@ where
 
 fn ensure_usage_within<T>(label: &str, used: Limit<T>, max: Limit<T>) -> Result<()>
 where
-    T: Copy + Ord,
+    T: Copy + Ord + std::fmt::Display,
 {
     if used.exceeds(max) {
+        let dimension = match label {
+            "research model call" => "max_total_model_calls",
+            "research search call" => "max_total_search_calls",
+            "research timeout" => "total_timeout_ms",
+            "research token" => "max_tokens",
+            other => other,
+        };
+        let cap = match max {
+            Limit::Unlimited => "unlimited".to_owned(),
+            Limit::Limited(value) => value.to_string(),
+        };
         return Err(Error::BudgetExceeded {
-            message: format!("{label} budget exhausted"),
+            message: format!("budget exceeded: {dimension} exhausted (effective cap {cap})"),
         });
     }
     Ok(())

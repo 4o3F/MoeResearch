@@ -1,5 +1,3 @@
-#![allow(clippy::too_many_lines)]
-
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -10,6 +8,7 @@ use moe_research_config::{MoeResearchConfig, load_config};
 use moe_research_error::{Error, Result};
 use serde_json::{Value, json};
 
+use crate::compose::{enabled_model_provider_names, enabled_search_provider_names};
 use crate::onboarding::config::resolve_config_path;
 
 #[derive(Debug, Args)]
@@ -30,6 +29,9 @@ pub struct CheckArgs {
     /// Skip the local MCP smoke check.
     #[arg(long)]
     pub no_mcp: bool,
+    /// List enabled model and search provider names from config (no secrets).
+    #[arg(long)]
+    pub show_providers: bool,
 }
 
 pub fn run(args: CheckArgs) -> Result<()> {
@@ -57,6 +59,9 @@ pub fn run(args: CheckArgs) -> Result<()> {
 
     if let Some(config) = &config {
         rows.extend(check_provider_environment(config));
+        if args.show_providers {
+            rows.extend(check_show_providers(config));
+        }
         if args.live {
             rows.extend(check_live_probe_support(config));
         }
@@ -198,6 +203,35 @@ fn check_provider_environment(config: &MoeResearchConfig) -> Vec<CheckRow> {
         }
     }
 
+    rows
+}
+
+fn check_show_providers(config: &MoeResearchConfig) -> Vec<CheckRow> {
+    let models = enabled_model_provider_names(config);
+    let searches = enabled_search_provider_names(config);
+    let mut rows = Vec::new();
+
+    rows.push(if models.is_empty() {
+        CheckRow::fail(
+            "providers:model",
+            "no model providers enabled",
+            Some("enable [model.providers.openai] in moeresearch.toml".to_owned()),
+            Some("docs/configuration.md".to_owned()),
+        )
+    } else {
+        CheckRow::pass("providers:model", format!("enabled: {}", models.join(", ")))
+    });
+    rows.push(if searches.is_empty() {
+        CheckRow::warn(
+            "providers:search",
+            "no search providers enabled; search-enabled aspects will fail",
+        )
+    } else {
+        CheckRow::pass(
+            "providers:search",
+            format!("enabled: {}", searches.join(", ")),
+        )
+    });
     rows
 }
 

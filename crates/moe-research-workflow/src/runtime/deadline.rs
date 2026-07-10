@@ -8,6 +8,16 @@ pub(crate) fn elapsed_ms(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
+fn timeout_budget_exceeded(timeout_ms: DurationLimitMs) -> Error {
+    let cap = match timeout_ms {
+        Limit::Unlimited => "unlimited".to_owned(),
+        Limit::Limited(value) => value.to_string(),
+    };
+    Error::BudgetExceeded {
+        message: format!("budget exceeded: timeout_ms exhausted (effective cap {cap})"),
+    }
+}
+
 pub(crate) struct RuntimeDeadline {
     started: Instant,
     timeout_ms: DurationLimitMs,
@@ -27,9 +37,7 @@ impl RuntimeDeadline {
             Limit::Limited(limit_ms) => {
                 let elapsed = elapsed_ms(self.started.elapsed());
                 if elapsed >= limit_ms {
-                    return Err(Error::BudgetExceeded {
-                        message: "agent runtime budget timeout exhausted".to_owned(),
-                    });
+                    return Err(timeout_budget_exceeded(self.timeout_ms));
                 }
                 Ok(Some(Duration::from_millis(limit_ms - elapsed)))
             }
@@ -42,11 +50,9 @@ impl RuntimeDeadline {
     {
         match self.remaining()? {
             None => future.await,
-            Some(remaining) => tokio::time::timeout(remaining, future).await.map_err(|_| {
-                Error::BudgetExceeded {
-                    message: "agent runtime budget timeout exhausted".to_owned(),
-                }
-            })?,
+            Some(remaining) => tokio::time::timeout(remaining, future)
+                .await
+                .map_err(|_| timeout_budget_exceeded(self.timeout_ms))?,
         }
     }
 }
