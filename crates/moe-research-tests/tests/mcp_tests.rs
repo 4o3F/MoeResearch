@@ -684,6 +684,61 @@ fn tool_error_code_as_str_matches_serde() {
     }
 }
 
+/// Every transport-neutral `ErrorCode` must map 1:1 onto `ToolErrorCode` with
+/// identical `as_str()` values. Adding a new `ErrorCode` without `ToolErrorCode`
+/// (or vice versa) must fail this test.
+#[test]
+fn tool_error_code_mirrors_error_code_1to1() {
+    use moe_research_error::ErrorCode;
+
+    let pairs = [
+        (ErrorCode::InvalidInput, ToolErrorCode::InvalidInput),
+        (
+            ErrorCode::UnsupportedSchemaVersion,
+            ToolErrorCode::UnsupportedSchemaVersion,
+        ),
+        (ErrorCode::ConfigInvalid, ToolErrorCode::ConfigInvalid),
+        (
+            ErrorCode::ProviderUnavailable,
+            ToolErrorCode::ProviderUnavailable,
+        ),
+        (ErrorCode::NetworkFailed, ToolErrorCode::NetworkFailed),
+        (ErrorCode::BudgetExceeded, ToolErrorCode::BudgetExceeded),
+        (ErrorCode::ToolPolicyDenied, ToolErrorCode::ToolPolicyDenied),
+        (
+            ErrorCode::SchemaValidationFailed,
+            ToolErrorCode::SchemaValidationFailed,
+        ),
+        (ErrorCode::Timeout, ToolErrorCode::Timeout),
+        (ErrorCode::PartialResult, ToolErrorCode::PartialResult),
+        (ErrorCode::Internal, ToolErrorCode::Internal),
+    ];
+
+    assert_eq!(
+        pairs.len(),
+        11,
+        "update this table when ErrorCode variants change"
+    );
+
+    for (domain, tool) in pairs {
+        let mapped: ToolErrorCode = domain.into();
+        assert_eq!(mapped, tool, "From mapping mismatch for {domain:?}");
+        assert_eq!(
+            domain.as_str(),
+            tool.as_str(),
+            "as_str mismatch for {domain:?}"
+        );
+        assert_eq!(
+            domain.as_str(),
+            serde_json::to_value(tool)
+                .expect("serialize")
+                .as_str()
+                .expect("string"),
+            "serde rename drift for {tool:?}"
+        );
+    }
+}
+
 /// The MCP envelope MUST serialize `run_id: null` and `error: null` (not
 /// omitted) on `status = "ok"` so external clients can rely on a fixed key
 /// set per the public contract in `docs/research-agent-product.md` §10.1.

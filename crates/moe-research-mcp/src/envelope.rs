@@ -1,6 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use moe_research_error::ErrorCode;
 use moe_research_workflow::AspectFailure;
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -58,21 +59,40 @@ pub enum ToolErrorCode {
     Internal,
 }
 
+impl From<ErrorCode> for ToolErrorCode {
+    fn from(code: ErrorCode) -> Self {
+        match code {
+            ErrorCode::InvalidInput => Self::InvalidInput,
+            ErrorCode::UnsupportedSchemaVersion => Self::UnsupportedSchemaVersion,
+            ErrorCode::ConfigInvalid => Self::ConfigInvalid,
+            ErrorCode::ProviderUnavailable => Self::ProviderUnavailable,
+            ErrorCode::NetworkFailed => Self::NetworkFailed,
+            ErrorCode::BudgetExceeded => Self::BudgetExceeded,
+            ErrorCode::ToolPolicyDenied => Self::ToolPolicyDenied,
+            ErrorCode::SchemaValidationFailed => Self::SchemaValidationFailed,
+            ErrorCode::Timeout => Self::Timeout,
+            ErrorCode::PartialResult => Self::PartialResult,
+            ErrorCode::Internal => Self::Internal,
+        }
+    }
+}
+
 impl ToolErrorCode {
+    /// Public snake_case identifier; string literals live only on `ErrorCode::as_str`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::InvalidInput => "invalid_input",
-            Self::UnsupportedSchemaVersion => "unsupported_schema_version",
-            Self::ConfigInvalid => "config_invalid",
-            Self::ProviderUnavailable => "provider_unavailable",
-            Self::NetworkFailed => "network_failed",
-            Self::BudgetExceeded => "budget_exceeded",
-            Self::ToolPolicyDenied => "tool_policy_denied",
-            Self::SchemaValidationFailed => "schema_validation_failed",
-            Self::Timeout => "timeout",
-            Self::PartialResult => "partial_result",
-            Self::Internal => "internal",
+            Self::InvalidInput => ErrorCode::InvalidInput.as_str(),
+            Self::UnsupportedSchemaVersion => ErrorCode::UnsupportedSchemaVersion.as_str(),
+            Self::ConfigInvalid => ErrorCode::ConfigInvalid.as_str(),
+            Self::ProviderUnavailable => ErrorCode::ProviderUnavailable.as_str(),
+            Self::NetworkFailed => ErrorCode::NetworkFailed.as_str(),
+            Self::BudgetExceeded => ErrorCode::BudgetExceeded.as_str(),
+            Self::ToolPolicyDenied => ErrorCode::ToolPolicyDenied.as_str(),
+            Self::SchemaValidationFailed => ErrorCode::SchemaValidationFailed.as_str(),
+            Self::Timeout => ErrorCode::Timeout.as_str(),
+            Self::PartialResult => ErrorCode::PartialResult.as_str(),
+            Self::Internal => ErrorCode::Internal.as_str(),
         }
     }
 }
