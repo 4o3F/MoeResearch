@@ -49,8 +49,8 @@ MoeResearch 的产品目标包括：
 - **证据可追溯**：重要结论必须保留来源、摘要和置信度。
 - **多视角综合**：支持市场、用户、竞品、技术、商业、风险等不同视角并行分析。
 - **可控编排**：Claude Code Skill 作为主分析者，负责拆解、分配、验收和最终汇总。
-- **模型可替换**：Reasoning Layer 不绑定 GPT，可通过配置选择 `openai`、Anthropic-compatible 或其他模型 API provider。
-- **搜索可扩展**：Retrieval Layer 搜索 API provider 可独立替换或扩展，不影响上层 Agent 编排。
+- **模型可替换（设计目标）**：Reasoning Layer 不绑定 GPT 或单一模型厂商；架构基于 provider trait，便于后续增加适配器。当前默认二进制经 `moe-research-cli` 装配的模型 provider 仅为 OpenAI Responses API（`openai`）；额外模型适配器尚未出现在默认 binary 中。
+- **搜索可扩展**：Retrieval Layer 搜索 API provider 可独立替换或扩展，不影响上层 Agent 编排。当前 CLI 装配的搜索 provider 为 Exa、Grok 与 Tavily。
 - **Rust 核心可靠性**：MCP、模型 Agent 编排、模型 provider 和搜索 provider 层由 Rust 构建，保证边界清晰、类型明确和可维护性。
 
 ## 5. 非目标
@@ -60,7 +60,7 @@ MoeResearch 在当前阶段不追求以下能力：
 - 不做通用聊天机器人。
 - 不直接提供完整 Web UI。
 - 不承诺搜索结果实时性超过底层 provider 能力。
-- 不限定 Reasoning Layer 只能使用 GPT 或单一模型厂商。
+- 不将“多模型 runtime 已出货”写成当前能力清单：默认 binary 当前仅装配 OpenAI Responses API（`openai`）。“不绑定 GPT / 可扩展模型 provider”是架构设计目标，不是今日 shipping checklist。
 - 不让模型 Agent 直接访问任意网络或任意文件系统。
 - 不把模型 API、Exa Search、Grok Search 等 provider 逻辑泄露给 Orchestration Layer。
 - 不在 MVP 阶段实现复杂知识库、长期记忆或团队协作系统。
@@ -113,7 +113,11 @@ Orchestration Layer 必须保留最终判断权。Reasoning Layer 的模型 Agen
 
 ### 6.2 Layer 2：Reasoning Layer
 
-Reasoning Layer 是由 Rust 编排的模型 Agent 层。每个 Agent 被分配一个明确的分析方面，并通过配置选择具体模型 API provider。该层不限制为 GPT，可以接入 OpenAI Responses API、Anthropic-compatible API、本地模型网关或未来新增的模型服务。每个 Agent 在其分析方面内调用 Retrieval Layer 搜索服务进行信息获取。
+Reasoning Layer 是由 Rust 编排的模型 Agent 层。每个 Agent 被分配一个明确的分析方面，并通过配置选择具体模型 API provider。
+
+当前 shipping 的模型 provider wiring 是 OpenAI Responses API（`openai`），由 `moe-research-cli` 装配。架构仍基于 provider trait，便于后续增加模型适配器；这些适配器尚未出现在默认 binary 中。
+
+每个 Agent 在其分析方面内调用 Retrieval Layer 搜索服务进行信息获取。
 
 可能的 Agent 类型：
 
@@ -329,10 +333,16 @@ crates/
 - `moe-research-mcp` 是 Claude Code Skill 的稳定工具接口层，只负责协议暴露、参数校验、错误映射和调用 workflow，不暴露内部 provider 细节。
 - `moe-research-workflow` 负责任务编排、Agent loop、预算控制（`AgentBudgetGuard` 与 `ResearchBudgetGuard`）、工具策略、中间结果校验；它不负责撰写最终自然语言报告。
 - `moe-research-model` 与 `moe-research-search` 负责把具体厂商协议转换为本领域中立结构，不依赖 workflow policy 或 config。
-- 如果某个 provider 需要私有 serde DTO，应放在对应 provider 模块内部，不进入公共 `schema/` module。
-- `net/` 是所有 outbound network requests 的唯一出口，provider 不应绕过它直接创建 HTTP client。
+- Domain-owned DTO locations（**无**中央 contracts/schema crate，此为有意设计）：
+  - Request/report DTOs: `moe-research-workflow`
+  - MCP envelope: `moe-research-mcp`
+  - Model DTOs: `moe-research-model`
+  - Search DTOs: `moe-research-search`
+  - TOML DTOs: `moe-research-config`
+- 如果某个 provider 需要私有 serde DTO，应放在对应 provider 模块内部，不进入跨领域公共类型桶。
+- `moe-research-net` 是所有 outbound network requests 的唯一出口，provider 不应绕过它直接创建 HTTP client。
 - `skills/` 与 `prompts/` 放 Markdown 资产，由 Layer 1 在生成 MCP 请求时**内联**进 `AspectRequest.instructions` 字段；Rust core 不再在运行时读取 prompt 文件。
-- 当 `schema` 需要被多个独立 crate 复用，或 MCP server 需要单独发布、单独版本管理时，再将对应 module 提升为独立 crate。
+- 当某一领域 DTO 需要被多个独立 crate 复用，或 MCP server 需要单独发布、单独版本管理时，再将该领域 public API 提升为独立 crate；仍不引入中央 contracts 桶。
 
 ### 10.1 MCP 边界
 
@@ -399,7 +409,7 @@ Orchestrator 不应包含具体 provider 的 HTTP 请求细节，也不应绑定
 
 Model Provider 层负责将统一的 Agent 请求转换为具体模型 API 请求，并将不同 provider 的响应标准化为统一内部结构。
 
-实际标准请求（`schema/model.rs`）：
+实际标准请求（Model DTOs 位于 `moe-research-model`）：
 
 ```text
 ModelRequest
@@ -451,14 +461,14 @@ model = "gpt-4o"
 
 - API key 只通过环境变量名、用户级配置或 secret provider 引用，不写入仓库。
 - `base_url` 必须可配置，以支持官方 API 和代理网关。
-- 当前 OpenAI 模型 provider 配置 key 为 `openai`。
-- Agent 只依赖统一 `ModelProvider` 接口，不直接依赖具体 provider SDK。
+- 当前 OpenAI 模型 provider 配置 key 为 `openai`；默认 binary 仅装配该模型 provider。
+- Agent 只依赖统一 `ModelProvider` 接口，不直接依赖具体 provider SDK；额外 model adapter 属于后续演进，不是当前 shipping 能力。
 
 ### 10.4 Search Provider 层
 
 Search Provider 层负责将标准化搜索请求转换为具体 API 请求。
 
-实际标准请求（`schema/search.rs`）：
+实际标准请求（Search DTOs 位于 `moe-research-search`）：
 
 ```text
 SearchRequest
@@ -681,40 +691,49 @@ Appendix: Search Queries and Sources
 
 ## 14. Skill 与 Prompt 资产
 
-MoeResearch 的 Claude Code Skill、Orchestration Layer 编排策略和 Reasoning Layer Agent prompt 应作为独立 Markdown 文件维护，而不是硬编码在 Rust 中。
+MoeResearch 的 Claude Code Skill、Orchestration Layer 编排策略和 Reasoning Layer Agent prompt 应作为独立 Markdown 文件维护，而不是硬编码在 Rust 中。资产树为 **Generic 根文件 + 多 profile 包**，不是仅 Generic 的薄树。
 
-建议资产划分：
+当前资产划分（示意）：
 
 ```text
-skills
-└── deep-research.md
-
-prompts
-├── layer1
-│   ├── task-decomposition.md
-│   ├── agent-allocation.md
-│   └── final-report.md
-└── layer2
-    ├── aspect-agent.md
-    ├── search-planner.md
-    └── evidence-extractor.md
+skills/
+  deep-research.md
+  pm-deep-research.md
+  academic-deep-research.md
+  technical-evaluation.md
+prompts/
+  layer1/
+    task-decomposition.md
+    final-report.md
+    common/
+    pm-deep-research/
+    academic-deep-research/
+    technical-evaluation/
+  layer2/
+    aspect-agent.md
+    search-planner.md
+    evidence-extractor.md
+    pm-deep-research/
+    academic-deep-research/
+    technical-evaluation/
 ```
 
 职责边界：
 
-- `skills/deep-research.md`：定义 Claude Code Skill 的触发方式、用户交互、任务拆解流程、MCP 调用策略和最终汇总规则。
-- `prompts/layer1/task-decomposition.md`：指导 Orchestration Layer 将用户问题拆解为研究方面。
-- `prompts/layer1/agent-allocation.md`：指导 Orchestration Layer 根据广度、深度、预算和风险分配 Reasoning Layer Agent。
-- `prompts/layer1/final-report.md`：指导 Orchestration Layer 中的 LLM 根据结构化方面报告生成最终自然语言报告。
-- `prompts/layer2/aspect-agent.md`：定义单个方面 Agent 的分析职责、输出格式和证据要求。
-- `prompts/layer2/search-planner.md`：指导方面 Agent 生成搜索 query 和搜索策略。
-- `prompts/layer2/evidence-extractor.md`：指导方面 Agent 从搜索结果中抽取证据、假设、风险和置信度。
+- `skills/deep-research.md`：Generic Skill；触发方式、任务拆解、MCP 调用与最终汇总。
+- `skills/pm-deep-research.md` / `academic-deep-research.md` / `technical-evaluation.md`：各 profile 入口 Skill，复用同一 MCP 核心，内联对应 profile prompt 包。
+- `prompts/layer1/task-decomposition.md` 与 `prompts/layer1/final-report.md`：Generic Layer 1 根 prompt。
+- `prompts/layer1/common/`：跨 profile 共享契约与后处理（如 budget tiers、evidence verify、partial-status host contract）。
+- `prompts/layer1/<profile>/`：profile 专用 task decomposition、agent allocation、final-report 变体。
+- `prompts/layer2/aspect-agent.md`：Generic 方面 Agent 基座；Generic 路径将其内联进 `AspectRequest.instructions`。
+- `prompts/layer2/search-planner.md` / `evidence-extractor.md`：**可选** helper prompt，供 Generic 细化；当前 Generic 路径可以仅依赖 `aspect-agent.md`。
+- `prompts/layer2/<profile>/persona-*.md`：profile persona；由 Layer 1 内联为 `AspectRequest.instructions`，Rust core 不在运行时读文件。
 
 设计原则：
 
 - Prompt 是产品行为的一部分，应版本化、可审查、可替换。
-- Rust 只加载或引用 prompt 资产，不把 prompt 文本硬编码进业务逻辑。
-- 最终报告由 Orchestration Layer 中的 LLM 基于 `final-report.md` 生成，Rust 不做自然语言报告拼接。
+- Layer 1 在生成 MCP 请求时将 prompt 文本**内联**进 `AspectRequest.instructions`；Rust core 不在运行时读取 prompt 文件，也不把 prompt 硬编码进业务逻辑。
+- 最终报告由 Orchestration Layer 中的 LLM 基于 Generic 或 profile 的 `final-report*.md` 生成，Rust 不做自然语言报告拼接。
 - Reasoning Layer Agent 的输出应保持结构化，便于 Orchestration Layer 验证、去重、合并和追溯。
 
 ## 15. 安全与可靠性
@@ -839,13 +858,13 @@ MVP 应聚焦最小可用闭环：
 - 明确说明 MoeResearch 面向需要深度与广度调研的用户。
 - 明确描述 Orchestration Layer、Reasoning Layer、Retrieval Layer 的职责边界。
 - 明确 Orchestration Layer 由 Claude Code Skill 承担，负责任务拆分、Agent 分配，并调用 LLM 完成最终报告生成。
-- 明确 Reasoning Layer 是可配置的模型 Agent 层，不限制为 GPT，负责按方面指挥搜索服务并整合分析。
-- 明确 Retrieval Layer 是 Exa Search、Grok Search 等纯搜索 API provider，并保留后续扩展能力。
+- 明确 Reasoning Layer 是基于 provider trait 的模型 Agent 层：当前默认 binary 装配 OpenAI Responses API（`openai`）；“不绑定 GPT / 可扩展多模型”是设计目标，不是今日 shipping checklist。
+- 明确 Retrieval Layer 当前接入 Exa Search、Grok Search 与 Tavily 等纯搜索 API provider，并保留后续扩展能力。
 - 明确 Reasoning Layer、Retrieval Layer 和 MCP 接口由 Rust 构建。
 - 明确模型 provider 和搜索 provider 都可以通过配置文件设置 `base_url`、API key 来源等参数。
 - 明确所有 outbound network requests 必须通过统一 `NetworkClient` trait。
-- 明确不同模型 API 和搜索 API 通过独立 provider 实现接入。
-- 明确 Skill、Orchestration Layer prompt 和 Reasoning Layer prompt 作为独立 Markdown 文件维护。
+- 明确不同模型 API 和搜索 API 通过独立 provider 实现接入；DTO 由各领域 crate 自拥有，无中央 contracts/schema crate。
+- 明确 Skill、Orchestration Layer prompt 和 Reasoning Layer prompt 作为独立 Markdown 文件维护，且为 Generic 根 + 多 profile 包结构。
 - 明确 Rust Core 不负责最终自然语言报告拼接，只负责结构化中间结果、校验和传输。
 - 包含 MVP、非目标、风险、开放问题和后续演进。
 - 不将尚未实现的能力描述为已完成能力。
