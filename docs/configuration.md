@@ -190,6 +190,13 @@ Rules:
 - Request limits passed through MCP must not exceed these configured limits.
 - Production deployments should use explicit limits instead of unlimited values.
 
+### Effective limits
+
+MoeResearch merges operator config limits with each request using a stricter-wins rule.
+Skills should treat TOML ceilings as the real maximum. Use `moeresearch check` to validate
+config; inspect serve stderr for `effective_limits_applied` when debugging unexpected
+`budget_exceeded` responses. See `docs/mcp-usage.md` § `budget_exceeded`.
+
 ## 7. Logging
 
 The default CLI log format is JSON:

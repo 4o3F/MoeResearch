@@ -207,12 +207,9 @@ async fn all_agent_budget_failures_preserve_failed_aspects() {
             .iter()
             .all(|failure| failure.error_code == "budget_exceeded")
     );
-    assert!(
-        failure
-            .failed_aspects
-            .iter()
-            .all(|failure| failure.message == "agent search call budget exhausted")
-    );
+    assert!(failure.failed_aspects.iter().all(|failure| {
+        failure.message.contains("budget exceeded") && failure.message.contains("max_search_calls")
+    }));
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
     assert_eq!(services.search_calls.load(Ordering::SeqCst), 0);
 }

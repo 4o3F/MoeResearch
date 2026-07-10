@@ -14,6 +14,10 @@
 //! orchestrator never observes a budget overshoot, and both surface
 //! `Error::BudgetExceeded` on rejection so the public failure code stays
 //! stable.
+//!
+//! Public budget messages use a stable shape so Layer 1 can identify the
+//! exhausted dimension without reading operator logs:
+//! `budget exceeded: {dimension} exhausted (effective cap {cap})`.
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -22,6 +26,7 @@ use std::time::Instant;
 use moe_research_error::{Error, Result};
 
 use crate::budget::{AgentLimits, ResearchLimits};
+use crate::limit::Limit;
 use crate::report::{AgentBudgetUsage, ResearchBudgetUsage, TokenUsage};
 
 #[derive(Clone, Debug)]
@@ -49,9 +54,7 @@ impl AgentBudgetGuard {
         self.check_timeout()?;
 
         if !self.budget.max_turns.permits_next(self.turns_used) {
-            return Err(Error::BudgetExceeded {
-                message: "agent model turn budget exhausted".to_owned(),
-            });
+            return Err(budget_exceeded("max_turns", self.budget.max_turns));
         }
 
         self.turns_used += 1;
@@ -66,9 +69,10 @@ impl AgentBudgetGuard {
             .max_tool_calls
             .permits_next(self.tool_calls_used)
         {
-            return Err(Error::BudgetExceeded {
-                message: "agent tool call budget exhausted".to_owned(),
-            });
+            return Err(budget_exceeded(
+                "max_tool_calls",
+                self.budget.max_tool_calls,
+            ));
         }
 
         if !self
@@ -76,9 +80,10 @@ impl AgentBudgetGuard {
             .max_search_calls
             .permits_next(self.search_calls_used)
         {
-            return Err(Error::BudgetExceeded {
-                message: "agent search call budget exhausted".to_owned(),
-            });
+            return Err(budget_exceeded(
+                "max_search_calls",
+                self.budget.max_search_calls,
+            ));
         }
 
         self.tool_calls_used += 1;
@@ -105,9 +110,7 @@ impl AgentBudgetGuard {
 
     fn check_timeout(&self) -> Result<()> {
         if self.budget.timeout_ms.is_elapsed(self.elapsed_ms()) {
-            return Err(Error::BudgetExceeded {
-                message: "agent timeout budget exhausted".to_owned(),
-            });
+            return Err(budget_exceeded("timeout_ms", self.budget.timeout_ms));
         }
 
         Ok(())
@@ -185,9 +188,10 @@ impl ResearchBudgetGuard {
         let next = self.model_calls.fetch_add(1, Ordering::SeqCst) + 1;
         if self.budget.max_total_model_calls.is_exceeded_by_u64(next) {
             self.model_calls.fetch_sub(1, Ordering::SeqCst);
-            return Err(Error::BudgetExceeded {
-                message: "research model call budget exhausted".to_owned(),
-            });
+            return Err(budget_exceeded(
+                "max_total_model_calls",
+                self.budget.max_total_model_calls,
+            ));
         }
         Ok(next)
     }
@@ -204,9 +208,10 @@ impl ResearchBudgetGuard {
         let next = self.search_calls.fetch_add(1, Ordering::SeqCst) + 1;
         if self.budget.max_total_search_calls.is_exceeded_by_u64(next) {
             self.search_calls.fetch_sub(1, Ordering::SeqCst);
-            return Err(Error::BudgetExceeded {
-                message: "research search call budget exhausted".to_owned(),
-            });
+            return Err(budget_exceeded(
+                "max_total_search_calls",
+                self.budget.max_total_search_calls,
+            ));
         }
         Ok(next)
     }
@@ -263,9 +268,10 @@ impl ResearchBudgetGuard {
     /// Rejects dispatch once the research-level timeout has elapsed.
     fn check_total_timeout(&self) -> Result<()> {
         if self.budget.total_timeout_ms.is_elapsed(self.elapsed_ms()) {
-            return Err(Error::BudgetExceeded {
-                message: "research timeout budget exhausted".to_owned(),
-            });
+            return Err(budget_exceeded(
+                "total_timeout_ms",
+                self.budget.total_timeout_ms,
+            ));
         }
         Ok(())
     }
@@ -278,9 +284,7 @@ impl ResearchBudgetGuard {
             .and_then(TokenUsage::total_or_sum)
             .unwrap_or(0);
         if self.budget.max_tokens.is_exhausted_by_u64(used) {
-            return Err(Error::BudgetExceeded {
-                message: "research token budget exhausted".to_owned(),
-            });
+            return Err(budget_exceeded("max_tokens", self.budget.max_tokens));
         }
         Ok(())
     }
@@ -304,4 +308,26 @@ impl ResearchBudgetGuard {
 /// Converts an atomic `u64` counter to `usize` for public usage snapshots.
 fn usize_from_u64(value: u64) -> usize {
     usize::try_from(value).unwrap_or(usize::MAX)
+}
+
+fn budget_exceeded<T>(dimension: &str, cap: Limit<T>) -> Error
+where
+    T: std::fmt::Display + Copy,
+{
+    Error::BudgetExceeded {
+        message: format!(
+            "budget exceeded: {dimension} exhausted (effective cap {})",
+            display_limit(cap)
+        ),
+    }
+}
+
+fn display_limit<T>(limit: Limit<T>) -> String
+where
+    T: std::fmt::Display + Copy,
+{
+    match limit {
+        Limit::Unlimited => "unlimited".to_owned(),
+        Limit::Limited(value) => value.to_string(),
+    }
 }

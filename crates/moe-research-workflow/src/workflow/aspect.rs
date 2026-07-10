@@ -67,6 +67,8 @@ pub async fn aspect_research(
     search_service: &SearchService,
     budget_config: &BudgetConfig,
 ) -> std::result::Result<AspectResearchOutput, Box<AspectResearchFailure>> {
+    let request_id = request.request_id.clone();
+    let aspect_id = request.task.id.clone();
     let plan = request
         .normalize_for_execution(&WorkflowValidationContext {
             budget_config,
@@ -74,6 +76,13 @@ pub async fn aspect_research(
             supported_tool_name: SEARCH_TOOL_NAME,
         })
         .map_err(AspectResearchFailure::top_level)?;
+    tracing::debug!(
+        event = "effective_agent_limits",
+        request_id = %request_id,
+        aspect_id = %aspect_id,
+        effective_limits = ?plan.task.limits,
+        "aspect agent limits after config merge"
+    );
     let allow_partial_results = plan.policy.execution.allow_partial_results;
     let research_budget =
         ResearchBudgetGuard::new(effective_research_limits(&budget_config.research, None));

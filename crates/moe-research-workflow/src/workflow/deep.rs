@@ -67,11 +67,12 @@ pub async fn deep_research(
         })
         .map_err(DeepResearchFailure::top_level)?;
     if plan.limits != request.limits {
-        tracing::debug!(
+        tracing::info!(
+            event = "effective_limits_applied",
             request_id = %request.request_id,
             requested_limits = ?request.limits,
             effective_limits = ?plan.limits,
-            "deep research limits constrained by effective limits"
+            "request limits tightened by operator config ceilings"
         );
     }
 

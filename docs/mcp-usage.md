@@ -488,6 +488,16 @@ Client-side checks:
 - Keep `max_concurrent_agents <= max_agents` when both are finite.
 - Keep each aspect timeout within the parent research timeout when both are finite.
 
+**Requested vs effective limits**
+
+- Operator TOML (`[limits.research]` / `[limits.per_agent]`) is a hard ceiling.
+- Layer 1 request limits may only tighten a run; they never raise the operator ceiling.
+- `Unlimited` / `-1` on one layer means “this layer adds no cap”, not “ignore the other layer”.
+- Effective caps are applied in the workflow normalizer before the agent loop.
+- On failure, `error.message` names the exhausted dimension and the effective cap (public-safe), e.g. `budget exceeded: max_turns exhausted (effective cap 3)`. Full requested vs effective projections are available in server logs (`effective_limits_applied`), not as new envelope fields in schema 0.2.
+- `aspect_research` has no top-level research `limits` object; it inherits operator research ceilings for shared counters and merges per-agent limits only.
+- Success-path `data.budget_usage` (deep) reports consumption, not the cap table.
+
 ### `schema_validation_failed`
 
 The final structured result failed validation. If evidence was already collected and partial results are allowed, `aspect_research` may return `status=partial` with frozen evidence and this error metadata; `deep_research` partials carry failed aspect metadata in `data.failed_aspects` and keep top-level `error: null`.
