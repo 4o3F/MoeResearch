@@ -947,3 +947,60 @@ git commit -m "docs(plan): record Phase 1 contract integrity retrospective"
 - Run Task 1 before relying on package contents in later manual checks.
 - Task 4 deletes files — do not delete until path rewrites and common merges are done.
 - If `packaging_allowlists_are_isomorphic` parsing is brittle, keep the extractor dumb (quoted-string harvest inside named const blocks) rather than introducing a shared schema format in Phase 1.
+
+## Phase 1 retrospective
+
+- Date completed: 2026-07-10
+- Commits (on `fix/phase1-contract-integrity`, PR #35):
+  - `d8a88fc` docs(architecture): add audit report and phased remediation plans
+  - `9efcd11` fix(assets): ship Generic L1/L2 prompts and enforce allowlist isomorphism
+  - `2f59c3b` docs(skills): document Generic install tree and fail-fast asset checks
+  - `b444d7f` docs(skills): freeze partial envelope host contract in common module
+  - `2a49d66` refactor(prompts): consolidate PM evidence modules onto common/
+  - `264352c` docs(limits): canonicalize quick/standard/deep budget tiers
+  - `432ceff` docs(product): align research-agent-product with runtime truth
+  - `b8bd09a` docs(skills): raise academic/technical failure handling and naming hygiene
+  - `de2a809` style(tests): rustfmt cli_assets_tests after Generic packaging asserts
+- Verification (Task 9 Step 1–2):
+  - `cargo fmt --all -- --check` green
+  - `cargo clippy --workspace --all-targets -- -D warnings` green
+  - `cargo test --workspace` green (311 passed, 0 failed)
+  - `cli_assets_tests` 18/18 green including `packaging_allowlists_are_isomorphic`
+  - Package dry-run includes Generic roots + common modules (`task-decomposition.md`, `aspect-agent.md`, `budget-tiers.md`, `partial-status-host-contract.md`)
+  - PM evidence duplicates absent under `prompts/layer1/pm-deep-research/`
+  - All four skills point Failure handling at common partial-status module; no `docs/` refs in skills
+  - Budget tiers SoT in `prompts/layer1/common/budget-tiers.md`; deep-research=standard, PM=deep
+  - Product doc free of false Anthropic/schema path claims
+  - No in-repo `lapis-*` crate/binary residue outside `docs/superpowers/`
+- Deviations from plan:
+  - Process override: implement → controller review → **owner review** → commit/push (not auto-commit per task).
+  - After Task 1 worktree bootstrap, subsequent tasks executed in main working directory on the same branch (owner request).
+  - Task 3 reworked twice under owner feedback: (1) extract Failure handling into common module; (2) strip all `docs/` references from installed skills; (3) keep common domain-neutral — PM-specific retry/annex rules live in PM skill + `evidence-modules-overlay.md`, not in common task-specific prose beyond minimal profile mapping rows.
+  - Tasks 7+8 landed in a single commit (`b8bd09a`) after joint owner pass.
+  - Extra commit `de2a809` for rustfmt so CI `cargo fmt --check` stays green after Task 1 test expansions.
+  - GPG signing disabled for some commits when pinentry timed out (unsigned commits on branch).
+- Residual risks:
+  - Dual packaging allowlists remain (Rust + Node) — isomorphism is test-enforced only; a future edit that bypasses the test can re-diverge (B2 residual; Phase 2+ may still choose a generator if churn rises).
+  - Partial envelope asymmetry is frozen in docs/skills only; host clients outside this repo may still mishandle deep vs aspect partial shapes.
+  - Out-of-repo agent memory under `~/.claude/projects/.../memory/` may still mention historical `lapis-*` names; not in scope for this PR.
+  - Common modules still name profile defaults (e.g. PM → deep tier, PM deep-partial retry note) as thin routing rows; if more profile-specific prose accumulates, move it to profile overlays.
+- Follow-ups deferred to Phase 2+:
+  - Phase 2: composition seams (CLI composition root hygiene, config mapping locality, avoid contracts crate)
+  - Phase 3: workflow boundaries (budget/policy/validator seams)
+  - Phase 4: hardening (tests, observability, remaining Column B structural debt)
+  - Optional: re-sign commits if release policy requires GPG on merge
+  - Optional: manual update of local agent memory files outside the repo for B12 completeness
+
+### Finding closure matrix (Phase 1)
+
+| ID | Status | Evidence |
+| --- | --- | --- |
+| A1 | Closed | Generic files in allowlist + package ROOTS + install tree docs + skill fail-fast |
+| A2 | Closed | Frozen asymmetry in `docs/mcp-usage.md` + common `partial-status-host-contract.md` + all four skills |
+| A3 | Closed | Rust/Node same entries + `packaging_allowlists_are_isomorphic` |
+| A4 | Closed | PM copies deleted; PM skill + overlay retarget `common/` |
+| A5 | Closed | `docs/research-agent-product.md` aligned with runtime |
+| A6 | Closed | `budget-tiers.md` SoT; labeled standard/deep skeletons |
+| A10 | Closed | Academic/technical Failure handling + operational checklist parity |
+| B2 | Mitigated (YAGNI) | Test-enforced dual allowlist; no shared packaging crate |
+| B12 | Closed in-repo | No `lapis-*` crate/binary residue; out-of-repo memory noted |
