@@ -2,21 +2,15 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process;
-use std::sync::Arc;
 
 use clap::{Args, ValueEnum};
-use moe_research_config::{MoeResearchConfig, load_config};
+use moe_research_config::load_config;
 use moe_research_error::{Error, Result};
-use moe_research_model::{ModelService, OpenAiProvider};
-use moe_research_net::NetworkClient;
-use moe_research_net::reqwest_client::ReqwestNetworkClient;
-use moe_research_search::{
-    ExaSearchProvider, GrokSearchProvider, SearchService, TavilySearchProvider,
-};
 use tracing_subscriber::EnvFilter;
 
 use crate::compose::{
-    build_workflow_budget, map_grok_reasoning_effort, provider_api_key, provider_model,
+    build_model_service, build_network_client, build_search_service, build_workflow_budget,
+    enabled_model_provider_names, enabled_search_provider_names,
 };
 
 #[derive(Debug, Args)]
@@ -96,12 +90,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
         "moeresearch initialized"
     );
 
-    let network: Arc<dyn NetworkClient> = Arc::new(ReqwestNetworkClient::new(
-        config.network.inactivity_timeout_ms,
-        config.network.max_retries,
-        config.network.retry_backoff_ms,
-        &config.network.user_agent,
-    )?);
+    let network = build_network_client(&config)?;
     let model_service = build_model_service(&config, &network)?;
     let search_service = build_search_service(&config, &network)?;
 
@@ -173,109 +162,4 @@ fn parent_process_name_best_effort(ppid: &str) -> Option<String> {
     let name = fs::read_to_string(format!("/proc/{ppid}/comm")).ok()?;
     let name = name.trim();
     (!name.is_empty()).then(|| name.to_owned())
-}
-
-fn enabled_model_provider_names(config: &MoeResearchConfig) -> Vec<&str> {
-    config
-        .model
-        .providers
-        .iter()
-        .filter_map(|(name, provider)| provider.enabled.then_some(name.as_str()))
-        .collect()
-}
-
-fn enabled_search_provider_names(config: &MoeResearchConfig) -> Vec<&str> {
-    config
-        .search
-        .providers
-        .iter()
-        .filter_map(|(name, provider)| provider.enabled.then_some(name.as_str()))
-        .collect()
-}
-
-fn build_model_service(
-    config: &MoeResearchConfig,
-    network: &Arc<dyn NetworkClient>,
-) -> Result<ModelService> {
-    let mut service = ModelService::new();
-
-    for (name, provider) in &config.model.providers {
-        if !provider.enabled {
-            continue;
-        }
-
-        match name.as_str() {
-            "openai" => {
-                let api_key = provider_api_key("model", name, provider.api_key_env.as_ref())?;
-                let model = provider_model("model", name, provider.model.as_ref())?;
-                service.register(OpenAiProvider::new(
-                    network.clone(),
-                    provider.base_url.clone(),
-                    api_key,
-                    provider
-                        .inactivity_timeout_ms
-                        .or(Some(config.network.inactivity_timeout_ms)),
-                    model,
-                ));
-            }
-            other => {
-                return Err(Error::ConfigInvalid {
-                    message: format!("unknown model provider `{other}`"),
-                });
-            }
-        }
-    }
-
-    Ok(service)
-}
-
-fn build_search_service(
-    config: &MoeResearchConfig,
-    network: &Arc<dyn NetworkClient>,
-) -> Result<SearchService> {
-    let mut service = SearchService::new();
-
-    for (name, provider) in &config.search.providers {
-        if !provider.enabled {
-            continue;
-        }
-
-        let api_key = provider_api_key("search", name, provider.api_key_env.as_ref())?;
-        match name.as_str() {
-            "exa" => service.register(ExaSearchProvider::new(
-                network.clone(),
-                provider.base_url.clone(),
-                api_key,
-                provider
-                    .inactivity_timeout_ms
-                    .or(Some(config.network.inactivity_timeout_ms)),
-            )),
-            "grok" => service.register(GrokSearchProvider::with_request_options(
-                network.clone(),
-                provider.base_url.clone(),
-                api_key,
-                provider
-                    .inactivity_timeout_ms
-                    .or(Some(config.network.inactivity_timeout_ms)),
-                provider_model("search", name, provider.model.as_ref())?,
-                provider.max_output_tokens,
-                provider.reasoning_effort.map(map_grok_reasoning_effort),
-            )),
-            "tavily" => service.register(TavilySearchProvider::new(
-                network.clone(),
-                provider.base_url.clone(),
-                api_key,
-                provider
-                    .inactivity_timeout_ms
-                    .or(Some(config.network.inactivity_timeout_ms)),
-            )),
-            other => {
-                return Err(Error::ConfigInvalid {
-                    message: format!("unknown search provider `{other}`"),
-                });
-            }
-        }
-    }
-
-    Ok(service)
 }
