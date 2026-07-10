@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
 use crate::budget::BudgetConfig;
-use crate::log_safe::error_message_for_log;
+use crate::error_log_safe::error_message_for_log;
 use crate::report::{
     AgentBudgetUsage, AspectFailure, AspectReport, AspectResearchResult, Confidence,
     ConfidenceSummary, CoverageSummary, DeepResearchResult, Evidence, OpenQuestion,

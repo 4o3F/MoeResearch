@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use moe_research_error::{Error, Result};
 use moe_research_model::{ModelTool, ModelToolCall};
 
-use crate::log_safe::json_error_message_for_log;
+use crate::error_log_safe::json_error_message_for_log;
 use crate::policy::{SearchCategory, SearchContentLevel, SearchDepth, SearchRecency};
 use crate::research::AspectRequest;
 
