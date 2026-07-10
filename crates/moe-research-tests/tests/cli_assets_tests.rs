@@ -289,22 +289,37 @@ fn assets_install_default_claude_code_layout_rewrites_skill_prompt_paths() {
             .join("prompts/layer2/pm-deep-research/persona-strategist.md")
             .is_file()
     );
-    assert!(skill_root.join("prompts/layer1/task-decomposition.md").is_file());
+    assert!(
+        skill_root
+            .join("prompts/layer1/task-decomposition.md")
+            .is_file()
+    );
     assert!(skill_root.join("prompts/layer1/final-report.md").is_file());
     assert!(skill_root.join("prompts/layer2/aspect-agent.md").is_file());
-    assert!(skill_root.join("prompts/layer2/search-planner.md").is_file());
-    assert!(skill_root.join("prompts/layer2/evidence-extractor.md").is_file());
+    assert!(
+        skill_root
+            .join("prompts/layer2/search-planner.md")
+            .is_file()
+    );
+    assert!(
+        skill_root
+            .join("prompts/layer2/evidence-extractor.md")
+            .is_file()
+    );
 }
 
 #[test]
 fn packaging_allowlists_are_isomorphic() {
-    let rust_source = fs::read_to_string(workspace().join("crates/moe-research-cli/src/commands/assets.rs"))
-        .expect("read assets.rs");
-    let node_source = fs::read_to_string(workspace().join("scripts/package-research-skills-assets.mjs"))
-        .expect("read package script");
+    let rust_source =
+        fs::read_to_string(workspace().join("crates/moe-research-cli/src/commands/assets.rs"))
+            .expect("read assets.rs");
+    let node_source =
+        fs::read_to_string(workspace().join("scripts/package-research-skills-assets.mjs"))
+            .expect("read package script");
 
     let rust_files = extract_string_literals_in_const_block(&rust_source, "ALLOWED_ASSET_FILES");
-    let rust_prefixes = extract_string_literals_in_const_block(&rust_source, "ALLOWED_ASSET_PREFIXES");
+    let rust_prefixes =
+        extract_string_literals_in_const_block(&rust_source, "ALLOWED_ASSET_PREFIXES");
     let node_files = extract_string_literals_in_const_block(&node_source, "ALLOWED_FILES");
     let node_prefixes = extract_string_literals_in_const_block(&node_source, "ALLOWED_PREFIXES");
 
@@ -720,7 +735,9 @@ fn extract_string_literals_in_const_block(source: &str, const_name: &str) -> BTr
             .find('\n')
             .map_or(source.len(), |idx| absolute + idx);
         let line = &source[line_start..line_end];
-        if decl_patterns.iter().any(|pattern| line.contains(pattern.as_str()))
+        if decl_patterns
+            .iter()
+            .any(|pattern| line.contains(pattern.as_str()))
             && (line.contains('=') || line.contains(':'))
         {
             break absolute;
