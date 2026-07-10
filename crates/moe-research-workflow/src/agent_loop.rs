@@ -13,7 +13,7 @@ use crate::report::{
     AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, SourceType,
     TokenUsage,
 };
-use crate::research::{ASPECT_PROMPT_MAX_BYTES, AspectResearchRequest};
+use crate::research::{ASPECT_PROMPT_MAX_BYTES, AspectPromptInput, EffectiveAspectPlan};
 use crate::runtime_budget::{AgentBudgetGuard, ResearchBudgetGuard};
 use crate::tool_policy::{SearchToolArgs, ToolPolicyGuard};
 use crate::validator::OutputValidator;
@@ -26,31 +26,24 @@ use moe_research_model::{
 use moe_research_search::SearchService;
 use moe_research_search::{SearchRequest, SearchResponse, SearchResult};
 
-pub struct AgentRuntime<'a> {
+pub(crate) struct AgentRuntime<'a> {
     model_service: &'a ModelService,
     search_service: &'a SearchService,
-    request: &'a AspectResearchRequest,
+    request: &'a EffectiveAspectPlan,
     research_budget: Arc<ResearchBudgetGuard>,
 }
 
 #[derive(Debug)]
-pub struct AgentRuntimeOutput {
-    pub result: AspectResearchResult,
-    pub budget_usage: AgentBudgetUsage,
-    pub token_usage: Option<TokenUsage>,
+pub(crate) struct AgentRuntimeOutput {
+    pub(crate) result: AspectResearchResult,
+    pub(crate) budget_usage: AgentBudgetUsage,
+    pub(crate) token_usage: Option<TokenUsage>,
 }
 
 #[derive(Debug)]
-pub struct AgentRuntimeFailure {
-    pub error: Error,
-    pub partial_output: Option<AgentRuntimeOutput>,
-}
-
-impl AgentRuntimeOutput {
-    #[must_use]
-    pub fn into_result(self) -> AspectResearchResult {
-        self.result
-    }
+pub(crate) struct AgentRuntimeFailure {
+    pub(crate) error: Error,
+    pub(crate) partial_output: Option<AgentRuntimeOutput>,
 }
 
 struct RuntimeState {
@@ -110,10 +103,10 @@ impl RuntimeState {
 
 impl<'a> AgentRuntime<'a> {
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         model_service: &'a ModelService,
         search_service: &'a SearchService,
-        request: &'a AspectResearchRequest,
+        request: &'a EffectiveAspectPlan,
         research_budget: Arc<ResearchBudgetGuard>,
     ) -> Self {
         Self {
@@ -124,19 +117,19 @@ impl<'a> AgentRuntime<'a> {
         }
     }
 
-    pub async fn run(&self) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
+    pub(crate) async fn run(&self) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
         self.validate_inline_prompt()
             .map_err(Self::untraced_failure)?;
         let effective_budget = self.effective_budget();
         let deadline = RuntimeDeadline::new(effective_budget.timeout_ms);
         let mut budget = AgentBudgetGuard::new(effective_budget).map_err(Self::untraced_failure)?;
-        let tool_policy = ToolPolicyGuard::new(&self.request.task.aspect);
+        let tool_policy = ToolPolicyGuard::new(&self.request.task);
         let validator = OutputValidator::new(
-            &self.request.task.aspect,
-            &self.request.evidence_policy,
-            &self.request.output_policy,
+            &self.request.task,
+            &self.request.policy.evidence,
+            &self.request.policy.output,
         );
-        let search_policy = self.request.search_policy.clone();
+        let search_policy = self.request.policy.search.clone();
         let search_provider = self.selected_search_provider();
         let mut state = RuntimeState::new(self.initial_input());
 
@@ -190,10 +183,9 @@ impl<'a> AgentRuntime<'a> {
 
     /// Re-checks the inline prompt invariants before the agent loop starts.
     ///
-    /// `validate_for_execution` enforces the same invariants at the workflow
-    /// boundary, but `AgentRuntime` is a public type and is exercised
-    /// directly by tests, so this method guards the entrypoint that callers
-    /// reach without passing through the workflow validator. The check is
+    /// The request normalizer enforces the same invariants at the workflow
+    /// boundary. This method keeps the runtime entrypoint defensive because
+    /// crate-internal callers can still construct effective plans. The check is
     /// O(1) for the empty case and O(n) only on the length comparison.
     ///
     /// # Errors
@@ -201,17 +193,15 @@ impl<'a> AgentRuntime<'a> {
     /// Returns `Error::SchemaValidationFailed` when the prompt exceeds
     /// `ASPECT_PROMPT_MAX_BYTES`.
     fn validate_inline_prompt(&self) -> Result<()> {
-        let prompt = &self.request.task.aspect.aspect_agent_prompt;
+        let prompt = &self.request.task.instructions;
         if prompt.trim().is_empty() {
             return Err(Error::InvalidInput {
-                message: "aspect.aspect_agent_prompt must not be empty".to_owned(),
+                message: "task.instructions must not be empty".to_owned(),
             });
         }
         if prompt.len() > ASPECT_PROMPT_MAX_BYTES {
             return Err(Error::SchemaValidationFailed {
-                message: format!(
-                    "aspect.aspect_agent_prompt exceeds {ASPECT_PROMPT_MAX_BYTES} bytes"
-                ),
+                message: format!("task.instructions exceeds {ASPECT_PROMPT_MAX_BYTES} bytes"),
             });
         }
         Ok(())
@@ -251,14 +241,8 @@ impl<'a> AgentRuntime<'a> {
         Ok(())
     }
 
-    fn effective_budget(&self) -> crate::budget::AgentBudget {
-        let mut budget = self.request.task.budget.clone();
-        // ExecutionPolicy.timeout_ms is a `Limit<u64>`; only overwrite
-        // the agent budget when the caller pinned a finite value.
-        if let Limit::Limited(timeout_ms) = self.request.execution_policy.timeout_ms {
-            budget.timeout_ms = Limit::limited(timeout_ms);
-        }
-        budget
+    fn effective_budget(&self) -> crate::budget::AgentLimits {
+        self.request.task.limits.clone()
     }
 
     async fn complete_model_turn(
@@ -271,7 +255,7 @@ impl<'a> AgentRuntime<'a> {
         if let Err(error) = self.research_budget.try_consume_model_call() {
             tracing::warn!(
                 request_id = %self.request.request_id,
-                aspect_id = %self.request.task.aspect.aspect_id,
+                aspect_id = %self.request.task.id,
                 error_code = error.code().as_str(),
                 error_message = %error_message_for_log(&error),
                 retryable = error.retryable(),
@@ -293,7 +277,7 @@ impl<'a> AgentRuntime<'a> {
             Err(error) => {
                 tracing::warn!(
                     request_id = %self.request.request_id,
-                    aspect_id = %self.request.task.aspect.aspect_id,
+                    aspect_id = %self.request.task.id,
                     duration_ms = elapsed_ms(model_started.elapsed()),
                     error_code = error.code().as_str(),
                     error_message = %error_message_for_log(&error),
@@ -310,7 +294,7 @@ impl<'a> AgentRuntime<'a> {
         if let Err(error) = self.research_budget.record_token_usage(usage.clone()) {
             tracing::warn!(
                 request_id = %self.request.request_id,
-                aspect_id = %self.request.task.aspect.aspect_id,
+                aspect_id = %self.request.task.id,
                 error_code = error.code().as_str(),
                 error_message = %error_message_for_log(&error),
                 retryable = error.retryable(),
@@ -322,7 +306,7 @@ impl<'a> AgentRuntime<'a> {
 
         tracing::info!(
             request_id = %self.request.request_id,
-            aspect_id = %self.request.task.aspect.aspect_id,
+            aspect_id = %self.request.task.id,
             provider = %model_response.provider,
             duration_ms = model_duration,
             input_tokens = ?usage.as_ref().and_then(|usage| usage.input_tokens),
@@ -357,7 +341,7 @@ impl<'a> AgentRuntime<'a> {
             Err(error) => {
                 tracing::warn!(
                     request_id = %self.request.request_id,
-                    aspect_id = %self.request.task.aspect.aspect_id,
+                    aspect_id = %self.request.task.id,
                     tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
                     tool_name = %safe_model_identifier_for_log(&tool_call.name),
                     error_code = error.code().as_str(),
@@ -376,7 +360,7 @@ impl<'a> AgentRuntime<'a> {
             let budget_usage = budget.usage();
             tracing::warn!(
                 request_id = %self.request.request_id,
-                aspect_id = %self.request.task.aspect.aspect_id,
+                aspect_id = %self.request.task.id,
                 tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
                 tool_name = %safe_model_identifier_for_log(&tool_call.name),
                 provider = %search_provider,
@@ -395,7 +379,7 @@ impl<'a> AgentRuntime<'a> {
         if let Err(error) = self.research_budget.try_consume_search_call() {
             tracing::warn!(
                 request_id = %self.request.request_id,
-                aspect_id = %self.request.task.aspect.aspect_id,
+                aspect_id = %self.request.task.id,
                 tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
                 tool_name = %safe_model_identifier_for_log(&tool_call.name),
                 provider = %search_provider,
@@ -410,10 +394,10 @@ impl<'a> AgentRuntime<'a> {
 
         let max_results = args
             .max_results
-            .unwrap_or(self.request.search_policy.max_results_per_query);
+            .unwrap_or(self.request.policy.search.max_results_per_query);
         tracing::debug!(
             request_id = %self.request.request_id,
-            aspect_id = %self.request.task.aspect.aspect_id,
+            aspect_id = %self.request.task.id,
             tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
             tool_name = %safe_model_identifier_for_log(&tool_call.name),
             provider = %search_provider,
@@ -432,7 +416,7 @@ impl<'a> AgentRuntime<'a> {
             Err(error) => {
                 tracing::warn!(
                     request_id = %self.request.request_id,
-                    aspect_id = %self.request.task.aspect.aspect_id,
+                    aspect_id = %self.request.task.id,
                     provider = %search_provider,
                     duration_ms = elapsed_ms(search_started.elapsed()),
                     error_code = error.code().as_str(),
@@ -449,7 +433,7 @@ impl<'a> AgentRuntime<'a> {
 
         tracing::info!(
             request_id = %self.request.request_id,
-            aspect_id = %self.request.task.aspect.aspect_id,
+            aspect_id = %self.request.task.id,
             provider = %response.provider,
             result_count,
             duration_ms = search_duration,
@@ -466,7 +450,7 @@ impl<'a> AgentRuntime<'a> {
         );
         tracing::debug!(
             request_id = %self.request.request_id,
-            aspect_id = %self.request.task.aspect.aspect_id,
+            aspect_id = %self.request.task.id,
             tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
             tool_name = %safe_model_identifier_for_log(&tool_call.name),
             provider = %response.provider,
@@ -497,7 +481,7 @@ impl<'a> AgentRuntime<'a> {
                     event = "agent_finish_failed",
                     status = "failed",
                     request_id = %self.request.request_id,
-                    aspect_id = %self.request.task.aspect.aspect_id,
+                    aspect_id = %self.request.task.id,
                     turns_used = budget_usage.turns_used,
                     tool_calls_used = budget_usage.tool_calls_used,
                     search_calls_used = budget_usage.search_calls_used,
@@ -516,7 +500,7 @@ impl<'a> AgentRuntime<'a> {
             event = "agent_runtime_completed",
             status = "ok",
             request_id = %self.request.request_id,
-            aspect_id = %self.request.task.aspect.aspect_id,
+            aspect_id = %self.request.task.id,
             turns_used = budget_usage.turns_used,
             tool_calls_used = budget_usage.tool_calls_used,
             search_calls_used = budget_usage.search_calls_used,
@@ -533,7 +517,7 @@ impl<'a> AgentRuntime<'a> {
     }
 
     /// Builds the initial agent input: the inline aspect-agent system prompt
-    /// followed by the user prompt derived from the request payload.
+    /// followed by the narrow user-prompt projection.
     fn initial_input(&self) -> Vec<ModelInputItem> {
         vec![
             ModelInputItem::message(ModelMessageRole::System, self.system_prompt().to_owned()),
@@ -544,16 +528,17 @@ impl<'a> AgentRuntime<'a> {
     /// Returns the Layer 2 aspect-agent system prompt supplied inline by Layer 1.
     ///
     /// No filesystem IO is performed here; the string is taken verbatim from
-    /// the MCP request after schema validation has already enforced non-empty
-    /// and size-bound invariants. Eliminating runtime prompt file IO closes
+    /// the MCP request after normalization has already enforced non-empty and
+    /// size-bound invariants. Eliminating runtime prompt file IO closes
     /// the arbitrary-file-read attack surface that earlier path-based variants
     /// of this code carried.
     fn system_prompt(&self) -> &str {
-        &self.request.task.aspect.aspect_agent_prompt
+        &self.request.task.instructions
     }
 
     fn user_prompt(&self) -> String {
-        match serde_json::to_string_pretty(self.request) {
+        let prompt_input = AspectPromptInput::from(self.request);
+        match serde_json::to_string_pretty(&prompt_input) {
             Ok(request) => request,
             Err(error) => json!({ "serialization_error": error.to_string() }).to_string(),
         }
@@ -566,30 +551,23 @@ impl<'a> AgentRuntime<'a> {
         tools: Vec<moe_research_model::ModelTool>,
     ) -> Result<ModelResponse> {
         let request = ModelRequest {
-            provider: self
-                .request
-                .task
-                .aspect
-                .model_provider
-                .clone()
-                .unwrap_or_default(),
+            provider: self.request.task.model_provider.clone(),
             model: None,
             previous_response_id,
             input,
             tools,
             response_format: Some(aspect_response_format()),
-            temperature: self.request.model_policy.temperature,
-            max_tokens: self.request.model_policy.max_tokens,
+            temperature: self.request.policy.model.temperature,
+            max_tokens: self.request.policy.model.max_tokens,
         };
         self.model_service
-            .complete(self.request.model_policy.apply_to(request)?)
+            .complete(self.request.policy.model.apply_to(request)?)
             .await
     }
 
     fn selected_search_provider(&self) -> Option<String> {
         self.request
             .task
-            .aspect
             .search_provider
             .clone()
             .filter(|provider| !provider.trim().is_empty())
@@ -601,7 +579,7 @@ impl<'a> AgentRuntime<'a> {
         args: &SearchToolArgs,
         max_results: usize,
     ) -> SearchRequest {
-        let policy = &self.request.search_policy;
+        let policy = &self.request.policy.search;
         let mut request = SearchRequest::new(
             provider,
             &args.query,
@@ -692,10 +670,10 @@ impl<'a> AgentRuntime<'a> {
         Some(AgentRuntimeOutput {
             result: AspectResearchResult {
                 aspect_report: AspectReport {
-                    aspect_id: self.request.task.aspect.aspect_id.clone(),
-                    aspect_name: self.request.task.aspect.name.clone(),
-                    question: self.request.task.aspect.research_question.clone(),
-                    scope: self.request.task.aspect.scope.clone(),
+                    aspect_id: self.request.task.id.clone(),
+                    aspect_name: self.request.task.name.clone(),
+                    question: self.request.task.question.clone(),
+                    scope: self.request.task.scope.clone(),
                     findings: Vec::new(),
                     assumptions: Vec::new(),
                     risks: Vec::new(),
@@ -740,7 +718,7 @@ impl<'a> AgentRuntime<'a> {
             event = "agent_runtime_failed",
             status = "failed",
             request_id = %self.request.request_id,
-            aspect_id = %self.request.task.aspect.aspect_id,
+            aspect_id = %self.request.task.id,
             turns_used = budget_usage.turns_used,
             tool_calls_used = budget_usage.tool_calls_used,
             search_calls_used = budget_usage.search_calls_used,

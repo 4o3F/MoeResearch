@@ -27,7 +27,7 @@ Use this profile for evidence-backed library/framework selection, architecture e
 1. Classify the technical capability and decision intent.
 2. Read `../prompts/layer1/technical-evaluation/task-decomposition.md` and produce a `DeepResearchRequest`.
 3. Use `../prompts/layer1/technical-evaluation/agent-allocation.md` to assign personas.
-4. Pass selected persona Markdown inline as `AspectSpec.aspect_agent_prompt`.
+4. Pass selected persona Markdown inline as each `AspectRequest.instructions` value.
 5. Call `deep_research` for multi-aspect evaluation or `aspect_research` for one focused retry.
 6. Apply common evidence modules from `../prompts/layer1/common/`.
 7. Synthesize with the final-report prompt matching the capability.

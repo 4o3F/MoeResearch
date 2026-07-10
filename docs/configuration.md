@@ -160,14 +160,14 @@ Fields:
 | `retry_backoff_ms` | Backoff base in milliseconds. |
 | `user_agent` | HTTP user-agent value. Must be non-empty and valid as a header value. |
 
-`network.inactivity_timeout_ms` is an outbound provider inactivity timeout, not a total MCP tool duration. For `aspect_research`, set the outer MCP/client timeout higher than the effective aspect deadline (`execution_policy.timeout_ms` when finite, otherwise `task.budget.timeout_ms`) plus provider retry/backoff slack. For `deep_research`, size the outer timeout against the full research deadline (`budget.total_timeout_ms` when finite, otherwise your chosen operational cap), not just the per-aspect execution timeout. If the outer client aborts earlier, it may miss a later `ok` or `partial` envelope.
+`network.inactivity_timeout_ms` is an outbound provider inactivity timeout, not a total MCP tool duration. For `aspect_research`, set the outer MCP/client timeout higher than the effective aspect deadline (`task.limits.timeout_ms` when finite) plus provider retry/backoff slack. For `deep_research`, size the outer timeout against the full research deadline (`limits.total_timeout_ms` when finite, otherwise your chosen operational cap), not just the per-aspect timeout. If the outer client aborts earlier, it may miss a later `ok` or `partial` envelope.
 
-## 6. Budget settings
+## 6. Limits settings
 
-`moeresearch.example.toml` defines budget limits at two levels: global research and per-agent execution.
+`moeresearch.example.toml` defines operator limits at two levels: global research and per-agent execution.
 
 ```toml
-[budget.research]
+[limits.research]
 max_agents = -1
 max_concurrent_agents = -1
 max_total_model_calls = -1
@@ -175,7 +175,7 @@ max_total_search_calls = -1
 total_timeout_ms = -1
 max_tokens = -1
 
-[budget.per_agent]
+[limits.per_agent]
 max_turns = -1
 max_tool_calls = -1
 max_search_calls = -1
@@ -185,9 +185,9 @@ timeout_ms = -1
 Rules:
 
 - `-1` means unlimited.
-- Values other than `-1` must be positive where a runnable budget is required.
+- Values other than `-1` must be positive where a runnable limit is required.
 - `max_concurrent_agents` must not exceed `max_agents` when both are finite.
-- Request budgets passed through MCP must not exceed these configured limits.
+- Request limits passed through MCP must not exceed these configured limits.
 - Production deployments should use explicit limits instead of unlimited values.
 
 ## 7. Logging
@@ -211,7 +211,7 @@ Use `RUST_LOG` to adjust log levels:
 RUST_LOG=moe_research=debug moeresearch serve --config moeresearch.toml --log-format pretty
 ```
 
-Logs are written to stderr so stdout remains available for MCP protocol messages. Startup logs include safe operator diagnostics such as binary version, OS/arch, pid/ppid, parent process name when available, config source, enabled provider names, network retry settings, and budget summary. They do not include provider keys, environment variable values, or full parent command lines.
+Logs are written to stderr so stdout remains available for MCP protocol messages. Startup logs include safe operator diagnostics such as binary version, OS/arch, pid/ppid, parent process name when available, config source, enabled provider names, network retry settings, and operator limits summary in `operator_limits_research` and `operator_limits_per_agent`. They do not include provider keys, environment variable values, or full parent command lines.
 
 For schema and workflow debugging, enable debug logs for the workflow and provider layers:
 

@@ -15,7 +15,7 @@
 职责范围：
 
 - 读取 TOML 配置文件。
-- 验证网络配置、budget 配置、provider 配置结构。
+- 验证网络配置、limits 配置、provider 配置结构。
 - 拒绝未知 provider、未知字段、非法超时、非法环境变量名。
 - 保证启用 provider 必须设置且能读取 `api_key_env` 对应环境变量。
 - 用 `-1` 或 `null` 表达 unlimited limit。
@@ -35,7 +35,7 @@
 - `LoggingConfig`, `NetworkConfig`
 - `ModelProviderRegistry`, `ModelProviderEndpoint`
 - `SearchProviderRegistry`, `SearchProviderEndpoint`
-- `BudgetConfig`, `ResearchBudgetConfig`, `AgentBudgetConfig`
+- `LimitsConfig`, `ResearchLimitsConfig`, `AgentLimitsConfig`
 - `ConfigLimit`, `CountLimit`, `DurationLimitMs`, `TokenLimit`
 - `GrokReasoningEffort`
 - `EnabledProviderEnv`
@@ -58,7 +58,7 @@
 
 - `NetworkConfig.timeout_ms` 必须大于 0。
 - `NetworkConfig.user_agent` 必须非空且能作为 HTTP header value。
-- `BudgetConfig.research.max_concurrent_agents` 不能超过 `max_agents`。
+- `LimitsConfig.research.max_concurrent_agents` 不能超过 `max_agents`。
 - `ConfigLimit<T>` 序列化为整数：`-1` 表示 unlimited，非负整数表示有限值。
 - `api_key_env` 必须是合法环境变量名，启用 provider 时该变量必须存在。
 
@@ -74,7 +74,7 @@
 - 网络超时、user-agent、retry 值。
 - 禁止明文 `api_key`。
 - provider-specific 字段规则。
-- unlimited budget wire format。
+- unlimited limits wire format。
 - enabled provider 缺少环境变量或 model。
 
 建议验证：

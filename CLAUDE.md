@@ -127,7 +127,7 @@ cargo test -p moe-research-tests
 - Rust 2024 edition，workspace resolver 为 `3`。
 - `moe-research-cli/src/main.rs` 启用 `#![warn(clippy::pedantic)]`，局部允许长函数或文档缺口。
 - 优先小改动、显式命名、显式错误处理，避免无关重构。
-- 资源限制必须来自配置或请求预算，不应引入隐藏硬编码策略上限。
+- 资源限制必须来自配置或请求 `limits`，不应引入隐藏硬编码策略上限。
 - 搜索调用一次只选择一个 provider，不做每次调用聚合或 fallback。
 - 只有 MCP stdio 使用 stdin/stdout；运行时日志写入 stderr/tracing。
 - 不要把 API key、Authorization、cookie、JWT、provider 原始响应体写入普通输出。

@@ -14,13 +14,14 @@ use moe_research_search::SearchProvider;
 use moe_research_search::SearchService;
 use moe_research_search::{SearchRequest, SearchResponse, SearchResult};
 use moe_research_workflow::Limit;
-use moe_research_workflow::{AgentBudget, BudgetConfig, ResearchBudget};
+use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
 use moe_research_workflow::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
     OpenQuestion, TokenUsage,
 };
 use moe_research_workflow::{
-    AspectResearchRequest, AspectResearchTask, AspectSpec, DeepResearchRequest, ResearchContext,
+    AspectRequest, AspectResearchRequest, DeepResearchRequest, ResearchContext, ResearchPolicy,
+    ResearchTask,
 };
 use moe_research_workflow::{
     EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
@@ -104,8 +105,8 @@ impl SearchProvider for StaticSearchProvider {
 
 pub fn unlimited_budget_config() -> BudgetConfig {
     BudgetConfig {
-        research: ResearchBudget::unlimited(),
-        per_agent: AgentBudget::unlimited(),
+        research: ResearchLimits::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     }
 }
 
@@ -163,28 +164,23 @@ pub fn static_search_service(search_calls: Arc<AtomicUsize>) -> SearchService {
 
 pub fn aspect_request() -> AspectResearchRequest {
     AspectResearchRequest {
-        schema_version: "0.1".to_owned(),
+        schema_version: "0.2".to_owned(),
         request_id: "request-1".to_owned(),
-        task: AspectResearchTask {
-            aspect: aspect(1),
-            budget: AgentBudget::unlimited(),
-        },
-        shared_context: ResearchContext::empty(),
-        model_policy: model_policy(),
-        search_policy: search_policy(),
-        evidence_policy: evidence_policy(),
-        output_policy: output_policy(),
-        execution_policy: execution_policy(Some(180_000)),
+        task: aspect(1),
+        policy: research_policy(),
+        context: ResearchContext::empty(),
     }
 }
 
 pub fn deep_request(count: usize) -> DeepResearchRequest {
     DeepResearchRequest {
-        schema_version: "0.1".to_owned(),
+        schema_version: "0.2".to_owned(),
         request_id: "request-1".to_owned(),
-        user_question: "What is true?".to_owned(),
-        aspect_tasks: (1..=count).map(aspect_task).collect(),
-        budget: ResearchBudget {
+        task: ResearchTask {
+            question: "What is true?".to_owned(),
+            aspects: (1..=count).map(aspect).collect(),
+        },
+        limits: ResearchLimits {
             max_agents: Limit::limited(count),
             max_concurrent_agents: Limit::limited(2),
             max_total_model_calls: Limit::limited(20),
@@ -192,12 +188,8 @@ pub fn deep_request(count: usize) -> DeepResearchRequest {
             total_timeout_ms: Limit::limited(180_000),
             max_tokens: Limit::unlimited(),
         },
-        model_policy: model_policy(),
-        search_policy: search_policy(),
-        evidence_policy: evidence_policy(),
-        output_policy: output_policy(),
-        shared_context: ResearchContext::empty(),
-        execution_policy: execution_policy(Some(180_000)),
+        policy: research_policy(),
+        context: ResearchContext::empty(),
     }
 }
 
@@ -249,8 +241,8 @@ pub fn first_evidence_from_tool_output(input: &[ModelInputItem]) -> Evidence {
 
 pub fn aspect_field(input: &[ModelInputItem], label: &str) -> String {
     let pointer = match label {
-        "Aspect ID" => "/task/aspect/aspect_id",
-        "Aspect name" => "/task/aspect/name",
+        "Aspect ID" => "/aspect/id",
+        "Aspect name" => "/aspect/name",
         _ => return String::new(),
     };
 
@@ -278,6 +270,16 @@ pub fn aspect_field(input: &[ModelInputItem], label: &str) -> String {
                 })
         })
         .unwrap_or_default()
+}
+
+fn research_policy() -> ResearchPolicy {
+    ResearchPolicy {
+        model: model_policy(),
+        search: search_policy(),
+        evidence: evidence_policy(),
+        output: output_policy(),
+        execution: execution_policy(),
+    }
 }
 
 fn model_policy() -> ModelPolicy {
@@ -319,34 +321,32 @@ fn output_policy() -> OutputPolicy {
     }
 }
 
-fn execution_policy(timeout_ms: Option<u64>) -> ExecutionPolicy {
+fn execution_policy() -> ExecutionPolicy {
     ExecutionPolicy {
         allow_partial_results: true,
         fail_fast: false,
-        timeout_ms: timeout_ms.map_or(Limit::unlimited(), Limit::limited),
     }
 }
 
-fn aspect(index: usize) -> AspectSpec {
-    AspectSpec {
-        aspect_id: format!("aspect-{index}"),
+fn aspect(index: usize) -> AspectRequest {
+    AspectRequest {
+        id: format!("aspect-{index}"),
         name: format!("Aspect {index}"),
         role: "researcher".to_owned(),
-        research_question: format!("Question {index}?"),
+        question: format!("Question {index}?"),
         scope: vec!["scope".to_owned()],
         boundaries: vec![],
         success_criteria: vec!["answer".to_owned()],
-        aspect_agent_prompt: "# Aspect Agent\n\nDummy aspect agent prompt for tests.\n".to_owned(),
-        allowed_tools: vec![ToolName("search".to_owned())],
-        model_provider: Some("model".to_owned()),
+        instructions: "# Aspect Agent\n\nDummy aspect agent prompt for tests.\n".to_owned(),
+        tools: vec![ToolName("search".to_owned())],
+        model_provider: "model".to_owned(),
         search_provider: Some("searcher".to_owned()),
-    }
-}
-
-fn aspect_task(index: usize) -> AspectResearchTask {
-    AspectResearchTask {
-        aspect: aspect(index),
-        budget: AgentBudget::unlimited(),
+        limits: AgentLimits {
+            max_turns: Limit::limited(8),
+            max_tool_calls: Limit::limited(12),
+            max_search_calls: Limit::limited(6),
+            timeout_ms: Limit::limited(180_000),
+        },
     }
 }
 

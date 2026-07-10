@@ -3,7 +3,6 @@ use std::collections::BTreeSet;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::limit::DurationLimitMs;
 use moe_research_error::{Error, Result};
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
@@ -34,6 +33,7 @@ impl AsRef<str> for ToolName {
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelPolicy {
     pub allowed_providers: Vec<String>,
     pub temperature: Option<f32>,
@@ -47,6 +47,7 @@ pub use moe_research_search::{
 };
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SearchPolicy {
     pub allowed_providers: Vec<String>,
     #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
@@ -190,6 +191,7 @@ impl SearchPolicy {
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct EvidencePolicy {
     pub require_evidence_for_findings: bool,
     #[schemars(schema_with = "crate::limit::non_negative_integer_schema")]
@@ -197,6 +199,7 @@ pub struct EvidencePolicy {
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct OutputPolicy {
     pub language: String,
     #[schemars(schema_with = "crate::limit::optional_non_negative_integer_schema")]
@@ -204,13 +207,8 @@ pub struct OutputPolicy {
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionPolicy {
     pub allow_partial_results: bool,
     pub fail_fast: bool,
-    /// Per-call execution deadline. Promoted from `Option<u64>` to
-    /// [`DurationLimitMs`] so callers can express "unlimited" with the
-    /// same `-1` sentinel that [`AgentBudget`] and [`BudgetConfig`]
-    /// accept, instead of mixing two encodings for the same concept.
-    #[serde(default = "DurationLimitMs::unlimited")]
-    pub timeout_ms: DurationLimitMs,
 }

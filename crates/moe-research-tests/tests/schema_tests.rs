@@ -1,11 +1,12 @@
 use moe_research_model::{ModelInputItem, ModelMessageRole, ModelRequest};
-use moe_research_workflow::{AgentBudget, ResearchBudget};
+use moe_research_workflow::{AgentLimits, ResearchLimits};
 use moe_research_workflow::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
     SourceType,
 };
 use moe_research_workflow::{
-    AspectResearchRequest, AspectResearchTask, AspectSpec, DeepResearchRequest, ResearchContext,
+    AspectRequest, AspectResearchRequest, DeepResearchRequest, ResearchContext, ResearchPolicy,
+    ResearchTask,
 };
 use moe_research_workflow::{CountLimit, DurationLimitMs, Limit};
 use moe_research_workflow::{
@@ -15,19 +16,20 @@ use moe_research_workflow::{
 use schemars::schema_for;
 use serde_json::{Value, json};
 
-fn aspect() -> AspectSpec {
-    AspectSpec {
-        aspect_id: "market".to_owned(),
+fn aspect() -> AspectRequest {
+    AspectRequest {
+        id: "market".to_owned(),
         name: "Market".to_owned(),
         role: "researcher".to_owned(),
-        research_question: "What changed?".to_owned(),
+        question: "What changed?".to_owned(),
         scope: vec!["market sizing".to_owned()],
         boundaries: vec!["no private data".to_owned()],
         success_criteria: vec!["evidence-backed findings".to_owned()],
-        aspect_agent_prompt: aspect_prompt(),
-        allowed_tools: vec![ToolName("search".to_owned())],
-        model_provider: Some("openai".to_owned()),
+        instructions: aspect_prompt(),
+        tools: vec![ToolName("search".to_owned())],
+        model_provider: "openai".to_owned(),
         search_provider: Some("exa".to_owned()),
+        limits: AgentLimits::unlimited(),
     }
 }
 
@@ -93,70 +95,71 @@ fn output_policy() -> OutputPolicy {
     }
 }
 
-fn execution_policy(timeout_ms: Option<u64>) -> ExecutionPolicy {
+fn execution_policy() -> ExecutionPolicy {
     ExecutionPolicy {
         allow_partial_results: true,
         fail_fast: false,
-        timeout_ms: timeout_ms.map_or(Limit::unlimited(), Limit::limited),
+    }
+}
+
+fn research_policy(
+    allowed_model_providers: &[&str],
+    allowed_search_providers: &[&str],
+) -> ResearchPolicy {
+    ResearchPolicy {
+        model: model_policy(allowed_model_providers),
+        search: search_policy(allowed_search_providers),
+        evidence: evidence_policy(),
+        output: output_policy(),
+        execution: execution_policy(),
     }
 }
 
 #[test]
 fn deep_research_request_roundtrips_plan_fields_json() {
     let request = DeepResearchRequest {
-        schema_version: "0.1".to_owned(),
+        schema_version: "0.2".to_owned(),
         request_id: "request-1".to_owned(),
-        user_question: "What should MoeResearch build first?".to_owned(),
-        aspect_tasks: vec![AspectResearchTask {
-            aspect: AspectSpec {
-                aspect_id: "schema".to_owned(),
+        task: ResearchTask {
+            question: "What should MoeResearch build first?".to_owned(),
+            aspects: vec![AspectRequest {
+                id: "schema".to_owned(),
                 name: "Schema".to_owned(),
                 role: "contract reviewer".to_owned(),
-                research_question: "Are contracts stable?".to_owned(),
+                question: "Are contracts stable?".to_owned(),
                 scope: vec!["schema".to_owned()],
                 boundaries: vec![],
                 success_criteria: vec!["roundtrip".to_owned()],
-                aspect_agent_prompt: aspect_prompt(),
-                allowed_tools: vec![ToolName("search".to_owned())],
-                model_provider: Some("openai".to_owned()),
+                instructions: aspect_prompt(),
+                tools: vec![ToolName("search".to_owned())],
+                model_provider: "openai".to_owned(),
                 search_provider: Some("exa".to_owned()),
-            },
-            budget: AgentBudget::unlimited(),
-        }],
-        budget: ResearchBudget::unlimited(),
-        model_policy: model_policy(&["openai"]),
-        search_policy: search_policy(&["exa"]),
-        evidence_policy: evidence_policy(),
-        output_policy: output_policy(),
-        shared_context: ResearchContext::empty(),
-        execution_policy: execution_policy(Some(300_000)),
+                limits: AgentLimits::unlimited(),
+            }],
+        },
+        limits: ResearchLimits::unlimited(),
+        policy: research_policy(&["openai"], &["exa"]),
+        context: ResearchContext::empty(),
     };
 
     let value = serde_json::to_string(&request).expect("serialize request");
     let decoded: DeepResearchRequest = serde_json::from_str(&value).expect("deserialize request");
 
-    assert_eq!(decoded.user_question, request.user_question);
-    assert_eq!(decoded.aspect_tasks[0].aspect.role, "contract reviewer");
+    assert_eq!(decoded.task.question, request.task.question);
+    assert_eq!(decoded.task.aspects[0].role, "contract reviewer");
 }
 
 #[test]
 fn aspect_research_request_roundtrips_json() {
     let request = AspectResearchRequest {
-        schema_version: "0.1".to_owned(),
+        schema_version: "0.2".to_owned(),
         request_id: "req-1".to_owned(),
-        task: AspectResearchTask {
-            aspect: aspect(),
-            budget: AgentBudget::unlimited(),
-        },
-        shared_context: ResearchContext {
+        task: aspect(),
+        context: ResearchContext {
             summary: "shared context".to_owned(),
             ..ResearchContext::empty()
         },
-        model_policy: model_policy(&["openai"]),
-        search_policy: search_policy(&["exa"]),
-        evidence_policy: evidence_policy(),
-        output_policy: output_policy(),
-        execution_policy: execution_policy(Some(300_000)),
+        policy: research_policy(&["openai"], &["exa"]),
     };
 
     let value = serde_json::to_string(&request).expect("serialize request");
@@ -173,12 +176,96 @@ fn aspect_and_deep_research_request_schemas_remain_distinct() {
         serde_json::to_value(schema_for!(DeepResearchRequest)).expect("deep request schema");
 
     assert!(aspect_schema.pointer("/properties/task").is_some());
-    assert!(aspect_schema.pointer("/properties/aspect_tasks").is_none());
+    assert!(aspect_schema.pointer("/properties/limits").is_none());
     assert!(aspect_schema.pointer("/properties/user_question").is_none());
+    assert!(aspect_schema.pointer("/properties/aspect_tasks").is_none());
 
-    assert!(deep_schema.pointer("/properties/aspect_tasks").is_some());
-    assert!(deep_schema.pointer("/properties/user_question").is_some());
-    assert!(deep_schema.pointer("/properties/task").is_none());
+    assert!(deep_schema.pointer("/properties/task").is_some());
+    assert!(deep_schema.pointer("/properties/limits").is_some());
+    assert!(deep_schema.pointer("/properties/user_question").is_none());
+    assert!(deep_schema.pointer("/properties/aspect_tasks").is_none());
+}
+
+#[test]
+fn deep_research_request_rejects_removed_execution_timeout_policy_field() {
+    let mut value = serde_json::to_value(DeepResearchRequest {
+        schema_version: "0.2".to_owned(),
+        request_id: "request-1".to_owned(),
+        task: ResearchTask {
+            question: "What should MoeResearch build first?".to_owned(),
+            aspects: vec![aspect()],
+        },
+        limits: ResearchLimits::unlimited(),
+        policy: research_policy(&["openai"], &["exa"]),
+        context: ResearchContext::empty(),
+    })
+    .expect("request json");
+
+    value
+        .pointer_mut("/policy/execution")
+        .expect("execution policy")
+        .as_object_mut()
+        .expect("execution policy object")
+        .insert("timeout_ms".to_owned(), json!(600_000));
+
+    let error = serde_json::from_value::<DeepResearchRequest>(value)
+        .expect_err("removed execution timeout must be rejected");
+
+    assert!(error.to_string().contains("timeout_ms"));
+}
+
+#[test]
+fn deep_research_request_rejects_unknown_nested_policy_fields() {
+    let mut value = serde_json::to_value(DeepResearchRequest {
+        schema_version: "0.2".to_owned(),
+        request_id: "request-1".to_owned(),
+        task: ResearchTask {
+            question: "What should MoeResearch build first?".to_owned(),
+            aspects: vec![aspect()],
+        },
+        limits: ResearchLimits::unlimited(),
+        policy: research_policy(&["openai"], &["exa"]),
+        context: ResearchContext::empty(),
+    })
+    .expect("request json");
+
+    value
+        .pointer_mut("/policy/search")
+        .expect("search policy")
+        .as_object_mut()
+        .expect("search policy object")
+        .insert("maxAgeHours".to_owned(), json!(24));
+
+    let error = serde_json::from_value::<DeepResearchRequest>(value)
+        .expect_err("provider-native search fields must be rejected");
+
+    assert!(error.to_string().contains("maxAgeHours"));
+}
+
+#[test]
+fn deep_research_request_rejects_old_flattened_policy_blocks() {
+    let mut value = serde_json::to_value(DeepResearchRequest {
+        schema_version: "0.2".to_owned(),
+        request_id: "request-1".to_owned(),
+        task: ResearchTask {
+            question: "What should MoeResearch build first?".to_owned(),
+            aspects: vec![aspect()],
+        },
+        limits: ResearchLimits::unlimited(),
+        policy: research_policy(&["openai"], &["exa"]),
+        context: ResearchContext::empty(),
+    })
+    .expect("request json");
+
+    value
+        .as_object_mut()
+        .expect("request object")
+        .insert("model_policy".to_owned(), json!({}));
+
+    let error = serde_json::from_value::<DeepResearchRequest>(value)
+        .expect_err("old flattened policy blocks must be rejected");
+
+    assert!(error.to_string().contains("model_policy"));
 }
 
 #[test]
@@ -226,8 +313,8 @@ fn model_message_role_uses_snake_case() {
 }
 
 #[test]
-fn research_budget_accepts_minus_one_as_unlimited() {
-    let budget: ResearchBudget = serde_json::from_value(serde_json::json!({
+fn research_limits_accepts_minus_one_as_unlimited() {
+    let limits: ResearchLimits = serde_json::from_value(serde_json::json!({
         "max_agents": -1,
         "max_concurrent_agents": -1,
         "max_total_model_calls": -1,
@@ -235,19 +322,19 @@ fn research_budget_accepts_minus_one_as_unlimited() {
         "total_timeout_ms": -1,
         "max_tokens": -1
     }))
-    .expect("unlimited research budget");
+    .expect("unlimited research limits");
 
-    assert!(budget.max_agents.is_unlimited());
-    assert!(budget.max_concurrent_agents.is_unlimited());
-    assert!(budget.max_total_model_calls.is_unlimited());
-    assert!(budget.max_total_search_calls.is_unlimited());
-    assert!(budget.total_timeout_ms.is_unlimited());
-    assert!(budget.max_tokens.is_unlimited());
+    assert!(limits.max_agents.is_unlimited());
+    assert!(limits.max_concurrent_agents.is_unlimited());
+    assert!(limits.max_total_model_calls.is_unlimited());
+    assert!(limits.max_total_search_calls.is_unlimited());
+    assert!(limits.total_timeout_ms.is_unlimited());
+    assert!(limits.max_tokens.is_unlimited());
 }
 
 #[test]
-fn budget_defaults_are_unlimited() {
-    let research = ResearchBudget::unlimited();
+fn limits_defaults_are_unlimited() {
+    let research = ResearchLimits::unlimited();
     assert!(research.max_agents.is_unlimited());
     assert!(research.max_concurrent_agents.is_unlimited());
     assert!(research.max_total_model_calls.is_unlimited());
@@ -255,7 +342,7 @@ fn budget_defaults_are_unlimited() {
     assert!(research.total_timeout_ms.is_unlimited());
     assert!(research.max_tokens.is_unlimited());
 
-    let agent = AgentBudget::unlimited();
+    let agent = AgentLimits::unlimited();
     assert!(agent.max_turns.is_unlimited());
     assert!(agent.max_tool_calls.is_unlimited());
     assert!(agent.max_search_calls.is_unlimited());
@@ -430,36 +517,32 @@ fn search_policy_schema_contains_provider_neutral_search_params_only() {
 }
 
 /// The Layer 1 task-decomposition example MUST deserialize cleanly into a
-/// `DeepResearchRequest`, including the inline aspect prompt, snake_case
-/// `allowed_tools`, structured per-aspect budget, and the `max_tokens`
-/// budget dimension.
+/// `DeepResearchRequest`, including inline aspect instructions, snake_case
+/// `tools`, structured per-aspect limits, and the `max_tokens` limit dimension.
 #[test]
 fn layer1_task_decomposition_fixture_deserializes_to_deep_research_request() {
     let fixture = include_str!("../fixtures/prompts/task_decomposition_valid.json");
     let request: DeepResearchRequest =
         serde_json::from_str(fixture).expect("task-decomposition fixture must deserialize");
 
-    assert_eq!(request.search_policy.depth, Some(SearchDepth::Balanced));
+    assert_eq!(request.policy.search.depth, Some(SearchDepth::Balanced));
     assert_eq!(
-        request.search_policy.content_level,
+        request.policy.search.content_level,
         Some(SearchContentLevel::Standard)
     );
-    assert_eq!(request.search_policy.recency, Some(SearchRecency::Default));
+    assert_eq!(request.policy.search.recency, Some(SearchRecency::Default));
 
-    let aspect = &request.aspect_tasks[0].aspect;
-    assert_eq!(aspect.allowed_tools[0].as_str(), "search");
-    assert!(!aspect.aspect_agent_prompt.is_empty());
+    let aspect = &request.task.aspects[0];
+    assert_eq!(aspect.tools[0].as_str(), "search");
+    assert!(!aspect.instructions.is_empty());
     assert_eq!(aspect.search_provider.as_deref(), Some("exa"));
-    assert!(matches!(
-        request.aspect_tasks[0].budget.max_turns,
-        Limit::Limited(_)
-    ));
-    assert!(matches!(request.budget.max_tokens, Limit::Unlimited));
-    assert!(request.aspect_tasks.iter().all(|task| {
-        !request
-            .execution_policy
+    assert!(matches!(aspect.limits.max_turns, Limit::Limited(_)));
+    assert!(matches!(request.limits.max_tokens, Limit::Unlimited));
+    assert!(request.task.aspects.iter().all(|aspect| {
+        !aspect
+            .limits
             .timeout_ms
-            .exceeds(task.budget.timeout_ms)
+            .exceeds(request.limits.total_timeout_ms)
     }));
 }
 
@@ -472,12 +555,9 @@ fn direct_mcp_payload_fixtures_deserialize_without_wrappers() {
     let aspect: AspectResearchRequest =
         serde_json::from_str(aspect_fixture).expect("aspect direct payload must deserialize");
 
-    assert_eq!(aspect.schema_version, "0.1");
-    assert!(aspect.task.aspect.aspect_agent_prompt.starts_with('#'));
-    assert_eq!(
-        aspect.execution_policy.timeout_ms,
-        aspect.task.budget.timeout_ms
-    );
+    assert_eq!(aspect.schema_version, "0.2");
+    assert!(aspect.task.instructions.starts_with('#'));
+    assert!(aspect.policy.execution.allow_partial_results);
 
     let deep_fixture = include_str!("../fixtures/mcp/deep_research_direct_payload.json");
     let deep_value: Value = serde_json::from_str(deep_fixture).expect("deep fixture is valid JSON");
@@ -485,12 +565,15 @@ fn direct_mcp_payload_fixtures_deserialize_without_wrappers() {
     let deep: DeepResearchRequest =
         serde_json::from_str(deep_fixture).expect("deep direct payload must deserialize");
 
-    assert_eq!(deep.schema_version, "0.1");
-    assert!(!deep.aspect_tasks.is_empty());
-    assert!(deep.aspect_tasks.iter().all(|task| {
-        task.aspect.aspect_agent_prompt.starts_with('#')
-            && task.aspect.search_provider.is_some()
-            && deep.execution_policy.timeout_ms == task.budget.timeout_ms
+    assert_eq!(deep.schema_version, "0.2");
+    assert!(!deep.task.aspects.is_empty());
+    assert!(deep.task.aspects.iter().all(|aspect| {
+        aspect.instructions.starts_with('#')
+            && aspect.search_provider.is_some()
+            && !aspect
+                .limits
+                .timeout_ms
+                .exceeds(deep.limits.total_timeout_ms)
     }));
 }
 
@@ -548,10 +631,9 @@ fn research_profile_task_decomposition_prompts_keep_schema_boundary() {
     for (name, prompt) in prompts {
         for marker in [
             "DeepResearchRequest",
-            "aspect_agent_prompt",
-            "model_policy",
-            "search_policy",
-            "execution_policy",
+            "instructions",
+            "policy",
+            "limits",
             "timeout_ms",
         ] {
             assert!(prompt.contains(marker), "{name} prompt missing {marker}");
@@ -576,6 +658,116 @@ fn research_profile_task_decomposition_prompts_keep_schema_boundary() {
             lower.contains("provider-native"),
             "{name} prompt must forbid provider-native request fields"
         );
+    }
+}
+
+#[test]
+fn layer1_task_decomposition_prompts_do_not_emit_removed_request_fields() {
+    let prompts = [
+        (
+            "generic",
+            include_str!("../../../prompts/layer1/task-decomposition.md"),
+        ),
+        (
+            "pm-competitive",
+            include_str!("../../../prompts/layer1/pm-deep-research/task-decomposition.md"),
+        ),
+        (
+            "pm-product-capability",
+            include_str!(
+                "../../../prompts/layer1/pm-deep-research/task-decomposition-product-capability.md"
+            ),
+        ),
+        (
+            "pm-innovation-direction",
+            include_str!(
+                "../../../prompts/layer1/pm-deep-research/task-decomposition-innovation-direction.md"
+            ),
+        ),
+        (
+            "pm-product-requirements",
+            include_str!(
+                "../../../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md"
+            ),
+        ),
+        (
+            "academic",
+            include_str!("../../../prompts/layer1/academic-deep-research/task-decomposition.md"),
+        ),
+        (
+            "technical",
+            include_str!("../../../prompts/layer1/technical-evaluation/task-decomposition.md"),
+        ),
+    ];
+
+    for (name, prompt) in prompts {
+        for marker in [
+            "\"user_question\"",
+            "\"aspect_tasks\"",
+            "\"aspect_agent_prompt\"",
+            "\"allowed_tools\"",
+            "\"shared_context\"",
+            "\"model_policy\"",
+            "\"search_policy\"",
+            "\"evidence_policy\"",
+            "\"output_policy\"",
+            "\"execution_policy\"",
+            "\"budget\"",
+            "budget_preset",
+            "execution_policy.timeout_ms",
+            "schema_version=\"0.1\"",
+            "schema_version\": \"0.1\"",
+        ] {
+            assert!(!prompt.contains(marker), "{name} prompt leaked {marker}");
+        }
+    }
+}
+
+#[test]
+fn layer1_agent_allocation_prompts_do_not_reference_removed_prompt_fields() {
+    let prompts = [
+        (
+            "academic",
+            include_str!("../../../prompts/layer1/academic-deep-research/agent-allocation.md"),
+        ),
+        (
+            "technical",
+            include_str!("../../../prompts/layer1/technical-evaluation/agent-allocation.md"),
+        ),
+        (
+            "pm-competitive",
+            include_str!("../../../prompts/layer1/pm-deep-research/agent-allocation.md"),
+        ),
+        (
+            "pm-product-capability",
+            include_str!(
+                "../../../prompts/layer1/pm-deep-research/agent-allocation-product-capability.md"
+            ),
+        ),
+        (
+            "pm-innovation-direction",
+            include_str!(
+                "../../../prompts/layer1/pm-deep-research/agent-allocation-innovation-direction.md"
+            ),
+        ),
+        (
+            "pm-product-requirements",
+            include_str!(
+                "../../../prompts/layer1/pm-deep-research/agent-allocation-product-requirements.md"
+            ),
+        ),
+    ];
+
+    for (name, prompt) in prompts {
+        for marker in [
+            "aspect_agent_prompt",
+            "AspectSpec",
+            "AspectResearchTask",
+            "shared_context",
+            "budget {",
+        ] {
+            assert!(!prompt.contains(marker), "{name} prompt leaked {marker}");
+        }
     }
 }
 

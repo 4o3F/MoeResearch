@@ -118,7 +118,7 @@ where
             Some(0..) => T::try_from(value.expect("checked value"))
                 .map(Self::Limited)
                 .map_err(de::Error::custom),
-            Some(_) => Err(de::Error::custom("budget limit must be -1 or non-negative")),
+            Some(_) => Err(de::Error::custom("config limit must be -1 or non-negative")),
         }
     }
 }

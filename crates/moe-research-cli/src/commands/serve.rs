@@ -6,18 +6,16 @@ use std::sync::Arc;
 
 use clap::{Args, ValueEnum};
 use moe_research_config::{
-    BudgetConfig as ConfigBudgetConfig, ConfigLimit,
-    GrokReasoningEffort as ConfigGrokReasoningEffort, MoeResearchConfig, load_config,
+    ConfigLimit, GrokReasoningEffort, LimitsConfig, MoeResearchConfig, load_config,
 };
 use moe_research_error::{Error, Result};
 use moe_research_model::{ModelService, OpenAiProvider};
 use moe_research_net::NetworkClient;
 use moe_research_net::reqwest_client::ReqwestNetworkClient;
 use moe_research_search::{
-    ExaSearchProvider, GrokReasoningEffort as SearchGrokReasoningEffort, GrokSearchProvider,
-    SearchService, TavilySearchProvider,
+    ExaSearchProvider, GrokSearchProvider, SearchService, TavilySearchProvider,
 };
-use moe_research_workflow::{AgentBudget, BudgetConfig, Limit, ResearchBudget};
+use moe_research_workflow::{AgentLimits, BudgetConfig, Limit, ResearchLimits};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Args)]
@@ -79,7 +77,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     );
 
     let config = load_config(args.config.as_deref())?;
-    let budget_config = build_workflow_budget(&config.budget);
+    let workflow_budget = build_workflow_budget(&config.limits);
     let enabled_model_providers = enabled_model_provider_names(&config);
     let enabled_search_providers = enabled_search_provider_names(&config);
     tracing::info!(
@@ -92,8 +90,8 @@ pub async fn run(args: ServeArgs) -> Result<()> {
         network_timeout_ms = config.network.inactivity_timeout_ms,
         network_max_retries = config.network.max_retries,
         network_retry_backoff_ms = config.network.retry_backoff_ms,
-        budget_research = ?budget_config.research,
-        budget_per_agent = ?budget_config.per_agent,
+        operator_limits_research = ?workflow_budget.research,
+        operator_limits_per_agent = ?workflow_budget.per_agent,
         "moeresearch initialized"
     );
 
@@ -106,7 +104,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     let model_service = build_model_service(&config, &network)?;
     let search_service = build_search_service(&config, &network)?;
 
-    moe_research_mcp::serve_stdio(model_service, search_service, budget_config).await
+    moe_research_mcp::serve_stdio(model_service, search_service, workflow_budget).await
 }
 
 fn init_logging(format: LogFormat) -> Result<(String, &'static str)> {
@@ -281,12 +279,14 @@ fn build_search_service(
     Ok(service)
 }
 
-fn map_grok_reasoning_effort(effort: ConfigGrokReasoningEffort) -> SearchGrokReasoningEffort {
+fn map_grok_reasoning_effort(
+    effort: GrokReasoningEffort,
+) -> moe_research_search::GrokReasoningEffort {
     match effort {
-        ConfigGrokReasoningEffort::None => SearchGrokReasoningEffort::None,
-        ConfigGrokReasoningEffort::Low => SearchGrokReasoningEffort::Low,
-        ConfigGrokReasoningEffort::Medium => SearchGrokReasoningEffort::Medium,
-        ConfigGrokReasoningEffort::High => SearchGrokReasoningEffort::High,
+        GrokReasoningEffort::None => moe_research_search::GrokReasoningEffort::None,
+        GrokReasoningEffort::Low => moe_research_search::GrokReasoningEffort::Low,
+        GrokReasoningEffort::Medium => moe_research_search::GrokReasoningEffort::Medium,
+        GrokReasoningEffort::High => moe_research_search::GrokReasoningEffort::High,
     }
 }
 
@@ -317,9 +317,9 @@ fn provider_model(kind: &str, name: &str, model: Option<&String>) -> Result<Stri
     Ok(model.to_owned())
 }
 
-fn build_workflow_budget(config: &ConfigBudgetConfig) -> BudgetConfig {
+fn build_workflow_budget(config: &LimitsConfig) -> BudgetConfig {
     BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_agents: map_limit(config.research.max_agents),
             max_concurrent_agents: map_limit(config.research.max_concurrent_agents),
             max_total_model_calls: map_limit(config.research.max_total_model_calls),
@@ -327,7 +327,7 @@ fn build_workflow_budget(config: &ConfigBudgetConfig) -> BudgetConfig {
             total_timeout_ms: map_limit(config.research.total_timeout_ms),
             max_tokens: map_limit(config.research.max_tokens),
         },
-        per_agent: AgentBudget {
+        per_agent: AgentLimits {
             max_turns: map_limit(config.per_agent.max_turns),
             max_tool_calls: map_limit(config.per_agent.max_tool_calls),
             max_search_calls: map_limit(config.per_agent.max_search_calls),

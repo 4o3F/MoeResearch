@@ -1,4 +1,4 @@
-use std::fmt::Write as _;
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use moe_research_error::{Error, Result};
@@ -178,7 +178,7 @@ api_key_env = {}
 inactivity_timeout_ms = {openai_timeout_ms}
 model = {}
 
-[budget.research]
+[limits.research]
 max_agents = -1
 max_concurrent_agents = -1
 max_total_model_calls = -1
@@ -186,7 +186,7 @@ max_total_search_calls = -1
 total_timeout_ms = -1
 max_tokens = -1
 
-[budget.per_agent]
+[limits.per_agent]
 max_turns = -1
 max_tool_calls = -1
 max_search_calls = -1

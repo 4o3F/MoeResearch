@@ -15,7 +15,7 @@ Bounded Skill-layer WebSearch/WebFetch/browser/manual verification after MoeRese
 
 Run bounded host verification when a load-bearing claim depends on current official facts, exact policy wording, academic/scientific claims, security/advisory claims, benchmark numbers, quantitative claims, weak single-source evidence, snippets/summaries only, or contradictions.
 
-## Budget
+## Host verification limits
 
 - Quick: 0-2 host checks.
 - Standard: up to 5 host checks.

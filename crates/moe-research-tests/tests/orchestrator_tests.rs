@@ -11,17 +11,15 @@ use moe_research_model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolC
 use moe_research_search::SearchProvider;
 use moe_research_search::SearchService;
 use moe_research_search::{SearchRequest, SearchResponse, SearchResult};
-use moe_research_workflow::AgentRuntime;
 use moe_research_workflow::Limit;
 use moe_research_workflow::aspect_research;
-use moe_research_workflow::{AgentBudget, BudgetConfig, ResearchBudget};
-use moe_research_workflow::{AgentBudgetGuard, ResearchBudgetGuard};
+use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
 use moe_research_workflow::{
     AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
     OpenQuestion, SourceType,
 };
 use moe_research_workflow::{
-    AspectResearchRequest, AspectResearchTask, AspectSpec, ResearchContext,
+    AspectRequest, AspectResearchRequest, ResearchContext, ResearchPolicy,
 };
 use moe_research_workflow::{
     EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchCategory, SearchContentLevel,
@@ -31,8 +29,8 @@ use serde_json::json;
 
 fn unlimited_budget_config() -> BudgetConfig {
     BudgetConfig {
-        research: ResearchBudget::unlimited(),
-        per_agent: AgentBudget::unlimited(),
+        research: ResearchLimits::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     }
 }
 
@@ -61,6 +59,16 @@ fn search_policy() -> SearchPolicy {
     }
 }
 
+fn research_policy() -> ResearchPolicy {
+    ResearchPolicy {
+        model: model_policy(),
+        search: search_policy(),
+        evidence: evidence_policy(),
+        output: output_policy(),
+        execution: execution_policy(),
+    }
+}
+
 fn evidence_policy() -> EvidencePolicy {
     EvidencePolicy {
         require_evidence_for_findings: true,
@@ -75,11 +83,10 @@ fn output_policy() -> OutputPolicy {
     }
 }
 
-fn execution_policy(timeout_ms: Option<u64>) -> ExecutionPolicy {
+fn execution_policy() -> ExecutionPolicy {
     ExecutionPolicy {
         allow_partial_results: true,
         fail_fast: false,
-        timeout_ms: timeout_ms.map_or(Limit::unlimited(), Limit::limited),
     }
 }
 
@@ -95,6 +102,7 @@ struct SequenceModelProvider {
 }
 
 struct CapturingSequenceModelProvider {
+    name: &'static str,
     calls: Arc<AtomicUsize>,
     responses: Mutex<VecDeque<ModelResponse>>,
     requests: Arc<Mutex<Vec<ModelRequest>>>,
@@ -126,7 +134,7 @@ impl ModelProvider for SequenceModelProvider {
 #[async_trait]
 impl ModelProvider for CapturingSequenceModelProvider {
     fn name(&self) -> &'static str {
-        "model"
+        self.name
     }
 
     async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
@@ -259,38 +267,36 @@ fn aspect_prompt() -> String {
 
 fn aspect_request() -> AspectResearchRequest {
     AspectResearchRequest {
-        schema_version: "0.1".to_owned(),
+        schema_version: "0.2".to_owned(),
         request_id: "request-1".to_owned(),
-        task: AspectResearchTask {
-            aspect: AspectSpec {
-                aspect_id: "aspect-1".to_owned(),
-                name: "Aspect".to_owned(),
-                role: "researcher".to_owned(),
-                research_question: "What is true?".to_owned(),
-                scope: vec!["scope".to_owned()],
-                boundaries: vec![],
-                success_criteria: vec!["answer".to_owned()],
-                aspect_agent_prompt: aspect_prompt(),
-                allowed_tools: vec![ToolName("search".to_owned())],
-                model_provider: Some("model".to_owned()),
-                search_provider: Some("searcher".to_owned()),
-            },
-            budget: AgentBudget::unlimited(),
+        task: AspectRequest {
+            id: "aspect-1".to_owned(),
+            name: "Aspect".to_owned(),
+            role: "researcher".to_owned(),
+            question: "What is true?".to_owned(),
+            scope: vec!["scope".to_owned()],
+            boundaries: vec![],
+            success_criteria: vec!["answer".to_owned()],
+            instructions: aspect_prompt(),
+            tools: vec![ToolName("search".to_owned())],
+            model_provider: "model".to_owned(),
+            search_provider: Some("searcher".to_owned()),
+            limits: AgentLimits::unlimited(),
         },
-        shared_context: ResearchContext::empty(),
-        model_policy: model_policy(),
-        search_policy: search_policy(),
-        evidence_policy: evidence_policy(),
-        output_policy: output_policy(),
-        execution_policy: execution_policy(Some(180_000)),
+        policy: research_policy(),
+        context: ResearchContext::empty(),
     }
 }
 
 fn tool_response(name: &str) -> ModelResponse {
+    tool_response_with_arguments(name, json!({"query": "private query", "max_results": 1}))
+}
+
+fn tool_response_with_arguments(name: &str, arguments: serde_json::Value) -> ModelResponse {
     let tool_call = ModelToolCall {
         id: "call-1".to_owned(),
         name: name.to_owned(),
-        arguments: json!({"query": "private query", "max_results": 1}),
+        arguments,
     };
     ModelResponse {
         provider: "model".to_owned(),
@@ -381,6 +387,7 @@ fn resolve_final_response(mut response: ModelResponse, input: &[ModelInputItem])
         response.content = Some(aspect_result_json(vec![evidence]));
     } else if response.content.as_deref() == Some(TAMPERED_EVIDENCE_SENTINEL) {
         let mut evidence = first_evidence_from_tool_output(input);
+        evidence.snippet = "tampered snippet".to_owned();
         evidence.summary = "tampered summary".to_owned();
         response.content = Some(aspect_result_json(vec![evidence]));
     } else if response.content.as_deref() == Some(INTERPRETIVE_EVIDENCE_SENTINEL) {
@@ -409,114 +416,26 @@ fn evidence_from_tool_output(input: &[ModelInputItem], index: usize) -> Evidence
     serde_json::from_value(value["results"][index].clone()).expect("evidence result")
 }
 
-fn budget(max_turns: usize, max_tool_calls: usize, max_search_calls: usize) -> AgentBudget {
-    AgentBudget {
-        max_turns: Limit::limited(max_turns),
-        max_tool_calls: Limit::limited(max_tool_calls),
-        max_search_calls: Limit::limited(max_search_calls),
-        timeout_ms: Limit::limited(60_000),
-    }
-}
-
 #[test]
-fn accepts_minus_one_as_unlimited_agent_budget() {
-    let budget: AgentBudget = serde_json::from_value(json!({
+fn accepts_minus_one_as_unlimited_agent_limits() {
+    let limits: AgentLimits = serde_json::from_value(json!({
         "max_turns": -1,
         "max_tool_calls": -1,
         "max_search_calls": -1,
         "timeout_ms": -1
     }))
-    .expect("unlimited budget");
-    assert!(budget.max_turns.is_unlimited());
-    let mut guard = AgentBudgetGuard::new(budget).expect("valid unlimited budget");
-    for _ in 0..3 {
-        guard.consume_model_turn().expect("unlimited model turn");
-        guard.consume_tool_call().expect("unlimited tool call");
-        guard.consume_search_call().expect("unlimited search call");
-    }
+    .expect("unlimited limits");
 
-    assert_eq!(guard.usage().turns_used, 3);
-    assert_eq!(guard.usage().tool_calls_used, 3);
-    assert_eq!(guard.usage().search_calls_used, 3);
-}
-
-#[test]
-fn allows_boundary_usage_and_tracks_counters() {
-    let mut guard = AgentBudgetGuard::new(budget(2, 1, 1)).expect("valid budget");
-
-    guard.consume_model_turn().expect("first model turn");
-    guard.consume_model_turn().expect("second model turn");
-    guard.consume_tool_call().expect("tool call");
-    guard.consume_search_call().expect("search call");
-
-    let usage = guard.usage();
-    assert_eq!(usage.turns_used, 2);
-    assert_eq!(usage.tool_calls_used, 1);
-    assert_eq!(usage.search_calls_used, 1);
-}
-
-#[test]
-fn rejects_exhausted_model_tool_and_search_budgets() {
-    let mut turn_guard = AgentBudgetGuard::new(budget(1, 1, 1)).expect("valid budget");
-    turn_guard.consume_model_turn().expect("within turn budget");
-    assert!(matches!(
-        turn_guard.consume_model_turn(),
-        Err(Error::BudgetExceeded { .. })
-    ));
-
-    let mut tool_guard = AgentBudgetGuard::new(budget(1, 0, 1)).expect("valid budget");
-    assert!(matches!(
-        tool_guard.consume_tool_call(),
-        Err(Error::BudgetExceeded { .. })
-    ));
-
-    let mut search_guard = AgentBudgetGuard::new(budget(1, 1, 0)).expect("valid budget");
-    assert!(matches!(
-        search_guard.consume_search_call(),
-        Err(Error::BudgetExceeded { .. })
-    ));
-
-    let mut search_tool_guard = AgentBudgetGuard::new(budget(1, 1, 0)).expect("valid budget");
-    assert!(matches!(
-        search_tool_guard.consume_search_tool_call(),
-        Err(Error::BudgetExceeded { .. })
-    ));
-    assert_eq!(search_tool_guard.usage().tool_calls_used, 0);
-    assert_eq!(search_tool_guard.usage().search_calls_used, 0);
-}
-
-#[test]
-fn rejects_zero_turns_zero_timeout_and_elapsed_timeout() {
-    assert!(matches!(
-        AgentBudgetGuard::new(budget(0, 1, 1)),
-        Err(Error::BudgetExceeded { .. })
-    ));
-
-    let mut zero_timeout = budget(1, 1, 1);
-    zero_timeout.timeout_ms = Limit::limited(0);
-    assert!(matches!(
-        AgentBudgetGuard::new(zero_timeout),
-        Err(Error::BudgetExceeded { .. })
-    ));
-
-    let mut guard = AgentBudgetGuard::new(AgentBudget {
-        timeout_ms: Limit::limited(1),
-        ..budget(1, 1, 1)
-    })
-    .expect("valid budget");
-    std::thread::sleep(Duration::from_millis(5));
-
-    assert!(matches!(
-        guard.consume_model_turn(),
-        Err(Error::BudgetExceeded { .. })
-    ));
-    assert_eq!(guard.usage().turns_used, 0);
+    assert!(limits.max_turns.is_unlimited());
+    assert!(limits.max_tool_calls.is_unlimited());
+    assert!(limits.max_search_calls.is_unlimited());
+    assert!(limits.timeout_ms.is_unlimited());
 }
 
 #[tokio::test]
 async fn rejects_invalid_request_fields() {
     let mut request = aspect_request();
-    request.task.aspect.research_question.clear();
+    request.task.question.clear();
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -533,18 +452,19 @@ async fn rejects_invalid_request_fields() {
 }
 
 /// Rust core never performs filesystem IO for prompts; Layer 1 supplies the
-/// system-prompt content inline as `AspectSpec.aspect_agent_prompt`. The
+/// system-prompt content inline as `AspectRequest.instructions`. The
 /// first input the model sees MUST be a System message whose body equals
 /// the request field byte-for-byte, with no further transformation.
 #[tokio::test]
-async fn aspect_agent_prompt_content_is_passed_as_system_message() {
+async fn instructions_content_is_passed_as_system_message() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt = "# Custom Agent\n\nFollow these rules.\n".to_owned();
+    request.task.instructions = "# Custom Agent\n\nFollow these rules.\n".to_owned();
 
     let model_calls = Arc::new(AtomicUsize::new(0));
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls,
         responses: Mutex::new(
             vec![tool_response("search"), final_response(valid_report_json())].into(),
@@ -572,28 +492,122 @@ async fn aspect_agent_prompt_content_is_passed_as_system_message() {
             &requests[0].input[0],
             ModelInputItem::Message(message)
                 if message.role == moe_research_model::ModelMessageRole::System
-                    && message.content == request.task.aspect.aspect_agent_prompt
+                    && message.content == request.task.instructions
         ),
         "first input must be System message equal to inline prompt content"
     );
 }
 
-/// `AgentRuntime::run()` is a public entry that callers can hit without
-/// going through workflow validation; it must therefore reject empty inline
-/// prompts before any model call dispatches.
+/// The Layer 2 user prompt must contain only the LLM-visible projection.
+/// Runtime controls, provider routing, and inline system-prompt content stay out
+/// of the serialized user JSON.
 #[tokio::test]
-async fn agent_runtime_rejects_empty_inline_prompt_before_dispatch() {
+async fn model_user_prompt_excludes_control_plane_fields() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt = String::new();
+    request.task.instructions =
+        "# Secret Inline Prompt\n\nDo not repeat this in user JSON.\n".to_owned();
+    request.task.tools.clear();
+    request.task.model_provider = "hidden-selected-model".to_owned();
+    request.task.search_provider = Some("hidden-selected-searcher".to_owned());
+    request.task.limits = AgentLimits {
+        max_turns: Limit::limited(3),
+        max_tool_calls: Limit::limited(4),
+        max_search_calls: Limit::limited(5),
+        timeout_ms: Limit::limited(6_000),
+    };
+    request.policy.model.allowed_providers = vec![
+        "hidden-selected-model".to_owned(),
+        "hidden-model-allowlist".to_owned(),
+    ];
+    request.policy.search.allowed_providers =
+        vec!["searcher".to_owned(), "hidden-search-allowlist".to_owned()];
+    request.policy.execution.fail_fast = true;
+    request.policy.evidence.require_evidence_for_findings = false;
 
-    let (model_service, search_service, model_calls, _search_calls) = services(vec![]);
-    let failure = AgentRuntime::new(
+    let final_payload = serde_json::to_string(&AspectResearchResult {
+        aspect_report: AspectReport {
+            aspect_id: "aspect-1".to_owned(),
+            aspect_name: "Aspect".to_owned(),
+            question: "What is true?".to_owned(),
+            scope: vec!["scope".to_owned()],
+            findings: Vec::new(),
+            assumptions: Vec::new(),
+            risks: Vec::new(),
+            counterarguments: Vec::new(),
+            open_questions: Vec::new(),
+            confidence: Confidence::Medium,
+            limitations: Vec::new(),
+        },
+        evidence: Vec::new(),
+    })
+    .expect("report json");
+
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let captured_requests = Arc::new(Mutex::new(Vec::new()));
+    let mut model_service = ModelService::new();
+    model_service.register(CapturingSequenceModelProvider {
+        name: "hidden-selected-model",
+        calls: model_calls,
+        responses: Mutex::new(vec![final_response(final_payload)].into()),
+        requests: captured_requests.clone(),
+    });
+    let search_service = SearchService::new();
+
+    aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
+    .await
+    .expect("projected prompt request");
+
+    let requests = captured_requests.lock().expect("requests lock").clone();
+    let user_prompt = requests[0]
+        .input
+        .iter()
+        .find_map(|item| match item {
+            ModelInputItem::Message(message)
+                if message.role == moe_research_model::ModelMessageRole::User =>
+            {
+                Some(message.content.as_str())
+            }
+            _ => None,
+        })
+        .expect("user prompt message");
+    let value = serde_json::from_str::<serde_json::Value>(user_prompt).expect("user prompt json");
+
+    assert_eq!(value["aspect"]["id"], "aspect-1");
+    assert_eq!(value["output_requirements"]["language"], "zh-CN");
+    assert!(value.get("policy").is_none());
+    assert!(value.get("limits").is_none());
+    assert!(!user_prompt.contains("allowed_providers"));
+    assert!(!user_prompt.contains("hidden-model-allowlist"));
+    assert!(!user_prompt.contains("hidden-search-allowlist"));
+    assert!(!user_prompt.contains("max_turns"));
+    assert!(!user_prompt.contains("fail_fast"));
+    assert!(!user_prompt.contains("model_provider"));
+    assert!(!user_prompt.contains("hidden-selected-model"));
+    assert!(!user_prompt.contains("search_provider"));
+    assert!(!user_prompt.contains("hidden-selected-searcher"));
+    assert!(!user_prompt.contains("# Secret Inline Prompt"));
+    assert!(!user_prompt.contains("Do not repeat this in user JSON."));
+}
+
+/// The aspect research entrypoint must reject empty inline prompts before any
+/// model call dispatches.
+#[tokio::test]
+async fn aspect_research_rejects_empty_inline_prompt_before_dispatch() {
+    let mut request = aspect_request();
+    request.task.instructions = String::new();
+
+    let (model_service, search_service, model_calls, _search_calls) = services(vec![]);
+    let failure = aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        &unlimited_budget_config(),
+    )
     .await
     .expect_err("empty prompt must be rejected at runtime entry");
 
@@ -601,21 +615,20 @@ async fn agent_runtime_rejects_empty_inline_prompt_before_dispatch() {
     assert_eq!(model_calls.load(Ordering::SeqCst), 0);
 }
 
-/// Direct `AgentRuntime::run()` must also reject prompts larger than the
+/// The aspect research entrypoint must also reject prompts larger than the
 /// 64 KiB cap before dispatch.
 #[tokio::test]
-async fn agent_runtime_rejects_oversized_inline_prompt_before_dispatch() {
+async fn aspect_research_rejects_oversized_inline_prompt_before_dispatch() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt = "x".repeat(64 * 1024 + 1);
+    request.task.instructions = "x".repeat(64 * 1024 + 1);
 
     let (model_service, search_service, model_calls, _search_calls) = services(vec![]);
-    let failure = AgentRuntime::new(
+    let failure = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("oversized prompt must be rejected at runtime entry");
 
@@ -629,9 +642,9 @@ async fn agent_runtime_rejects_oversized_inline_prompt_before_dispatch() {
 /// Schema validation MUST reject an empty inline prompt before any agent loop
 /// runs.
 #[tokio::test]
-async fn aspect_agent_prompt_empty_string_is_rejected_at_schema_validation() {
+async fn instructions_empty_string_is_rejected_at_schema_validation() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt = String::new();
+    request.task.instructions = String::new();
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -650,9 +663,9 @@ async fn aspect_agent_prompt_empty_string_is_rejected_at_schema_validation() {
 /// Schema validation MUST reject an inline prompt larger than 64 KiB to keep
 /// a single MCP payload bounded.
 #[tokio::test]
-async fn aspect_agent_prompt_exceeding_max_bytes_is_rejected() {
+async fn instructions_exceeding_max_bytes_is_rejected() {
     let mut request = aspect_request();
-    request.task.aspect.aspect_agent_prompt = "x".repeat(64 * 1024 + 1);
+    request.task.instructions = "x".repeat(64 * 1024 + 1);
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -671,8 +684,8 @@ async fn aspect_agent_prompt_exceeding_max_bytes_is_rejected() {
 #[tokio::test]
 async fn rejects_conflicting_domains() {
     let mut request = aspect_request();
-    request.search_policy.include_domains = vec!["Example.com".to_owned()];
-    request.search_policy.exclude_domains = vec!["example.com".to_owned()];
+    request.policy.search.include_domains = vec!["Example.com".to_owned()];
+    request.policy.search.exclude_domains = vec!["example.com".to_owned()];
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -691,7 +704,7 @@ async fn rejects_conflicting_domains() {
 #[tokio::test]
 async fn rejects_search_enabled_aspect_without_provider() {
     let mut request = aspect_request();
-    request.task.aspect.search_provider = None;
+    request.task.search_provider = None;
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -710,7 +723,7 @@ async fn rejects_search_enabled_aspect_without_provider() {
 #[tokio::test]
 async fn rejects_search_provider_not_allowed_by_policy() {
     let mut request = aspect_request();
-    request.task.aspect.search_provider = Some("blocked".to_owned());
+    request.task.search_provider = Some("blocked".to_owned());
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -731,7 +744,7 @@ async fn rejects_search_provider_not_allowed_by_policy() {
 #[tokio::test]
 async fn rejects_empty_search_provider_allowlist() {
     let mut request = aspect_request();
-    request.search_policy.allowed_providers.clear();
+    request.policy.search.allowed_providers.clear();
     let model_service = ModelService::new();
     let search_service = SearchService::new();
 
@@ -752,9 +765,9 @@ async fn rejects_empty_search_provider_allowlist() {
 #[tokio::test]
 async fn non_search_aspect_runs_without_search_provider() {
     let mut request = aspect_request();
-    request.task.aspect.allowed_tools.clear();
-    request.task.aspect.search_provider = None;
-    request.evidence_policy.require_evidence_for_findings = false;
+    request.task.tools.clear();
+    request.task.search_provider = None;
+    request.policy.evidence.require_evidence_for_findings = false;
     let (model_service, search_service, _model_calls, search_calls) =
         services(vec![final_response(
             serde_json::to_string(&AspectResearchResult {
@@ -790,23 +803,28 @@ async fn non_search_aspect_runs_without_search_provider() {
 }
 
 #[tokio::test]
-async fn rejects_execution_timeout_above_budget() {
+async fn configured_agent_timeout_caps_request_runtime() {
     let mut request = aspect_request();
-    request.task.budget.timeout_ms = Limit::limited(100);
-    request.execution_policy.timeout_ms = Limit::limited(101);
-    let model_service = ModelService::new();
-    let search_service = SearchService::new();
+    request.task.limits.timeout_ms = Limit::limited(60_000);
+    let (model_service, search_service, model_calls, search_calls) = services_with_delay(
+        vec![tool_response("search")],
+        Some(Duration::from_millis(250)),
+    );
+    let budget_config = BudgetConfig {
+        research: ResearchLimits::unlimited(),
+        per_agent: AgentLimits {
+            timeout_ms: Limit::limited(50),
+            ..AgentLimits::unlimited()
+        },
+    };
 
-    let error = aspect_research(
-        request,
-        &model_service,
-        &search_service,
-        &unlimited_budget_config(),
-    )
-    .await
-    .expect_err("timeout conflict");
+    let error = aspect_research(request, &model_service, &search_service, &budget_config)
+        .await
+        .expect_err("configured timeout should cap request runtime");
 
     assert!(matches!(error.error, Error::BudgetExceeded { .. }));
+    assert_eq!(model_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
@@ -838,11 +856,11 @@ async fn aspect_research_uses_configured_research_model_call_budget() {
         final_response(valid_report_json()),
     ]);
     let limits = BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_total_model_calls: Limit::limited(1),
-            ..ResearchBudget::unlimited()
+            ..ResearchLimits::unlimited()
         },
-        per_agent: AgentBudget::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     };
 
     let failure = aspect_research(request, &model_service, &search_service, &limits)
@@ -859,16 +877,45 @@ async fn aspect_research_uses_configured_research_model_call_budget() {
 }
 
 #[tokio::test]
+async fn aspect_research_suppresses_partial_output_when_policy_disallows_partial_results() {
+    let mut request = aspect_request();
+    request.policy.execution.allow_partial_results = false;
+    let (model_service, search_service, model_calls, search_calls) = services(vec![
+        tool_response("search"),
+        final_response(valid_report_json()),
+    ]);
+    let limits = BudgetConfig {
+        research: ResearchLimits {
+            max_total_model_calls: Limit::limited(1),
+            ..ResearchLimits::unlimited()
+        },
+        per_agent: AgentLimits::unlimited(),
+    };
+
+    let failure = aspect_research(request, &model_service, &search_service, &limits)
+        .await
+        .expect_err("partial output must be suppressed by policy");
+
+    assert!(matches!(&failure.error, Error::BudgetExceeded { .. }));
+    assert!(
+        failure.partial_output.is_none(),
+        "public Rust API must honor allow_partial_results=false"
+    );
+    assert_eq!(model_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(search_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn aspect_research_uses_configured_research_search_budget() {
     let request = aspect_request();
     let (model_service, search_service, model_calls, search_calls) =
         services(vec![tool_response("search")]);
     let limits = BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_total_search_calls: Limit::limited(0),
-            ..ResearchBudget::unlimited()
+            ..ResearchLimits::unlimited()
         },
-        per_agent: AgentBudget::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     };
 
     let failure = aspect_research(request, &model_service, &search_service, &limits)
@@ -888,13 +935,12 @@ async fn fake_model_and_search_complete_successfully() {
         final_response(valid_report_json()),
     ]);
 
-    let output = AgentRuntime::new(
+    let output = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("runtime output");
 
@@ -919,13 +965,12 @@ async fn success_output_includes_resource_accounting() {
         final_response(valid_report_json()),
     ]);
 
-    let output = AgentRuntime::new(
+    let output = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("runtime output");
 
@@ -943,13 +988,12 @@ async fn search_tool_keeps_query_in_business_evidence() {
         final_response(valid_report_json()),
     ]);
 
-    let output = AgentRuntime::new(
+    let output = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("runtime output");
 
@@ -965,6 +1009,7 @@ async fn model_tool_outputs_use_ordered_responses_items() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls.clone(),
         responses: Mutex::new(
             vec![tool_response("search"), final_response(valid_report_json())].into(),
@@ -976,13 +1021,12 @@ async fn model_tool_outputs_use_ordered_responses_items() {
         calls: search_calls.clone(),
     });
 
-    AgentRuntime::new(
+    aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("agent output");
 
@@ -1022,6 +1066,7 @@ async fn search_tool_output_includes_full_results_for_layer2() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls.clone(),
         responses: Mutex::new(
             vec![tool_response("search"), final_response(valid_report_json())].into(),
@@ -1033,13 +1078,12 @@ async fn search_tool_output_includes_full_results_for_layer2() {
         calls: search_calls.clone(),
     });
 
-    AgentRuntime::new(
+    aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("agent output");
 
@@ -1077,13 +1121,12 @@ async fn rejects_selected_evidence_not_seen_in_tool_output() {
         final_response(UNKNOWN_EVIDENCE_SENTINEL.to_owned()),
     ]);
 
-    let error = AgentRuntime::new(
+    let error = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("unknown evidence rejected");
 
@@ -1098,17 +1141,26 @@ async fn rejects_tampered_evidence_provenance() {
         final_response(TAMPERED_EVIDENCE_SENTINEL.to_owned()),
     ]);
 
-    let error = AgentRuntime::new(
+    let error = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("tampered evidence rejected");
 
-    assert!(matches!(&error.error, Error::SchemaValidationFailed { .. }));
+    let Error::SchemaValidationFailed { message } = &error.error else {
+        panic!("expected SchemaValidationFailed, got {:?}", error.error);
+    };
+    assert!(
+        message.contains("mutated_evidence_provenance"),
+        "message must carry the issue code, got `{message}`"
+    );
+    assert!(
+        message.contains("snippet") && message.contains("summary"),
+        "message must name every mismatched field, got `{message}`"
+    );
     let partial = error.partial_output.expect("partial evidence output");
     assert_eq!(partial.result.evidence.len(), 1);
     assert!(partial.result.aspect_report.findings.is_empty());
@@ -1122,13 +1174,12 @@ async fn allows_layer2_to_set_interpretive_evidence_fields() {
         final_response(INTERPRETIVE_EVIDENCE_SENTINEL.to_owned()),
     ]);
 
-    let output = AgentRuntime::new(
+    let output = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("interpretive fields accepted");
 
@@ -1144,6 +1195,7 @@ async fn model_tool_outputs_fallback_replays_tool_calls() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls.clone(),
         responses: Mutex::new(
             vec![
@@ -1159,13 +1211,12 @@ async fn model_tool_outputs_fallback_replays_tool_calls() {
         calls: search_calls.clone(),
     });
 
-    AgentRuntime::new(
+    aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("agent output");
 
@@ -1194,6 +1245,7 @@ async fn model_tool_outputs_use_previous_response_id_when_available() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls.clone(),
         responses: Mutex::new(
             vec![
@@ -1209,13 +1261,12 @@ async fn model_tool_outputs_use_previous_response_id_when_available() {
         calls: search_calls.clone(),
     });
 
-    AgentRuntime::new(
+    aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("agent output");
 
@@ -1240,6 +1291,7 @@ async fn model_tool_outputs_can_fall_back_after_previous_response_id() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls.clone(),
         responses: Mutex::new(
             vec![
@@ -1256,13 +1308,12 @@ async fn model_tool_outputs_can_fall_back_after_previous_response_id() {
         calls: search_calls.clone(),
     });
 
-    AgentRuntime::new(
+    aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("agent output");
 
@@ -1303,13 +1354,12 @@ async fn evidence_includes_structured_sources() {
         final_response(valid_report_json()),
     ]);
 
-    let output = AgentRuntime::new(
+    let output = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("runtime output");
 
@@ -1330,13 +1380,12 @@ async fn success_output_retains_budget_usage_and_token_usage() {
         final_response(valid_report_json()),
     ]);
 
-    let output = AgentRuntime::new(
+    let output = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("runtime output");
 
@@ -1353,20 +1402,19 @@ async fn success_output_retains_budget_usage_and_token_usage() {
 #[tokio::test]
 async fn budget_failure_stops_after_completed_searches() {
     let mut request = aspect_request();
-    request.task.budget.max_search_calls = Limit::limited(2);
+    request.task.limits.max_search_calls = Limit::limited(2);
     let (model_service, search_service, _model_calls, search_calls) = services(vec![
         tool_response("search"),
         tool_response("search"),
         tool_response("search"),
     ]);
 
-    let failure = AgentRuntime::new(
+    let failure = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("budget failure");
 
@@ -1400,13 +1448,12 @@ async fn provider_failure_returns_error_after_prior_successful_search() {
         ),
     });
 
-    let failure = AgentRuntime::new(
+    let failure = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("provider failure");
 
@@ -1421,16 +1468,15 @@ async fn provider_failure_returns_error_after_prior_successful_search() {
 #[tokio::test]
 async fn budget_exhaustion_stops_before_actions() {
     let mut zero_turn_request = aspect_request();
-    zero_turn_request.task.budget.max_turns = Limit::limited(0);
+    zero_turn_request.task.limits.max_turns = Limit::limited(0);
     let (model_service, search_service, model_calls, search_calls) = services(vec![]);
 
-    let error = AgentRuntime::new(
+    let error = aspect_research(
+        zero_turn_request,
         &model_service,
         &search_service,
-        &zero_turn_request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("budget error");
 
@@ -1439,17 +1485,16 @@ async fn budget_exhaustion_stops_before_actions() {
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 
     let mut request = aspect_request();
-    request.task.budget.max_search_calls = Limit::limited(0);
+    request.task.limits.max_search_calls = Limit::limited(0);
     let (model_service, search_service, model_calls, search_calls) =
         services(vec![tool_response("search")]);
 
-    let error = AgentRuntime::new(
+    let error = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("search budget error");
 
@@ -1461,21 +1506,19 @@ async fn budget_exhaustion_stops_before_actions() {
 #[tokio::test]
 async fn slow_final_model_call_exhausts_effective_timeout() {
     let mut request = aspect_request();
-    request.task.budget.timeout_ms = Limit::limited(60_000);
-    request.execution_policy.timeout_ms = Limit::limited(50);
+    request.task.limits.timeout_ms = Limit::limited(50);
     let (model_service, search_service, model_calls, search_calls) = services_with_delay(
         vec![final_response("{}".to_owned())],
         Some(Duration::from_millis(250)),
     );
 
     let started = Instant::now();
-    let error = AgentRuntime::new(
+    let error = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("execution timeout error");
     let elapsed = started.elapsed();
@@ -1492,20 +1535,18 @@ async fn slow_final_model_call_exhausts_effective_timeout() {
 #[tokio::test]
 async fn lower_execution_timeout_is_enforced_before_search() {
     let mut request = aspect_request();
-    request.task.budget.timeout_ms = Limit::limited(60_000);
-    request.execution_policy.timeout_ms = Limit::limited(50);
+    request.task.limits.timeout_ms = Limit::limited(50);
     let (model_service, search_service, model_calls, search_calls) = services_with_delay(
         vec![tool_response("search")],
         Some(Duration::from_millis(250)),
     );
 
-    let error = AgentRuntime::new(
+    let error = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("execution timeout error");
 
@@ -1520,13 +1561,12 @@ async fn invalid_tool_stops_without_search() {
     let (model_service, search_service, _model_calls, search_calls) =
         services(vec![tool_response("filesystem")]);
 
-    let error = AgentRuntime::new(
+    let error = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("tool policy error");
 
@@ -1540,13 +1580,12 @@ async fn invalid_final_output_returns_schema_failure() {
     let (model_service, search_service, _model_calls, _search_calls) =
         services(vec![final_response("{}".to_owned())]);
 
-    let error = AgentRuntime::new(
+    let error = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("schema error");
 
@@ -1590,18 +1629,69 @@ async fn duplicate_tool_call_ids_are_rejected_before_dispatch() {
     let (model_service, search_service, _model_calls, search_calls) =
         services(vec![duplicate_id_tool_response()]);
 
-    let error = AgentRuntime::new(
+    let error = aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect_err("duplicate tool call must fail");
 
     assert!(matches!(error.error, Error::ToolPolicyDenied { .. }));
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn search_tool_rejects_provider_native_arguments_before_dispatch() {
+    for arguments in [
+        json!({ "query": "test", "provider": "exa" }),
+        json!({ "query": "test", "type": "auto" }),
+        json!({ "query": "test", "contents": { "highlights": true } }),
+        json!({ "query": "test", "maxAgeHours": 24 }),
+        json!({ "query": "test", "provider_overrides": {} }),
+    ] {
+        let request = aspect_request();
+        let (model_service, search_service, _model_calls, search_calls) =
+            services(vec![tool_response_with_arguments("search", arguments)]);
+
+        let error = aspect_research(
+            request,
+            &model_service,
+            &search_service,
+            &unlimited_budget_config(),
+        )
+        .await
+        .expect_err("provider-native search arguments must fail");
+
+        assert!(matches!(error.error, Error::ToolPolicyDenied { .. }));
+        assert_eq!(search_calls.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn search_tool_rejects_empty_query_and_zero_results_before_dispatch() {
+    for arguments in [
+        json!({ "query": "   " }),
+        json!({ "max_results": 3 }),
+        json!({ "query": "test", "max_results": 0 }),
+    ] {
+        let request = aspect_request();
+        let (model_service, search_service, _model_calls, search_calls) =
+            services(vec![tool_response_with_arguments("search", arguments)]);
+
+        let error = aspect_research(
+            request,
+            &model_service,
+            &search_service,
+            &unlimited_budget_config(),
+        )
+        .await
+        .expect_err("invalid search arguments must fail");
+
+        assert!(matches!(error.error, Error::ToolPolicyDenied { .. }));
+        assert_eq!(search_calls.load(Ordering::SeqCst), 0);
+    }
 }
 
 #[tokio::test]
@@ -1640,13 +1730,12 @@ async fn agent_loop_forwards_search_tool_call_time_params() {
         requests: captured_requests.clone(),
     });
 
-    AgentRuntime::new(
+    aspect_research(
+        request,
         &model_service,
         &search_service,
-        &request,
-        ResearchBudgetGuard::unlimited(),
+        &unlimited_budget_config(),
     )
-    .run()
     .await
     .expect("agent output");
 
@@ -1660,29 +1749,15 @@ async fn agent_loop_forwards_search_tool_call_time_params() {
     assert_eq!(requests[0].category, Some(SearchCategory::News));
 }
 
-/// When an aspect's `allowed_tools` is empty the tool guard MUST advertise no
-/// tools, closing the gap where a model could still see denied tools.
-/// Regression guard for M13 (dynamic tool advertisement by policy).
-#[test]
-fn aspect_with_empty_allowed_tools_advertises_no_tools() {
-    let mut request = aspect_request();
-    request.task.aspect.allowed_tools.clear();
-    let guard = moe_research_workflow::ToolPolicyGuard::new(&request.task.aspect);
-    assert!(
-        guard.allowed_model_tools().is_empty(),
-        "tools list must be empty when allowed_tools is empty"
-    );
-}
-
-/// Integration guard for M13: an aspect with empty `allowed_tools` MUST
+/// Integration guard for M13: an aspect with empty `tools` MUST
 /// reach the model provider with an actually empty `ModelRequest.tools`
 /// list, not merely a guard-level abstraction. This pins the wire shape.
 #[tokio::test]
-async fn aspect_with_empty_allowed_tools_sends_empty_model_tools() {
+async fn aspect_with_empty_tools_sends_empty_model_tools() {
     let mut request = aspect_request();
-    request.task.aspect.allowed_tools.clear();
-    request.task.aspect.search_provider = None;
-    request.evidence_policy.require_evidence_for_findings = false;
+    request.task.tools.clear();
+    request.task.search_provider = None;
+    request.policy.evidence.require_evidence_for_findings = false;
 
     let final_payload = serde_json::to_string(&AspectResearchResult {
         aspect_report: AspectReport {
@@ -1706,6 +1781,7 @@ async fn aspect_with_empty_allowed_tools_sends_empty_model_tools() {
     let captured_requests = Arc::new(Mutex::new(Vec::new()));
     let mut model_service = ModelService::new();
     model_service.register(CapturingSequenceModelProvider {
+        name: "model",
         calls: model_calls,
         responses: Mutex::new(vec![final_response(final_payload)].into()),
         requests: captured_requests.clone(),
@@ -1724,17 +1800,67 @@ async fn aspect_with_empty_allowed_tools_sends_empty_model_tools() {
     let requests = captured_requests.lock().expect("requests lock").clone();
     assert!(
         requests[0].tools.is_empty(),
-        "ModelRequest.tools must be empty when allowed_tools is empty"
+        "ModelRequest.tools must be empty when tools is empty"
     );
 }
 
-/// When an aspect permits the search tool the guard MUST advertise exactly
-/// the search tool (no extras). Regression guard for M13.
-#[test]
-fn aspect_with_search_tool_advertises_only_search_tool() {
-    let request = aspect_request();
-    let guard = moe_research_workflow::ToolPolicyGuard::new(&request.task.aspect);
-    let tools = guard.allowed_model_tools();
-    assert_eq!(tools.len(), 1);
-    assert_eq!(tools[0].name, "search");
+/// When an aspect permits the search tool the public workflow MUST send exactly
+/// that tool to the model provider. Regression guard for M13.
+#[tokio::test]
+async fn aspect_with_search_tool_sends_only_logical_search_tool() {
+    let mut request = aspect_request();
+    request.policy.evidence.require_evidence_for_findings = false;
+
+    let final_payload = serde_json::to_string(&AspectResearchResult {
+        aspect_report: AspectReport {
+            aspect_id: "aspect-1".to_owned(),
+            aspect_name: "Aspect".to_owned(),
+            question: "What is true?".to_owned(),
+            scope: vec!["scope".to_owned()],
+            findings: Vec::new(),
+            assumptions: Vec::new(),
+            risks: Vec::new(),
+            counterarguments: Vec::new(),
+            open_questions: Vec::new(),
+            confidence: Confidence::Medium,
+            limitations: Vec::new(),
+        },
+        evidence: Vec::new(),
+    })
+    .expect("report json");
+
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let captured_requests = Arc::new(Mutex::new(Vec::new()));
+    let mut model_service = ModelService::new();
+    model_service.register(CapturingSequenceModelProvider {
+        name: "model",
+        calls: model_calls,
+        responses: Mutex::new(vec![final_response(final_payload)].into()),
+        requests: captured_requests.clone(),
+    });
+    let search_service = SearchService::new();
+
+    aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect("search-enabled aspect result");
+
+    let requests = captured_requests.lock().expect("requests lock").clone();
+    assert_eq!(requests[0].tools.len(), 1);
+    assert_eq!(requests[0].tools[0].name, "search");
+
+    let schema = requests[0].tools[0].input_schema.to_string();
+    assert!(schema.contains("query"));
+    assert!(schema.contains("depth"));
+    assert!(schema.contains("content_level"));
+    assert!(schema.contains("recency"));
+    assert!(schema.contains("category"));
+    assert!(!schema.contains("maxAgeHours"));
+    assert!(!schema.contains("deep-lite"));
+    assert!(!schema.contains("deep\""));
+    assert!(!schema.contains("deep-reasoning"));
 }

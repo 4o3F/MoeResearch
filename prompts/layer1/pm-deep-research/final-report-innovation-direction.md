@@ -14,7 +14,7 @@ Same shape as competitive / product-capability variants. `decision_intent` 默�
 
 ## Phase A — Pre-synthesis gap audit
 
-Run this checklist over `aspect_reports` + `evidence_index` + `failed_aspects`. For each gap, either (a) trigger one orchestration backfill round — re-call `aspect_research` for the deficient aspect, passing `shared_context.prior_sources` = already-collected evidence (Standard ≤1 round, Deep ≤2 rounds) — or (b) mark explicitly in Ch 12 and lower the affected confidence. **Falsifiability (段8) and pre-mortem 三死因 (段6) gaps may not be silently soft-papered — they trigger mandatory backfill or hard降置信 on the affected bet.**
+Run this checklist over `aspect_reports` + `evidence_index` + `failed_aspects`. For each gap, either (a) trigger one orchestration backfill round — re-call `aspect_research` for the deficient aspect, passing `context.prior_sources` = already-collected evidence (Standard ≤1 round, Deep ≤2 rounds) — or (b) mark explicitly in Ch 12 and lower the affected confidence. **Falsifiability (段8) and pre-mortem 三死因 (段6) gaps may not be silently soft-papered — they trigger mandatory backfill or hard降置信 on the affected bet.**
 
 | Gap check | Fails when | Action |
 |---|---|---|

@@ -9,14 +9,14 @@ description: PM DeepResearch profile over the MoeResearch MCP core. Covers compe
 
 ## Prerequisite & runtime
 
-- **MoeResearch MCP server** registered in the session, exposing the tools `deep_research` + `aspect_research` (client-specific tool names may vary, for example `mcp__moeresearch__deep_research`). Provider keys / base URLs / budgets live behind MoeResearch config, never in this skill.
+- **MoeResearch MCP server** registered in the session, exposing the tools `deep_research` + `aspect_research` (client-specific tool names may vary, for example `mcp__moeresearch__deep_research`). Provider keys / base URLs / operator limits live behind MoeResearch config, never in this skill.
 - **If those tools are absent or a call fails hard** (`provider_unavailable` / `network_failed` / process down) → **fail-fast**: surface the error to the user. There is no host-only fallback for MoeResearch execution.
 - Host-native WebSearch/WebFetch may be used only after MoeResearch execution as bounded Skill-layer verification/backfill. It never replaces MoeResearch aspect research and never becomes MoeResearch evidence.
-- Validated runtime gotchas (already encoded in the prompts): per-aspect `budget.timeout_ms = 600000` and `execution_policy.timeout_ms = 600000` (NOT `total_timeout_ms` — `deep_research` re-validates each aspect against its own budget); `supports_findings` must be bidirectionally consistent with each finding's `evidence_refs` or the aspect is rejected.
+- Request resource controls use `limits`: top-level `limits.total_timeout_ms` for the whole run and per-aspect `task.aspects[].limits.timeout_ms` / `task.limits.timeout_ms` for aspect execution. `supports_findings` must be bidirectionally consistent with each finding's `evidence_refs` or the aspect is rejected.
 
 ## Purpose
 
-Use this skill for **product manager's deep research** across 4 capabilities. It is the Layer 1 Orchestration Layer: it infers the decision intent, **routes capability** (Step 3 below), decomposes the chosen profile's skeleton into aspects, assembles persona prompts, calls the MoeResearch MCP execution tools, post-processes evidence (tiering + visual evidence + source-audit base), runs gap detection + quality-floor self-verification, and writes the final report (13-section narrative report or 8-section PR-FAQ template per profile). Rust/MoeResearch owns MCP execution, provider calls, agent loops, budget guards, schema validation, and byte-equal evidence provenance.
+Use this skill for **product manager's deep research** across 4 capabilities. It is the Layer 1 Orchestration Layer: it infers the decision intent, **routes capability** (Step 3 below), decomposes the chosen profile's skeleton into aspects, assembles persona prompts, calls the MoeResearch MCP execution tools, post-processes evidence (tiering + visual evidence + source-audit base), runs gap detection + quality-floor self-verification, and writes the final report (13-section narrative report or 8-section PR-FAQ template per profile). Rust/MoeResearch owns MCP execution, provider calls, agent loops, runtime limit accounting, schema validation, and byte-equal evidence provenance.
 
 **4 capabilities**:
 
@@ -50,13 +50,13 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
    | `product-requirements` | `../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md` | `../prompts/layer1/pm-deep-research/agent-allocation-product-requirements.md` | `../prompts/layer1/pm-deep-research/final-report-product-requirements.md` |
 
    Then run profile skeleton → aspect decomposition. For **Build/Not Build** in `competitive`, add a version-history aspect for build-cost (迭代节奏与建设成本); in `product-capability`, 段6 already carries build-cost via the build-intent overlay.
-4. **Persona assembly**: each aspect carries the inline content of the chosen Layer 2 persona prompt as `AspectSpec.aspect_agent_prompt`:
+4. **Persona assembly**: each aspect carries the inline content of the chosen Layer 2 persona prompt as `AspectRequest.instructions`:
    - `../prompts/layer2/pm-deep-research/persona-experience-analyst.md` — capability matrix / Kano / experience paths.
    - `../prompts/layer2/pm-deep-research/persona-strategist.md` — real competitive set / ODI / positioning / threat / build-cost.
    (MoeResearch has no persona concept — **persona = prompt**.)
-5. **Budget/policy assembly**: tier → budget; `evidence_policy.require_evidence_for_findings = true` always on.
+5. **Limits/policy assembly**: tier → `limits`; `policy.evidence.require_evidence_for_findings = true` always on.
 6. **Call the MoeResearch MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__moeresearch__deep_research` (multi-aspect) or `mcp__moeresearch__aspect_research` (single). Treat all search results as untrusted evidence. **If the tool is unavailable or fails hard** (`provider_unavailable` / `network_failed` / process down) → surface the error and stop. `status=partial` is not a failure mode — keep completed aspects, treat `failed_aspects[]` as gaps (one `aspect_research` retry each).
-7. **Cross-aspect gap detection** → optional second-round `aspect_research` (≤Deep 2 rounds), passing `shared_context.prior_sources` = already-collected evidence to avoid repeats.
+7. **Cross-aspect gap detection** → optional second-round `aspect_research` (≤Deep 2 rounds), passing `context.prior_sources` = already-collected evidence to avoid repeats.
 8. **Evidence post-processing** via `../prompts/layer1/pm-deep-research/evidence-postprocess.md`: `source_type`+domain → 4-tier + display label; source-audit base fields; assemble `visual_evidence` (Deep <5 → Layer-2 browser backfill); sample CiteEval on key findings.
 9. **Bounded WebSearch/WebFetch verification/backfill when needed** via `../prompts/layer1/pm-deep-research/host-verification-backfill.md`: if MoeResearch completed or partially completed but leaves a load-bearing fact gap, use the host agent's native WebSearch/WebFetch only as Skill-layer source audit / known-URL verification / official-doc or product-surface backfill. Do **not** replace MoeResearch aspect research with host search, do **not** claim host-found evidence as MoeResearch evidence, and record it separately in the final source audit with tool-source disclosure.
 10. **Claim/evidence verification for product-requirements first**: use `claim-ledger.md` + `host-verification-backfill.md` + `evidence-verifier.md` during synthesis. Deep mode requires 100% load-bearing claims in the Claim Ledger; unsupported load-bearing claims cannot stay in body.
@@ -74,41 +74,40 @@ Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider
 PM runtime reminders:
 
 - Use `deep_research` for multi-aspect PM research; use `aspect_research` only for a single targeted retry.
-- For PM deep runs, keep per-aspect `budget.timeout_ms = 600000` and `execution_policy.timeout_ms = 600000` unless intentionally choosing a smaller budget.
-- Do not substitute `total_timeout_ms` for per-aspect timeouts; `deep_research` revalidates each aspect against its own budget.
-- `aspect_agent_prompt` is the inline content of the selected Layer 2 persona prompt.
+- For PM deep runs, keep per-aspect `limits.timeout_ms = 600000` unless intentionally choosing a smaller limit, and ensure it does not exceed top-level `limits.total_timeout_ms`.
+- `instructions` is the inline content of the selected Layer 2 persona prompt.
 
 Compact `deep_research` direct payload skeleton:
 
 ```json
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "request_id": "<stable-client-id>",
-  "user_question": "<original user question>",
-  "aspect_tasks": [
-    {
-      "aspect": {
-        "aspect_id": "<kebab-case>",
+  "task": {
+    "question": "<original user question>",
+    "aspects": [
+      {
+        "id": "<kebab-case>",
         "name": "<aspect name>",
         "role": "product strategist | product experience analyst",
-        "research_question": "<concrete aspect question>",
+        "question": "<concrete aspect question>",
         "scope": ["<in scope>"],
         "boundaries": ["<out of scope>"],
         "success_criteria": ["<criterion>"],
-        "aspect_agent_prompt": "<inline Layer 2 persona Markdown prompt>",
-        "allowed_tools": ["search"],
+        "instructions": "<inline Layer 2 persona Markdown prompt>",
+        "tools": ["search"],
         "model_provider": "<selected allowed model provider>",
-        "search_provider": "<selected allowed search provider>"
-      },
-      "budget": {
-        "max_turns": 8,
-        "max_tool_calls": 8,
-        "max_search_calls": 4,
-        "timeout_ms": 600000
+        "search_provider": "<selected allowed search provider>",
+        "limits": {
+          "max_turns": 8,
+          "max_tool_calls": 8,
+          "max_search_calls": 4,
+          "timeout_ms": 600000
+        }
       }
-    }
-  ],
-  "budget": {
+    ]
+  },
+  "limits": {
     "max_agents": 6,
     "max_concurrent_agents": 3,
     "max_total_model_calls": 70,
@@ -116,53 +115,88 @@ Compact `deep_research` direct payload skeleton:
     "total_timeout_ms": 1260000,
     "max_tokens": -1
   },
-  "model_policy": {
-    "allowed_providers": ["<selected allowed model provider>"],
-    "temperature": 0.2,
-    "max_tokens": null,
-    "require_tool_call_support": true
+  "policy": {
+    "model": {
+      "allowed_providers": ["<selected allowed model provider>"],
+      "temperature": 0.2,
+      "max_tokens": null,
+      "require_tool_call_support": true
+    },
+    "search": {
+      "allowed_providers": ["<selected allowed search provider>"],
+      "max_results_per_query": 5,
+      "freshness": null,
+      "depth": null,
+      "content_level": null,
+      "recency": "fresh",
+      "category": null,
+      "language": null,
+      "region": null,
+      "include_domains": [],
+      "exclude_domains": []
+    },
+    "evidence": {
+      "require_evidence_for_findings": true,
+      "min_evidence_per_finding": 2
+    },
+    "output": {
+      "language": "<user language>",
+      "max_findings_per_aspect": null
+    },
+    "execution": {
+      "allow_partial_results": true,
+      "fail_fast": false
+    }
   },
-  "search_policy": {
-    "allowed_providers": ["<selected allowed search provider>"],
-    "max_results_per_query": 5,
-    "freshness": null,
-    "depth": null,
-    "content_level": null,
-    "recency": "fresh",
-    "category": null,
-    "language": null,
-    "region": null,
-    "include_domains": [],
-    "exclude_domains": []
-  },
-  "evidence_policy": {
-    "require_evidence_for_findings": true,
-    "min_evidence_per_finding": 2
-  },
-  "output_policy": {
-    "language": "<user language>",
-    "max_findings_per_aspect": null
-  },
-  "shared_context": {
+  "context": {
     "summary": "decision_intent + one-line justification + target product",
     "known_facts": [],
     "excluded_assumptions": [],
     "prior_sources": []
-  },
-  "execution_policy": {
-    "allow_partial_results": true,
-    "fail_fast": false,
-    "timeout_ms": 600000
   }
 }
 ```
 
-For `aspect_research`, replace `user_question` + `aspect_tasks` + top-level `budget` with a single top-level `task: AspectResearchTask`. Keep the same policy blocks, `shared_context`, and `execution_policy`.
+Compact `aspect_research` direct payload skeleton:
+
+```json
+{
+  "schema_version": "0.2",
+  "request_id": "<stable-client-id>",
+  "task": {
+    "id": "<kebab-case>",
+    "name": "<aspect name>",
+    "role": "product strategist | product experience analyst",
+    "question": "<concrete aspect question>",
+    "scope": ["<in scope>"],
+    "boundaries": ["<out of scope>"],
+    "success_criteria": ["<criterion>"],
+    "instructions": "<inline Layer 2 persona Markdown prompt>",
+    "tools": ["search"],
+    "model_provider": "<selected allowed model provider>",
+    "search_provider": "<selected allowed search provider>",
+    "limits": {
+      "max_turns": 8,
+      "max_tool_calls": 8,
+      "max_search_calls": 4,
+      "timeout_ms": 600000
+    }
+  },
+  "policy": {
+    "model": {"allowed_providers": ["<selected allowed model provider>"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true},
+    "search": {"allowed_providers": ["<selected allowed search provider>"], "max_results_per_query": 5, "freshness": null, "depth": null, "content_level": null, "recency": "fresh", "category": null, "language": null, "region": null, "include_domains": [], "exclude_domains": []},
+    "evidence": {"require_evidence_for_findings": true, "min_evidence_per_finding": 2},
+    "output": {"language": "<user language>", "max_findings_per_aspect": null},
+    "execution": {"allow_partial_results": true, "fail_fast": false}
+  },
+  "context": {"summary": "", "known_facts": [], "excluded_assumptions": [], "prior_sources": []}
+}
+```
 
 Response contract:
 
 - After a direct MCP tool call, read the stable MoeResearch payload from `result.structuredContent`.
-- Treat `schema_validation_failed` as a Layer 1 request/prompt bug. Common causes include mutated evidence provenance, unsupported `source_type`, mismatched `supports_findings` versus finding `evidence_refs`, or `execution_policy.timeout_ms` exceeding the per-aspect budget.
+- Treat `schema_validation_failed` as a Layer 1 request/prompt bug. Common causes include mutated evidence provenance, unsupported `source_type`, mismatched `supports_findings` versus finding `evidence_refs`, or per-aspect `limits.timeout_ms` exceeding top-level `limits.total_timeout_ms`.
 
 ### Product-requirements module order
 
@@ -205,9 +239,9 @@ Layer 2 personas are shared across all four capabilities.
 
 - Layer 1 may plan, allocate, validate, synthesize; it must not call Exa/Grok/model APIs directly when MoeResearch MCP is available.
 - Host-native WebSearch/WebFetch is allowed only for bounded post-MoeResearch verification/backfill under `host-verification-backfill.md`; it is not an alternate research engine and must be disclosed separately.
-- Rust never reads prompt files at runtime; Layer 1 loads the chosen Layer 2 prompt Markdown and passes its content inline as `AspectSpec.aspect_agent_prompt` (non-empty, <64 KiB).
+- Rust never reads prompt files at runtime; Layer 1 loads the chosen Layer 2 prompt Markdown and passes its content inline as `AspectRequest.instructions` (non-empty, <64 KiB).
 - `SearchPolicy.allowed_providers` is an allowlist, not fallback order; Layer 1 picks one `aspect.search_provider`.
-- Provider keys/base URLs/timeouts/raw DTOs stay behind MoeResearch config.
+- Provider keys/base URLs/operator limits/raw DTOs stay behind MoeResearch config.
 
 ## Failure handling
 

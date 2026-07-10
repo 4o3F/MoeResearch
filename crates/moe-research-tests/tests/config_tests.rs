@@ -44,7 +44,7 @@ api_key_env = "OPENAI_API_KEY"
 inactivity_timeout_ms = 30000
 model = "gpt-5.5"
 
-[budget.research]
+[limits.research]
 max_agents = -1
 max_concurrent_agents = -1
 max_total_model_calls = -1
@@ -52,7 +52,7 @@ max_total_search_calls = -1
 total_timeout_ms = -1
 max_tokens = -1
 
-[budget.per_agent]
+[limits.per_agent]
 max_turns = -1
 max_tool_calls = -1
 max_search_calls = -1
@@ -190,7 +190,7 @@ fn rejects_zero_provider_timeout() {
 }
 
 #[test]
-fn rejects_budget_config_with_invalid_relative_limits() {
+fn rejects_limits_config_with_invalid_relative_limits() {
     let input = VALID_CONFIG
         .replace("max_agents = -1", "max_agents = 2")
         .replace("max_concurrent_agents = -1", "max_concurrent_agents = 3");
@@ -199,33 +199,33 @@ fn rejects_budget_config_with_invalid_relative_limits() {
 
     assert!(
         err.to_string()
-            .contains("budget.research.max_concurrent_agents must not exceed")
+            .contains("limits.research.max_concurrent_agents must not exceed")
     );
 }
 
 #[test]
-fn accepts_unlimited_budget_config_values() {
+fn accepts_unlimited_limits_config_values() {
     let config = load_config_from_test_str(VALID_CONFIG).expect("config");
 
-    assert!(config.budget.research.max_agents.is_unlimited());
-    assert!(config.budget.research.max_concurrent_agents.is_unlimited());
-    assert!(config.budget.research.max_total_model_calls.is_unlimited());
-    assert!(config.budget.research.max_total_search_calls.is_unlimited());
-    assert!(config.budget.research.total_timeout_ms.is_unlimited());
-    assert!(config.budget.research.max_tokens.is_unlimited());
-    assert!(config.budget.per_agent.max_turns.is_unlimited());
-    assert!(config.budget.per_agent.max_tool_calls.is_unlimited());
-    assert!(config.budget.per_agent.max_search_calls.is_unlimited());
-    assert!(config.budget.per_agent.timeout_ms.is_unlimited());
+    assert!(config.limits.research.max_agents.is_unlimited());
+    assert!(config.limits.research.max_concurrent_agents.is_unlimited());
+    assert!(config.limits.research.max_total_model_calls.is_unlimited());
+    assert!(config.limits.research.max_total_search_calls.is_unlimited());
+    assert!(config.limits.research.total_timeout_ms.is_unlimited());
+    assert!(config.limits.research.max_tokens.is_unlimited());
+    assert!(config.limits.per_agent.max_turns.is_unlimited());
+    assert!(config.limits.per_agent.max_tool_calls.is_unlimited());
+    assert!(config.limits.per_agent.max_search_calls.is_unlimited());
+    assert!(config.limits.per_agent.timeout_ms.is_unlimited());
 }
 
 #[test]
-fn rejects_budget_config_values_below_minus_one() {
+fn rejects_limits_config_values_below_minus_one() {
     let input = VALID_CONFIG.replace("max_agents = -1", "max_agents = -2");
 
     let err = load_config_from_test_str(&input).unwrap_err();
 
-    assert!(err.to_string().contains("budget limit must be -1"));
+    assert!(err.to_string().contains("config limit must be -1"));
 }
 
 #[test]

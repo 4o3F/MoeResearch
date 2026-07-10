@@ -15,7 +15,7 @@ pub struct MoeResearchConfig {
     pub network: NetworkConfig,
     pub search: SearchProviderRegistry,
     pub model: ModelProviderRegistry,
-    pub budget: BudgetConfig,
+    pub limits: LimitsConfig,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,7 +52,7 @@ impl MoeResearchConfig {
 
     fn validate_structure(&self) -> Result<()> {
         self.network.validate()?;
-        self.budget.validate()?;
+        self.limits.validate()?;
         self.search.validate_structure()?;
         self.model.validate_structure()
     }
@@ -302,28 +302,28 @@ impl GrokReasoningEffort {
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct BudgetConfig {
-    pub research: ResearchBudgetConfig,
-    pub per_agent: AgentBudgetConfig,
+pub struct LimitsConfig {
+    pub research: ResearchLimitsConfig,
+    pub per_agent: AgentLimitsConfig,
 }
 
-impl BudgetConfig {
+impl LimitsConfig {
     pub fn validate(&self) -> Result<()> {
         self.research
             .max_agents
-            .require_non_zero("budget.research.max_agents")?;
+            .require_non_zero("limits.research.max_agents")?;
         self.research
             .max_concurrent_agents
-            .require_non_zero("budget.research.max_concurrent_agents")?;
+            .require_non_zero("limits.research.max_concurrent_agents")?;
         self.research
             .total_timeout_ms
-            .require_non_zero("budget.research.total_timeout_ms")?;
+            .require_non_zero("limits.research.total_timeout_ms")?;
         self.per_agent
             .max_turns
-            .require_non_zero("budget.per_agent.max_turns")?;
+            .require_non_zero("limits.per_agent.max_turns")?;
         self.per_agent
             .timeout_ms
-            .require_non_zero("budget.per_agent.timeout_ms")?;
+            .require_non_zero("limits.per_agent.timeout_ms")?;
 
         if self
             .research
@@ -331,8 +331,8 @@ impl BudgetConfig {
             .exceeds(self.research.max_agents)
         {
             return Err(Error::ConfigInvalid {
-                message: "budget.research.max_concurrent_agents must not exceed \
-                          budget.research.max_agents"
+                message: "limits.research.max_concurrent_agents must not exceed \
+                          limits.research.max_agents"
                     .to_owned(),
             });
         }
@@ -343,7 +343,7 @@ impl BudgetConfig {
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ResearchBudgetConfig {
+pub struct ResearchLimitsConfig {
     pub max_agents: CountLimit,
     pub max_concurrent_agents: CountLimit,
     pub max_total_model_calls: CountLimit,
@@ -354,7 +354,7 @@ pub struct ResearchBudgetConfig {
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct AgentBudgetConfig {
+pub struct AgentLimitsConfig {
     pub max_turns: CountLimit,
     pub max_tool_calls: CountLimit,
     pub max_search_calls: CountLimit,

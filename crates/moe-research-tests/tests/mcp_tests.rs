@@ -18,7 +18,7 @@ use moe_research_model::ModelService;
 use moe_research_model::{ModelRequest, ModelResponse};
 use moe_research_workflow::AspectResearchResult;
 use moe_research_workflow::Limit;
-use moe_research_workflow::{AgentBudget, BudgetConfig, ResearchBudget};
+use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
 use rmcp::ServerHandler;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::schemars::schema_for;
@@ -124,7 +124,7 @@ fn public_tool_descriptions_explain_direct_payload_shape() {
     assert!(aspect_description.contains("request object directly"));
     assert!(aspect_description.contains("Do not wrap"));
     assert!(aspect_description.contains("schema_version"));
-    assert!(aspect_description.contains("aspect_agent_prompt"));
+    assert!(aspect_description.contains("instructions"));
     assert!(aspect_description.contains("model_provider"));
     assert!(aspect_description.contains("search_provider"));
 
@@ -136,10 +136,10 @@ fn public_tool_descriptions_explain_direct_payload_shape() {
     assert!(deep_description.contains("request object directly"));
     assert!(deep_description.contains("Do not wrap"));
     assert!(deep_description.contains("schema_version"));
-    assert!(deep_description.contains("aspect_agent_prompt"));
-    assert!(deep_description.contains("aspect_tasks"));
-    assert!(deep_description.contains("budget"));
-    assert!(deep_description.contains("search_policy"));
+    assert!(deep_description.contains("instructions"));
+    assert!(deep_description.contains("task.aspects"));
+    assert!(deep_description.contains("limits"));
+    assert!(deep_description.contains("policy"));
 }
 
 #[test]
@@ -204,7 +204,7 @@ async fn aspect_research_success_returns_ok_envelope() {
 #[tokio::test]
 async fn aspect_research_invalid_input_returns_failed_envelope() {
     let mut request = aspect_request();
-    request.task.aspect.research_question.clear();
+    request.task.question.clear();
     let envelope = mcp_server(services(&[]))
         .aspect_research(Parameters(request))
         .await
@@ -221,7 +221,7 @@ async fn aspect_research_invalid_input_returns_failed_envelope() {
 #[tokio::test]
 async fn aspect_research_budget_failure_envelope_returns_partial_with_tool_error() {
     let mut request = aspect_request();
-    request.task.budget.max_search_calls = Limit::limited(2);
+    request.task.limits.max_search_calls = Limit::limited(2);
     let services = sequence_services(vec![tool_response(), tool_response(), tool_response()]);
     let search_calls = services.search_calls.clone();
 
@@ -248,8 +248,8 @@ async fn aspect_research_budget_failure_envelope_returns_partial_with_tool_error
 #[tokio::test]
 async fn aspect_research_partial_failure_disabled_returns_failed_envelope() {
     let mut request = aspect_request();
-    request.execution_policy.allow_partial_results = false;
-    request.task.budget.max_search_calls = Limit::limited(1);
+    request.policy.execution.allow_partial_results = false;
+    request.task.limits.max_search_calls = Limit::limited(1);
     let services = sequence_services(vec![tool_response(), tool_response()]);
     let search_calls = services.search_calls.clone();
 
@@ -303,7 +303,7 @@ async fn aspect_research_schema_failure_after_evidence_returns_partial_with_froz
 #[tokio::test]
 async fn aspect_research_schema_failure_after_evidence_fails_when_partials_disabled() {
     let mut request = aspect_request();
-    request.execution_policy.allow_partial_results = false;
+    request.policy.execution.allow_partial_results = false;
     let services = sequence_services(vec![
         tool_response(),
         final_response("__MUTATED_RESULT_FROM_TOOL_OUTPUT__".to_owned()),
@@ -354,7 +354,7 @@ async fn aspect_research_transient_provider_unavailable_partial_marks_tool_error
 #[tokio::test]
 async fn aspect_research_policy_provider_unavailable_marks_tool_error_not_retryable() {
     let mut request = aspect_request();
-    request.model_policy.allowed_providers = vec!["other".to_owned()];
+    request.policy.model.allowed_providers = vec!["other".to_owned()];
 
     let envelope = mcp_server(services(&[]))
         .aspect_research(Parameters(request))
@@ -377,11 +377,11 @@ async fn aspect_research_config_research_budget_failure_returns_tool_error() {
     let services = sequence_services(vec![tool_response()]);
     let search_calls = services.search_calls.clone();
     let budget_config = BudgetConfig {
-        research: ResearchBudget {
+        research: ResearchLimits {
             max_total_search_calls: Limit::limited(0),
-            ..ResearchBudget::unlimited()
+            ..ResearchLimits::unlimited()
         },
-        per_agent: AgentBudget::unlimited(),
+        per_agent: AgentLimits::unlimited(),
     };
 
     let envelope = mcp_server_with_budget(services, budget_config)
@@ -439,10 +439,12 @@ async fn deep_research_partial_success_returns_partial_envelope() {
 #[tokio::test]
 async fn deep_research_post_run_budget_partial_returns_partial_envelope_with_data() {
     let mut request = deep_request(3);
-    request.budget.max_concurrent_agents = Limit::limited(1);
-    request.budget.total_timeout_ms = Limit::limited(110);
-    request.execution_policy.fail_fast = true;
-    request.execution_policy.timeout_ms = Limit::limited(110);
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    request.limits.total_timeout_ms = Limit::limited(110);
+    for aspect in &mut request.task.aspects {
+        aspect.limits.timeout_ms = Limit::limited(110);
+    }
+    request.policy.execution.fail_fast = true;
 
     let envelope = mcp_server(services_with_delay(
         &["aspect-2"],
@@ -498,7 +500,7 @@ async fn deep_research_all_failed_with_partial_evidence_returns_partial_envelope
 #[tokio::test]
 async fn deep_research_duplicate_aspect_ids_is_top_level_invalid_input() {
     let mut request = deep_request(2);
-    request.aspect_tasks[1].aspect.aspect_id = request.aspect_tasks[0].aspect.aspect_id.clone();
+    request.task.aspects[1].id = request.task.aspects[0].id.clone();
 
     let envelope = mcp_server(services(&[]))
         .deep_research(Parameters(request))
@@ -514,9 +516,9 @@ async fn deep_research_duplicate_aspect_ids_is_top_level_invalid_input() {
 #[tokio::test]
 async fn deep_research_all_agent_budget_failures_include_failed_aspects() {
     let mut request = deep_request(2);
-    request.budget.max_concurrent_agents = Limit::limited(1);
-    for task in &mut request.aspect_tasks {
-        task.budget.max_search_calls = Limit::limited(0);
+    request.limits.max_concurrent_agents = Limit::limited(1);
+    for task in &mut request.task.aspects {
+        task.limits.max_search_calls = Limit::limited(0);
     }
     let services = services(&[]);
     let model_calls = services.model_calls.clone();
@@ -723,7 +725,7 @@ async fn tool_envelope_partial_includes_data_and_null_error_with_run_id() {
 #[tokio::test]
 async fn tool_envelope_aspect_partial_serializes_data_and_error() {
     let mut request = aspect_request();
-    request.task.budget.max_search_calls = Limit::limited(1);
+    request.task.limits.max_search_calls = Limit::limited(1);
     let envelope = mcp_server(sequence_services(vec![tool_response(), tool_response()]))
         .aspect_research(Parameters(request))
         .await
@@ -745,7 +747,7 @@ async fn tool_envelope_aspect_partial_serializes_data_and_error() {
 #[tokio::test]
 async fn tool_envelope_failed_serializes_null_run_id_and_null_data() {
     let mut request = aspect_request();
-    request.task.aspect.research_question.clear();
+    request.task.question.clear();
     let envelope = mcp_server(services(&[]))
         .aspect_research(Parameters(request))
         .await
@@ -765,8 +767,8 @@ async fn tool_envelope_failed_serializes_null_run_id_and_null_data() {
 #[tokio::test]
 async fn tool_envelope_failed_aspect_research_carries_aspect_id() {
     let mut request = aspect_request();
-    request.task.aspect.research_question.clear();
-    let expected_aspect_id = request.task.aspect.aspect_id.clone();
+    request.task.question.clear();
+    let expected_aspect_id = request.task.id.clone();
     let envelope = mcp_server(services(&[]))
         .aspect_research(Parameters(request))
         .await
@@ -925,7 +927,7 @@ api_key_env = "OPENAI_API_KEY"
 inactivity_timeout_ms = 120000
 model = "gpt-5.5"
 
-[budget.research]
+[limits.research]
 max_agents = -1
 max_concurrent_agents = -1
 max_total_model_calls = -1
@@ -933,7 +935,7 @@ max_total_search_calls = -1
 total_timeout_ms = -1
 max_tokens = -1
 
-[budget.per_agent]
+[limits.per_agent]
 max_turns = -1
 max_tool_calls = -1
 max_search_calls = -1
@@ -1011,5 +1013,17 @@ timeout_ms = -1
     assert!(
         stderr.contains("moeresearch initialized"),
         "expected startup logs on stderr, got stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("operator_limits_research"),
+        "expected startup logs to include operator_limits_research, got stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("operator_limits_per_agent"),
+        "expected startup logs to include operator_limits_per_agent, got stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("budget_research") && !stderr.contains("budget_per_agent"),
+        "startup logs should not expose legacy budget_* config field names, got stderr: {stderr}"
     );
 }

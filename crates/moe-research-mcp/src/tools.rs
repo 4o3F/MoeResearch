@@ -1,10 +1,9 @@
 use rmcp::{Json, handler::server::wrapper::Parameters, tool, tool_router};
 
 use moe_research_error::{Error, ErrorCode};
-use moe_research_workflow::agent_loop::AgentRuntimeOutput;
 use moe_research_workflow::{
-    AspectFailure, AspectResearchRequest, AspectResearchResult, DeepResearchRequest,
-    DeepResearchResult, aspect_research as run_aspect_research, deep_research as run_deep_research,
+    AspectFailure, AspectResearchOutput, AspectResearchRequest, AspectResearchResult,
+    DeepResearchRequest, DeepResearchResult,
 };
 
 use crate::envelope::{ToolEnvelope, ToolError, ToolErrorCode, ToolStatus};
@@ -13,7 +12,7 @@ use crate::server::MoeResearchMcpServer;
 #[tool_router(server_handler)]
 impl MoeResearchMcpServer {
     #[tool(
-        description = "Run exactly one MoeResearch aspect. Input is the AspectResearchRequest request object directly, with top-level fields schema_version, request_id, task, shared_context, model_policy, search_policy, evidence_policy, output_policy, and execution_policy. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.1\". aspect.aspect_agent_prompt must be inline Markdown content, not a file path. aspect.model_provider is required. aspect.search_provider is required when allowed_tools includes \"search\"."
+        description = "Run exactly one MoeResearch aspect. Input is the AspectResearchRequest request object directly, with top-level fields schema_version, request_id, task, policy, and context. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.2\". task.instructions must be inline Markdown content, not a file path. task.tools and task.limits are required. task.model_provider is required. task.search_provider is required when task.tools includes \"search\"."
     )]
     pub async fn aspect_research(
         &self,
@@ -21,8 +20,8 @@ impl MoeResearchMcpServer {
     ) -> Json<ToolEnvelope<AspectResearchResult>> {
         let schema_version = request.schema_version.clone();
         let request_id = request.request_id.clone();
-        let aspect_id = request.task.aspect.aspect_id.clone();
-        let allow_partial_results = request.execution_policy.allow_partial_results;
+        let aspect_id = request.task.id.clone();
+        let allow_partial_results = request.policy.execution.allow_partial_results;
         tracing::info!(
             request_id = %request_id,
             aspect_id = %aspect_id,
@@ -31,7 +30,7 @@ impl MoeResearchMcpServer {
         );
 
         Json(
-            match run_aspect_research(
+            match moe_research_workflow::aspect_research(
                 request,
                 &self.model_service,
                 &self.search_service,
@@ -90,7 +89,7 @@ impl MoeResearchMcpServer {
     }
 
     #[tool(
-        description = "Run a complete multi-aspect MoeResearch plan. Input is the DeepResearchRequest request object directly, with top-level fields schema_version, request_id, user_question, aspect_tasks, budget, model_policy, search_policy, evidence_policy, output_policy, shared_context, and execution_policy. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.1\". Each aspect task must include inline aspect_agent_prompt, explicit model_provider, and search_provider when search is enabled."
+        description = "Run a complete multi-aspect MoeResearch plan. Input is the DeepResearchRequest request object directly, with top-level fields schema_version, request_id, task, limits, policy, and context. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.2\". Each task.aspects entry must include inline instructions, tools, explicit model_provider, per-aspect limits, and search_provider when search is enabled."
     )]
     pub async fn deep_research(
         &self,
@@ -105,7 +104,7 @@ impl MoeResearchMcpServer {
         );
 
         Json(
-            match run_deep_research(
+            match moe_research_workflow::deep_research(
                 request,
                 &self.model_service,
                 &self.search_service,
@@ -150,7 +149,7 @@ impl MoeResearchMcpServer {
 fn aspect_success_envelope(
     schema_version: String,
     request_id: String,
-    output: AgentRuntimeOutput,
+    output: AspectResearchOutput,
 ) -> ToolEnvelope<AspectResearchResult> {
     ToolEnvelope {
         schema_version,

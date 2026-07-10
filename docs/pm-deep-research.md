@@ -254,7 +254,7 @@ moeresearch check --config ~/.config/moeresearch/moeresearch.toml
 moeresearch serve --config ~/.config/moeresearch/moeresearch.toml --log-format pretty
 ```
 
-Confirm that the MCP client launches the same `moeresearch` binary and passes the intended config path. Check stderr logs for `serve_starting` and `serve_initialized`; these events include safe startup diagnostics such as version, OS/arch, pid/ppid, parent process name when available, log filter source, enabled provider names, network retry settings, and budget summary.
+Confirm that the MCP client launches the same `moeresearch` binary and passes the intended config path. Check stderr logs for `serve_starting` and `serve_initialized`; these events include safe startup diagnostics such as version, OS/arch, pid/ppid, parent process name when available, log filter source, enabled provider names, network retry settings, and operator limits fields (`operator_limits_research`, `operator_limits_per_agent`).
 
 ### Missing provider environment variables
 

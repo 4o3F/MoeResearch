@@ -7,17 +7,17 @@ use crate::policy::{EvidencePolicy, OutputPolicy};
 use crate::report::{
     AspectReport, AspectResearchResult, Evidence, ValidationIssue, ValidationStatus,
 };
-use crate::research::AspectSpec;
+use crate::research::AspectRequest;
 
 pub struct OutputValidator<'a> {
-    aspect: &'a AspectSpec,
+    aspect: &'a AspectRequest,
     evidence_policy: &'a EvidencePolicy,
     output_policy: &'a OutputPolicy,
 }
 
 impl<'a> OutputValidator<'a> {
     pub fn new(
-        aspect: &'a AspectSpec,
+        aspect: &'a AspectRequest,
         evidence_policy: &'a EvidencePolicy,
         output_policy: &'a OutputPolicy,
     ) -> Self {
@@ -39,7 +39,7 @@ impl<'a> OutputValidator<'a> {
                 tracing::warn!(
                     event = "output_validation_failed",
                     status = "failed",
-                    aspect_id = %self.aspect.aspect_id,
+                    aspect_id = %self.aspect.id,
                     validation_phase = "json_parse",
                     content_bytes = content.len(),
                     json_error_class = ?error.classify(),
@@ -77,7 +77,7 @@ impl<'a> OutputValidator<'a> {
         tracing::warn!(
             event = "output_validation_failed",
             status = "failed",
-            aspect_id = %self.aspect.aspect_id,
+            aspect_id = %self.aspect.id,
             issue_count = issues.len(),
             selected_evidence_count = result.evidence.len(),
             candidate_evidence_count = candidate_evidence.len(),
@@ -93,7 +93,7 @@ impl<'a> OutputValidator<'a> {
         tracing::debug!(
             event = "output_validation_issues",
             status = "failed",
-            aspect_id = %self.aspect.aspect_id,
+            aspect_id = %self.aspect.id,
             validation_issues = ?validation_issues,
             "aspect output validation issue details"
         );
@@ -127,7 +127,7 @@ impl<'a> OutputValidator<'a> {
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
-        if report.aspect_id != self.aspect.aspect_id {
+        if report.aspect_id != self.aspect.id {
             issues.push(issue(
                 "aspect_id_mismatch",
                 "report aspect_id does not match requested aspect",
@@ -393,17 +393,6 @@ fn evidence_ids_for_log(evidence: &[Evidence]) -> Vec<String> {
         .iter()
         .map(|evidence| safe_evidence_id_for_log(&evidence.id))
         .collect()
-}
-
-pub fn validate_output(
-    content: &str,
-    aspect: &AspectSpec,
-    candidate_evidence: &[Evidence],
-    evidence_policy: &EvidencePolicy,
-    output_policy: &OutputPolicy,
-) -> Result<(AspectResearchResult, ValidationStatus)> {
-    OutputValidator::new(aspect, evidence_policy, output_policy)
-        .validate_content(content, candidate_evidence)
 }
 
 fn issue(code: &str, message: &str, path: impl Into<String>) -> ValidationIssue {

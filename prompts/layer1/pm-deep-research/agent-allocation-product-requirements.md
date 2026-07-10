@@ -2,7 +2,7 @@
 
 > Mapping reference consumed by [`task-decomposition-product-requirements.md`](task-decomposition-product-requirements.md). It defines, for product-requirements deep research: 八段 PR-FAQ skeleton → aspect → persona prompt, the per-tier aspect subset, EA + Strategist **balanced** ownership rationale, the **five hard-gate segments** (段3 4-risks 全 / 段4 ≥3 候选 / 段5 非目标 显式 / 段6 三套指标 / 段8 TM-11 falsification), the "working backwards" PR-FAQ assembly note, and intent overlay.
 
-## Two personas (each = one inline `aspect_agent_prompt`)
+## Two personas (each = one inline `instructions` value)
 
 Same two persona prompts as competitive / product-capability / innovation-direction (MoeResearch has no persona concept; persona = prompt). Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both; **TM-11 is the open-questions aspect's hard gate** under product-requirements:
 
@@ -15,7 +15,7 @@ Same two persona prompts as competitive / product-capability / innovation-direct
 
 ## 八段 PR-FAQ skeleton → aspect → persona
 
-| aspect_id | 段 | persona | research_question (template) | evidence standard → `success_criteria` |
+| id | 段 | persona | question (template) | evidence standard → `success_criteria` |
 |---|---|---|---|---|
 | `pr-faq-frame` | 1 | strategist (lead) | 给定 {subject} + audience，写 ≤300 字 PR：headline / sub-headline / 客户引言 (虚构但符合 JTBD) / 内部 FAQ ≥5 / 外部 FAQ ≥3 | 价值先于功能；**禁止实现细节** (无技术架构 / 模块名 / DB schema 等)；FAQ 计数达标；客户引言带具体场景 (非套话) |
 | `jtbd-odi-kano` | 2 | **experience-analyst** | {subject} 的核心 JTBD 是什么? 拆 ≥5 desired outcomes 跑 ODI (Imp + max(0, Imp − Sat))，每个分 Kano 类型 | ≥5 outcomes，每个含 Imp/Sat/Opp + Kano + 证据 ref；估算时强标 TM-4；Opp 公式正确；underserved (>10) ≥1 |
@@ -91,9 +91,9 @@ This overlay does not add a new persona or aspect. It tightens success criteria 
 >
 > Quick 段1+段2 (PR-FAQ + ODI) 是经典最小集 ("有没有用户痛点 + 写得出一段 PR 吗"); standard 加段3+段4 (能不能做 + 怎么做) 是评审会最小集; deep 加段5-段8 (需求 + 度量 + 证据 + 实验) 是开发 input deck.
 
-## Budget per aspect (hand off to `task-decomposition-product-requirements.md` Step 4)
+## Limits per aspect (hand off to `task-decomposition-product-requirements.md` Step 4)
 
-每 aspect 自带 `budget { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 5 (standard) / 6 (deep, only for full aspects that need enumeration); **段3 cagan micro-aspect (任一 tier) 用更小预算 `max_turns=5` / `max_tool_calls=5` / `max_search_calls=3`**（单 1 类风险，bounded 预算强制收敛，并降低 provenance mutation 风险）; `metrics-tree` / `open-questions-experiments` 同样使用 search=3 ceiling；per-aspect `timeout_ms` = **600000 恒**. Top-level `budget`: deep `max_agents=11` / `max_total_model_calls=80` / `max_total_search_calls=60` / `total_timeout_ms=2400000`; standard `max_agents=7` / `max_total_model_calls=42` / `max_total_search_calls=32` / `total_timeout_ms=1800000`. If an aspect reaches budget, retry sequentially once with `shared_context.prior_sources`; do not raise the search cap.
+每 aspect 自带 `limits { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 5 (standard) / 6 (deep, only for full aspects that need enumeration); **段3 cagan micro-aspect (任一 tier) 用更小限额 `max_turns=5` / `max_tool_calls=5` / `max_search_calls=3`**（单 1 类风险，bounded 限额强制收敛，并降低 provenance mutation 风险）; `metrics-tree` / `open-questions-experiments` 同样使用 search=3 ceiling；per-aspect `timeout_ms` = **600000 恒**. Top-level `limits`: deep `max_agents=11` / `max_total_model_calls=80` / `max_total_search_calls=60` / `total_timeout_ms=2400000`; standard `max_agents=7` / `max_total_model_calls=42` / `max_total_search_calls=32` / `total_timeout_ms=1800000`. If an aspect reaches limits, retry sequentially once with `context.prior_sources`; do not raise the search cap.
 
 ## Provider selection per aspect
 
@@ -108,7 +108,7 @@ This overlay does not add a new persona or aspect. It tightens success criteria 
 1. 每 aspect → exactly one persona prompt, inline (verbatim, non-empty, < 64 KiB).
 2. Aspects MECE across the 8 段 — 不重叠. **例外**：段3 = 4 个 cagan single-class micro-aspect（value/usability/feasibility/business），共属段3、在段3 内部按风险类别 MECE 分区；跨段仍不重叠。
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
-4. `decision_intent` + `subject` + audience 写在 `shared_context.summary` (aspect agents 读 it).
+4. `decision_intent` + `subject` + audience 写在 `context.summary` (aspect agents 读 it).
 5. Downstream `Evidence.source_type` 用 MoeResearch 7-value 集; 4-tier credibility 是 Skill 后处理, never an engine enum.
 6. **EA + Strategist balanced invariant（按段所有权，非 aspect 计数）**: **段所有权** EA 3 段 (段2/4/5) / Strategist 5 段 (段1/3/6/7/8) — 此平衡是 profile 关键契约，**不变**。注意段3 以 4 micro-aspect 落地，故 deep **aspect 计数** = EA 3 / Strategist 8 (段1 + 段3×4 + 段6/7/8)，但这只是段3 单段的执行展开，不改段所有权平衡。若某课题 EA-load 不平衡 (如 subject 已有完整 JTBD 不需 EA 段2 deep)，先合段 (如段2+段4 合并)，不要切给 strategist (会破坏用户视角)。
 7. **段3 / 段4 / 段5 / 段6 / 段8 是 hard floor aspects** — 缺对应 hard gate (4-risks 全 / ≥3 候选 / 非目标 / 三套指标 / TM-11) → 整段 0 分, 拒绝软化. 4 profile 中 hard-gate density 最高 (5 hard gates), by design.

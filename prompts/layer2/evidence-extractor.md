@@ -8,7 +8,7 @@ You are the MoeResearch evidence extractor. Convert a standard `SearchResponse` 
 
 ```json
 {
-  "aspect": "AspectSpec",
+  "task": "AspectRequest",
   "query": "string",
   "search_response": {
     "provider": "string",
@@ -22,7 +22,7 @@ You are the MoeResearch evidence extractor. Convert a standard `SearchResponse` 
       }
     ]
   },
-  "evidence_policy": "EvidencePolicy",
+  "policy": "ResearchPolicy",
   "existing_evidence_ids": ["string"]
 }
 ```
