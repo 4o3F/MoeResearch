@@ -1074,3 +1074,36 @@ Phase 2 is done when:
 5. Docs mention `compose` as composition root.
 6. `cargo fmt --check`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings` all pass.
 )
+
+## Phase 2 retrospective
+
+- Date: 2026-07-10
+- Branch: `fix/phase2-composition-seams` (PR #36)
+- Commits (on top of main @ f0ec16b):
+  - `b76ce02` refactor(cli): extract pure limit mapping into compose module
+  - `bc6c276` refactor(cli): centralize Grok/credential mapping; test via moe-research-tests
+  - `f26d385` refactor(cli): thin serve host and own DI in compose module
+  - `3806da2` refactor(mcp): derive ToolErrorCode strings from ErrorCode
+  - `6b4133a` refactor(workflow): rename log_safe to error_log_safe
+  - `4ca0b60` docs: document CLI compose module as composition root
+- Findings:
+  - **B3** dual limits: **closed** — single `map_limit` / `build_workflow_budget` in `compose`; dual types kept by design
+  - **B5** CLI identity: **closed** — `serve` is thin host; DI owned by `compose`
+  - **B6** dual Grok + stringly providers: **closed** — `map_grok_reasoning_effort` + static match builders only in `compose`
+  - **B7** dual ErrorCode: **closed** — `From<ErrorCode> for ToolErrorCode`; `as_str` delegates to `ErrorCode` (no duplicate string table)
+  - **B11** log_safe: **renamed** workflow module → `error_log_safe`; net `log_safe` untouched
+- Deviations from plan:
+  - Owner rule: **all tests in `moe-research-tests`**, not `#[cfg(test)]` in production sources. Required splitting CLI into **bin + lib** (`publish = false`) so pure mappers are callable from the test crate. Plan text that assumed bin-local unit tests is superseded.
+  - Process: implement → controller review → owner review → commit/push (same as Phase 1).
+- Verification (Task 7):
+  - `cargo fmt --all -- --check` green
+  - `cargo clippy --workspace --all-targets -- -D warnings` green
+  - `cargo test --workspace` green (**317 passed, 0 failed**)
+  - `moeresearch --help` / `serve --help` smoke OK
+  - Guardrails: composition fns only in `compose.rs`; no hardcoded MCP error string table; config ↛ workflow; no production `#[cfg(test)]` modules
+- Residual risks / follow-ups:
+  - Dual limit / Grok types remain intentional; footgun reduced by single map site only
+  - Static provider match still stringly (`"openai"` / `"exa"` / …) — plugin framework still out of scope
+  - CLI lib surface is intentionally small for tests; not a public host API (roadmap decision: MCP+CLI only)
+  - Phase 3: workflow internal splits (`agent_loop` / `research` / `workflow` density)
+  - Phase 4: remaining Column A/B (A7/A8/A9/A11, B8/B10/B13/B14)
