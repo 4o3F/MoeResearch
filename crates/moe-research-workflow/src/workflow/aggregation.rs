@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
-use crate::agent_loop::{AgentRuntimeFailure, AgentRuntimeOutput};
 use crate::error_log_safe::error_message_for_log;
 use crate::report::{
     AspectFailure, AspectReport, AspectResearchResult, Confidence, ConfidenceSummary, Evidence,
     OpenQuestion, ResearchBudgetUsage,
 };
 use crate::research::EffectiveResearchPlan;
+use crate::runtime::{AgentRuntimeFailure, AgentRuntimeOutput};
 use moe_research_error::Error;
 
 pub(super) struct DeepResearchRun {

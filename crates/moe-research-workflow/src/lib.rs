@@ -1,6 +1,5 @@
 //! Research workflow boundary for MoeResearch.
 
-mod agent_loop;
 pub mod budget;
 mod error_log_safe;
 pub mod limit;

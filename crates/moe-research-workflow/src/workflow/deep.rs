@@ -4,7 +4,6 @@ use std::sync::Arc;
 use futures::{StreamExt, stream};
 use uuid::Uuid;
 
-use crate::agent_loop::{AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput};
 use crate::budget::BudgetConfig;
 use crate::error_log_safe::error_message_for_log;
 use crate::report::{AspectFailure, CoverageSummary, DeepResearchResult};
@@ -12,8 +11,9 @@ use crate::research::{
     DeepResearchRequest, EffectiveAspectPlan, EffectiveResearchPlan, SUPPORTED_SCHEMA_VERSIONS,
     WorkflowValidationContext,
 };
-use crate::runtime::ResearchBudgetGuard;
-use crate::runtime::SEARCH_TOOL_NAME;
+use crate::runtime::{
+    AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput, ResearchBudgetGuard, SEARCH_TOOL_NAME,
+};
 use moe_research_error::{Error, Result};
 use moe_research_model::ModelService;
 use moe_research_search::SearchService;
