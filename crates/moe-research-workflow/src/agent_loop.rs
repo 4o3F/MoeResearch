@@ -1,13 +1,10 @@
-use std::future::Future;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use schemars::schema_for;
 use serde_json::json;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::error_log_safe::{error_message_for_log, safe_model_identifier_for_log};
-use crate::limit::{DurationLimitMs, Limit};
 use crate::policy::SearchPolicy;
 use crate::report::OutputValidator;
 use crate::report::{
@@ -15,13 +12,15 @@ use crate::report::{
     TokenUsage,
 };
 use crate::research::{ASPECT_PROMPT_MAX_BYTES, AspectPromptInput, EffectiveAspectPlan};
-use crate::runtime_budget::{AgentBudgetGuard, ResearchBudgetGuard};
-use crate::tool_policy::{SearchToolArgs, ToolPolicyGuard};
+use crate::runtime::search_tool::{SearchToolArgs, ToolPolicyGuard};
+use crate::runtime::{
+    AgentBudgetGuard, ResearchBudgetGuard, RuntimeDeadline, add_token_usage,
+    aspect_response_format, elapsed_ms,
+};
 use moe_research_error::{Error, Result};
 use moe_research_model::ModelService;
 use moe_research_model::{
-    JsonSchemaFormat, ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse,
-    ModelResponseFormat, ModelToolCall, ModelToolOutput,
+    ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse, ModelToolCall, ModelToolOutput,
 };
 use moe_research_search::SearchService;
 use moe_research_search::{SearchRequest, SearchResponse, SearchResult};
@@ -736,82 +735,8 @@ impl<'a> AgentRuntime<'a> {
     }
 }
 
-fn elapsed_ms(duration: Duration) -> u64 {
-    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
-}
-
-struct RuntimeDeadline {
-    started: Instant,
-    timeout_ms: DurationLimitMs,
-}
-
-impl RuntimeDeadline {
-    fn new(timeout_ms: DurationLimitMs) -> Self {
-        Self {
-            started: Instant::now(),
-            timeout_ms,
-        }
-    }
-
-    fn remaining(&self) -> Result<Option<Duration>> {
-        match self.timeout_ms {
-            Limit::Unlimited => Ok(None),
-            Limit::Limited(limit_ms) => {
-                let elapsed = elapsed_ms(self.started.elapsed());
-                if elapsed >= limit_ms {
-                    return Err(Error::BudgetExceeded {
-                        message: "agent runtime budget timeout exhausted".to_owned(),
-                    });
-                }
-                Ok(Some(Duration::from_millis(limit_ms - elapsed)))
-            }
-        }
-    }
-
-    async fn run<F, T>(&self, future: F) -> Result<T>
-    where
-        F: Future<Output = Result<T>>,
-    {
-        match self.remaining()? {
-            None => future.await,
-            Some(remaining) => tokio::time::timeout(remaining, future).await.map_err(|_| {
-                Error::BudgetExceeded {
-                    message: "agent runtime budget timeout exhausted".to_owned(),
-                }
-            })?,
-        }
-    }
-}
-
 fn now_rfc3339() -> String {
     OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
-}
-
-fn aspect_response_format() -> ModelResponseFormat {
-    ModelResponseFormat::JsonSchema(JsonSchemaFormat {
-        name: "aspect_research_result_v1".to_owned(),
-        strict: true,
-        schema: serde_json::to_value(schema_for!(AspectResearchResult))
-            .expect("AspectResearchResult schema serializes"),
-    })
-}
-
-fn add_token_usage(total: &mut Option<TokenUsage>, delta: Option<TokenUsage>) {
-    let Some(delta) = delta else {
-        return;
-    };
-    let usage = total.get_or_insert_with(TokenUsage::zero);
-    usage.input_tokens = sum_optional(usage.input_tokens, delta.input_tokens);
-    usage.output_tokens = sum_optional(usage.output_tokens, delta.output_tokens);
-    usage.total_tokens = sum_optional(usage.total_tokens, delta.total_tokens);
-}
-
-fn sum_optional(left: Option<u64>, right: Option<u64>) -> Option<u64> {
-    match (left, right) {
-        (Some(left), Some(right)) => Some(left.saturating_add(right)),
-        (Some(value), None) | (None, Some(value)) => Some(value),
-        (None, None) => None,
-    }
 }
