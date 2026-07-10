@@ -49,22 +49,10 @@ impl MoeResearchMcpServer {
                     aspect_success_envelope(schema_version, request_id, output)
                 }
                 Err(mut failure) => {
-                    let return_partial = allow_partial_results && failure.partial_output.is_some();
-                    tracing::warn!(
-                        request_id = %request_id,
-                        aspect_id = %aspect_id,
-                        tool = "aspect_research",
-                        error_code = failure.error.code().as_str(),
-                        error_detail = %failure.error.public_message(),
-                        retryable = failure.error.retryable(),
-                        status = if return_partial { "partial" } else { "failed" },
-                        "MCP tool failed"
-                    );
-                    if return_partial {
-                        let output = failure.partial_output.take().expect("partial output");
-                        ToolEnvelope {
+                    let envelope = match (allow_partial_results, failure.partial_output.take()) {
+                        (true, Some(output)) => ToolEnvelope {
                             schema_version,
-                            request_id,
+                            request_id: request_id.clone(),
                             run_id: None,
                             status: ToolStatus::Partial,
                             data: Some(output.result),
@@ -73,16 +61,30 @@ impl MoeResearchMcpServer {
                                 Some(aspect_id.clone()),
                                 Vec::new(),
                             )),
-                        }
-                    } else {
-                        failed_envelope(
+                        },
+                        (_, _) => failed_envelope(
                             schema_version,
-                            request_id,
+                            request_id.clone(),
                             Some(aspect_id.clone()),
                             &failure.error,
                             Vec::new(),
-                        )
-                    }
+                        ),
+                    };
+                    tracing::warn!(
+                        request_id = %request_id,
+                        aspect_id = %aspect_id,
+                        tool = "aspect_research",
+                        error_code = failure.error.code().as_str(),
+                        error_detail = %failure.error.public_message(),
+                        retryable = failure.error.retryable(),
+                        status = match envelope.status {
+                            ToolStatus::Partial => "partial",
+                            ToolStatus::Failed => "failed",
+                            ToolStatus::Ok => "ok",
+                        },
+                        "MCP tool failed"
+                    );
+                    envelope
                 }
             },
         )
