@@ -31,6 +31,8 @@ impl<'a> OutputValidator<'a> {
         content: &str,
         candidate_evidence: &[Evidence],
     ) -> Result<(AspectResearchResult, ValidationStatus)> {
+        // Soft deserialize: unknown model keys are dropped (see report module docs).
+        // Missing required fields and later semantic validation still fail closed.
         let result = match serde_json::from_str::<AspectResearchResult>(content) {
             Ok(result) => result,
             Err(error) => {

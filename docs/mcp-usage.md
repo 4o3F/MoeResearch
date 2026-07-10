@@ -409,6 +409,12 @@ DeepResearchResult
 
 Runtime usage objects are result-only. They are not accepted in request schemas.
 
+### Unknown-field policy (request vs result)
+
+- **Requests / policies (`schema_version` 0.2):** `deny_unknown_fields`. Extra keys are rejected as `invalid_input` / schema parse failures at the MCP boundary.
+- **Model final JSON (`AspectResearchResult` and nested report types):** unknown fields are **dropped**. Missing required known fields fail parse → `schema_validation_failed`. Semantic checks (evidence provenance, finding refs, output policy) run after successful deserialize.
+- Rationale: models may emit non-schema commentary keys; failing closed on extras increases false partials without improving evidence integrity.
+
 `Evidence.source_type` values are exactly:
 
 ```text
@@ -485,6 +491,8 @@ Client-side checks:
 ### `schema_validation_failed`
 
 The final structured result failed validation. If evidence was already collected and partial results are allowed, `aspect_research` may return `status=partial` with frozen evidence and this error metadata; `deep_research` partials carry failed aspect metadata in `data.failed_aspects` and keep top-level `error: null`.
+
+- Extra unknown keys in model final JSON are ignored; missing required result fields or failed semantic validation are not.
 
 Client-side checks:
 
