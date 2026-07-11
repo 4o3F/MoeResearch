@@ -151,6 +151,10 @@ inactivity_timeout_ms = {network_inactivity_timeout_ms}
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "moeresearch/0.1.0"
+# Optional proxy for all outbound HTTP requests.
+# HTTP/HTTPS: proxy_url = "http://proxy.example.com:8080"
+# SOCKS5 (local DNS): proxy_url = "socks5://127.0.0.1:1080"
+# SOCKS5h (proxy DNS): proxy_url = "socks5h://127.0.0.1:1080"
 
 [search.providers.exa]
 enabled = {}

@@ -70,10 +70,11 @@ By default, registration records the current `moeresearch` executable path. Pass
 Install MoeResearch research skill assets:
 
 ```bash
-moeresearch assets install research-skills
+moeresearch assets install research-skills \
+  --config ~/.config/moeresearch/moeresearch.toml
 ```
 
-The installed Markdown assets include PM DeepResearch, Academic DeepResearch, Technical Evaluation, and common evidence prompts. Claude Code receives one discoverable `deep-research` skill directory for the unified research entry; academic and technical profiles are used through that entry with explicit profile instructions, not as separate sibling Skill directories. The installer downloads the release asset for the current `moeresearch` version, not GitHub `latest`. The default install target is the Claude Code user skill discovery path:
+Remote asset downloads load the full MoeResearch configuration. Pass the same `--config` path used by `serve` when it is not the default `moeresearch.toml` in the current directory; the configured network proxy, timeout, retry, and user-agent settings then apply to the download. The installed Markdown assets include PM DeepResearch, Academic DeepResearch, Technical Evaluation, and common evidence prompts. Claude Code receives one discoverable `deep-research` skill directory for the unified research entry; academic and technical profiles are used through that entry with explicit profile instructions, not as separate sibling Skill directories. The installer downloads the release asset for the current `moeresearch` version, not GitHub `latest`. The default install target is the Claude Code user skill discovery path:
 
 ```text
 ~/.claude/skills/deep-research/SKILL.md
@@ -82,13 +83,16 @@ The installed Markdown assets include PM DeepResearch, Academic DeepResearch, Te
 For a project-level Claude Code skill, use:
 
 ```bash
-moeresearch assets install research-skills --client claude-code --scope project
+moeresearch assets install research-skills \
+  --config ~/.config/moeresearch/moeresearch.toml \
+  --client claude-code --scope project
 ```
 
 For non-Claude clients or manual loading, install the same release assets with repository-style sibling directories:
 
 ```bash
 moeresearch assets install research-skills \
+  --config ~/.config/moeresearch/moeresearch.toml \
   --target ~/.config/moeresearch/assets \
   --layout repo
 ```

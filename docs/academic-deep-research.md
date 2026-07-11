@@ -18,7 +18,7 @@ Academic DeepResearch is a Skill/profile layer over the MoeResearch MCP core for
 
 ```bash
 moeresearch mcp register --scope local --config ~/.config/moeresearch/moeresearch.toml
-moeresearch assets install research-skills
+moeresearch assets install research-skills --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 The research skills asset installs Academic DeepResearch prompts under `prompts/layer1/academic-deep-research/` and `prompts/layer2/academic-deep-research/`.

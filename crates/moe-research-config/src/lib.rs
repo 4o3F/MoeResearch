@@ -9,5 +9,5 @@ pub use loader::load_config;
 pub use types::{
     AgentLimitsConfig, EnabledProviderEnv, GrokReasoningEffort, LimitsConfig, LoggingConfig,
     ModelProviderEndpoint, ModelProviderRegistry, MoeResearchConfig, NetworkConfig,
-    ResearchLimitsConfig, SearchProviderEndpoint, SearchProviderRegistry,
+    NetworkProxyUrl, ResearchLimitsConfig, SearchProviderEndpoint, SearchProviderRegistry,
 };

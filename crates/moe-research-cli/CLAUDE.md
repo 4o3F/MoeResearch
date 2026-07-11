@@ -22,7 +22,7 @@ crate 以 **bin + lib** 组织（`publish = false`）：`src/lib.rs` 暴露 `com
 - `check`: 校验配置、启用 provider 的环境变量、本地 MCP smoke check。
 - `onboard`: 组合 init、check、Claude Code MCP 注册引导。
 - `mcp register`: 调用 `claude mcp add` 注册 stdio MCP server。
-- `assets`: 安装 research-skills 等 Markdown 资产包。
+- `assets`: 安装 research-skills 等 Markdown 资产包；远程下载通过完整配置和统一网络 client。
 
 ## 入口与启动
 

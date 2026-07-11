@@ -65,6 +65,10 @@ inactivity_timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "moeresearch/0.1.0"
+# Optional proxy for all outbound HTTP requests.
+# HTTP/HTTPS: proxy_url = "http://proxy.example.com:8080"
+# SOCKS5 (local DNS): proxy_url = "socks5://127.0.0.1:1080"
+# SOCKS5h (proxy DNS): proxy_url = "socks5h://127.0.0.1:1080"
 
 [search.providers.exa]
 enabled = false
@@ -149,6 +153,10 @@ inactivity_timeout_ms = 120000
 max_retries = 2
 retry_backoff_ms = 200
 user_agent = "moeresearch/0.1.0"
+# Optional proxy for all outbound HTTP requests.
+# HTTP/HTTPS: proxy_url = "http://proxy.example.com:8080"
+# SOCKS5 (local DNS): proxy_url = "socks5://127.0.0.1:1080"
+# SOCKS5h (proxy DNS): proxy_url = "socks5h://127.0.0.1:1080"
 ```
 
 Fields:
@@ -159,8 +167,15 @@ Fields:
 | `max_retries` | Number of retry attempts for retryable network failures. |
 | `retry_backoff_ms` | Backoff base in milliseconds. |
 | `user_agent` | HTTP user-agent value. Must be non-empty and valid as a header value. |
+| `proxy_url` | Optional explicit proxy URL for all outbound HTTP requests. Supported schemes are `http`, `https`, `socks5`, and `socks5h`. |
 
 `network.inactivity_timeout_ms` is an outbound provider inactivity timeout, not a total MCP tool duration. For `aspect_research`, set the outer MCP/client timeout higher than the effective aspect deadline (`task.limits.timeout_ms` when finite) plus provider retry/backoff slack. For `deep_research`, size the outer timeout against the full research deadline (`limits.total_timeout_ms` when finite, otherwise your chosen operational cap), not just the per-aspect timeout. If the outer client aborts earlier, it may miss a later `ok` or `partial` envelope.
+
+When `network.proxy_url` is omitted, MoeResearch preserves its existing Reqwest environment-proxy behavior. Platform system-proxy discovery depends on the Reqwest features compiled into the binary. When it is set, MoeResearch disables automatic proxy discovery and routes every outbound HTTP request through the configured proxy; `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NO_PROXY` do not bypass it. `socks5://` resolves target host names locally before connecting through the proxy. `socks5h://` sends target host names to the SOCKS proxy for proxy-side DNS resolution. SOCKS support is compiled through Reqwest's `socks` feature.
+
+A proxy URL may include authentication, but MoeResearch redacts it from `Debug` output, ordinary errors, and runtime logs. Do not place unrelated secrets in the URL.
+
+`moeresearch assets install` retains local `file://` asset reads. Remote asset downloads load the full MoeResearch configuration and use the same timeout, retry, user-agent, proxy, and safe-error path as provider traffic. Pass `--config <PATH>` when the configuration is not the default `moeresearch.toml` in the current working directory.
 
 ## 6. Limits settings
 

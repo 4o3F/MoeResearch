@@ -24,7 +24,7 @@
 `moe-research-cli` 根据 `network` 配置构造：
 
 ```rust
-ReqwestNetworkClient::new(timeout_ms, max_retries, retry_backoff_ms, user_agent)
+ReqwestNetworkClient::new(timeout_ms, max_retries, retry_backoff_ms, user_agent, proxy_url)
 ```
 
 ## 对外接口
@@ -33,6 +33,7 @@ ReqwestNetworkClient::new(timeout_ms, max_retries, retry_backoff_ms, user_agent)
 
 - `send_json(NetworkRequest) -> JsonNetworkResponse`
 - `send_sse(NetworkRequest) -> SseNetworkStream`
+- `ReqwestNetworkClient::send_bytes(NetworkRequest) -> Vec<u8>` for binary downloads
 
 辅助函数：
 
@@ -43,7 +44,7 @@ ReqwestNetworkClient::new(timeout_ms, max_retries, retry_backoff_ms, user_agent)
 ## 关键依赖与配置
 
 - 外部依赖：`reqwest`, `eventsource-stream`, `futures`, `tokio`, `uuid`, `tracing`。
-- 网络配置来自 `moeresearch.toml`：`timeout_ms`, `max_retries`, `retry_backoff_ms`, `user_agent`。
+- 网络配置来自 `moeresearch.toml`：`inactivity_timeout_ms`, `max_retries`, `retry_backoff_ms`, `user_agent`, 可选 `proxy_url`。显式代理支持 HTTP/HTTPS/SOCKS5/SOCKS5h，并覆盖环境代理发现。
 - JSON 请求要求 Accept JSON；SSE 请求要求 Accept `text/event-stream`。
 - 非 2xx 状态通过 `HttpStatus` 映射，429 与 5xx 可重试。
 - Wire trace body 有上限，超过时输出截断 marker。

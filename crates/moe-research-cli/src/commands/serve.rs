@@ -85,6 +85,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
         network_timeout_ms = config.network.inactivity_timeout_ms,
         network_max_retries = config.network.max_retries,
         network_retry_backoff_ms = config.network.retry_backoff_ms,
+        network_proxy_configured = config.network.proxy_url.is_some(),
         operator_limits_research = ?workflow_budget.research,
         operator_limits_per_agent = ?workflow_budget.per_agent,
         "moeresearch initialized"

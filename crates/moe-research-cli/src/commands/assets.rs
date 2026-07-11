@@ -7,7 +7,9 @@ use std::path::{Component, Path, PathBuf};
 
 use clap::{Args, Subcommand, ValueEnum};
 use flate2::read::GzDecoder;
+use moe_research_config::{NetworkProxyUrl, load_config};
 use moe_research_error::{Error, Result};
+use moe_research_net::{NetworkRequest, reqwest_client::ReqwestNetworkClient};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tracing::info;
@@ -118,6 +120,9 @@ pub struct InstallArgs {
     /// Asset version to install. Defaults to this binary package version.
     #[arg(long)]
     pub version: Option<String>,
+    /// Path to the full MoeResearch configuration for remote asset downloads.
+    #[arg(long)]
+    pub config: Option<PathBuf>,
     /// Override release download base URL for tests or mirrors.
     #[arg(long, hide = true)]
     pub base_url: Option<Url>,
@@ -182,10 +187,26 @@ async fn install(args: InstallArgs) -> Result<()> {
 
     let manifest_url = join_url(&base_url, &manifest_name)?;
     let archive_url = join_url(&base_url, &archive_name)?;
-    let manifest_bytes = download_bytes(&manifest_url).await?;
+    let network = if manifest_url.scheme() == "file" && archive_url.scheme() == "file" {
+        None
+    } else {
+        let config = load_config(args.config.as_deref())?;
+        Some(ReqwestNetworkClient::new(
+            config.network.inactivity_timeout_ms,
+            config.network.max_retries,
+            config.network.retry_backoff_ms,
+            &config.network.user_agent,
+            config
+                .network
+                .proxy_url
+                .as_ref()
+                .map(NetworkProxyUrl::as_str),
+        )?)
+    };
+    let manifest_bytes = download_bytes(network.as_ref(), &manifest_url).await?;
     let manifest = parse_manifest(&manifest_bytes, asset, &version, &archive_name)?;
 
-    let archive_bytes = download_bytes(&archive_url).await?;
+    let archive_bytes = download_bytes(network.as_ref(), &archive_url).await?;
     verify_bytes_sha256(&archive_bytes, &manifest.sha256, "archive")?;
 
     let stage = tempfile::Builder::new()
@@ -321,7 +342,7 @@ fn join_url(base_url: &Url, filename: &str) -> Result<Url> {
         })
 }
 
-async fn download_bytes(url: &Url) -> Result<Vec<u8>> {
+async fn download_bytes(network: Option<&ReqwestNetworkClient>, url: &Url) -> Result<Vec<u8>> {
     if url.scheme() == "file" {
         let path = url.to_file_path().map_err(|()| Error::InvalidInput {
             message: format!("invalid file asset URL: {url}"),
@@ -329,22 +350,18 @@ async fn download_bytes(url: &Url) -> Result<Vec<u8>> {
         return fs::read(path).map_err(io_error("read local asset file"));
     }
 
-    let response = reqwest::Client::new()
-        .get(url.clone())
-        .send()
+    let network = network.ok_or_else(|| Error::ConfigInvalid {
+        message: "remote asset downloads require a valid MoeResearch configuration".to_owned(),
+    })?;
+    network
+        .send_bytes(NetworkRequest {
+            method: "GET".to_owned(),
+            url: url.to_string(),
+            headers: Vec::new(),
+            body: None,
+            inactivity_timeout_ms: None,
+        })
         .await
-        .map_err(|source| network_error(&source))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(Error::NetworkFailed {
-            message: format!("asset download returned HTTP {}", status.as_u16()),
-        });
-    }
-    response
-        .bytes()
-        .await
-        .map(Vec::from)
-        .map_err(|source| network_error(&source))
 }
 
 fn parse_manifest(
@@ -730,11 +747,5 @@ fn bytes_sha256(bytes: &[u8]) -> String {
 fn io_error(action: &'static str) -> impl FnOnce(std::io::Error) -> Error {
     move |source| Error::Internal {
         message: format!("{action}: {source}"),
-    }
-}
-
-fn network_error(source: &reqwest::Error) -> Error {
-    Error::NetworkFailed {
-        message: source.to_string(),
     }
 }

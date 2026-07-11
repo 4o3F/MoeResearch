@@ -23,10 +23,10 @@ Optional Generic Layer-2 helpers (not required when `aspect-agent.md` is inlined
 ## Installation
 
 ```bash
-moeresearch assets install research-skills
+moeresearch assets install research-skills --config /path/to/moeresearch.toml
 ```
 
-The content is the full MoeResearch research skill asset set.
+Remote asset installation uses the complete MoeResearch configuration, including the optional network proxy. Omit `--config` only when a valid `moeresearch.toml` is available in the current working directory. The content is the full MoeResearch research skill asset set.
 
 ## Claude Code Layout
 
@@ -60,6 +60,7 @@ For non-Claude clients or manual loading:
 
 ```bash
 moeresearch assets install research-skills \
+  --config /path/to/moeresearch.toml \
   --target ~/.config/moeresearch/assets \
   --layout repo
 ```

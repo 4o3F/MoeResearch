@@ -188,6 +188,9 @@ fn init_writes_valid_config_without_raw_api_key() {
     assert!(content.contains("[search.providers.tavily]"));
     assert!(content.contains("api_key_env"));
     assert!(content.contains("inactivity_timeout_ms = 120000"));
+    assert!(content.contains("proxy_url = \"http://proxy.example.com:8080\""));
+    assert!(content.contains("proxy_url = \"socks5://127.0.0.1:1080\""));
+    assert!(content.contains("proxy_url = \"socks5h://127.0.0.1:1080\""));
     assert!(!content.contains("inactivity_timeout_ms = 30000"));
     assert!(!content.contains("api_key ="));
     moe_research_config::load_config(Some(&config_path))

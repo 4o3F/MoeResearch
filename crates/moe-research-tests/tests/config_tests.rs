@@ -132,6 +132,76 @@ fn rejects_invalid_network_user_agent_header_value() {
 }
 
 #[test]
+fn accepts_supported_network_proxy_url_schemes() {
+    for proxy_url in [
+        "http://proxy.example.test:8080",
+        "https://proxy.example.test:8443",
+        "socks5://127.0.0.1:1080",
+        "socks5h://proxy.example.test:1080",
+    ] {
+        let input = VALID_CONFIG.replace(
+            "user_agent = \"moeresearch/0.1.0\"",
+            &format!("user_agent = \"moeresearch/0.1.0\"\nproxy_url = \"{proxy_url}\""),
+        );
+
+        let config = load_config_from_test_str(&input).expect("proxy URL should validate");
+        assert_eq!(
+            config.network.proxy_url.as_ref().map(|url| url.as_str()),
+            Some(proxy_url)
+        );
+    }
+}
+
+#[test]
+fn network_proxy_url_debug_redacts_credentials_and_host() {
+    let input = VALID_CONFIG.replace(
+        "user_agent = \"moeresearch/0.1.0\"",
+        "user_agent = \"moeresearch/0.1.0\"\nproxy_url = \"http://proxy-user-123:proxy-password-456@proxy.example.test:8080\"",
+    );
+
+    let config = load_config_from_test_str(&input).expect("proxy URL should validate");
+    let rendered = format!("{:?}", config.network);
+
+    assert!(rendered.contains("[REDACTED]"));
+    for secret in ["proxy-user-123", "proxy-password-456", "proxy.example.test"] {
+        assert!(
+            !rendered.contains(secret),
+            "Debug output leaked {secret}: {rendered}"
+        );
+    }
+}
+
+#[test]
+fn rejects_invalid_network_proxy_urls_without_leaking_credentials() {
+    for proxy_url in [
+        "",
+        " http://proxy-user-123:proxy-password-456@proxy.example.test:8080",
+        "http://proxy-user-123:proxy-password-456@proxy.example.test:8080 ",
+        "proxy.example.test:8080",
+        "http://",
+        "socks4://proxy-user-123:proxy-password-456@proxy.example.test:1080",
+    ] {
+        let input = VALID_CONFIG.replace(
+            "user_agent = \"moeresearch/0.1.0\"",
+            &format!("user_agent = \"moeresearch/0.1.0\"\nproxy_url = \"{proxy_url}\""),
+        );
+
+        let error = load_config_from_test_str(&input).expect_err("proxy URL should be rejected");
+        let message = error.to_string();
+        assert!(
+            message.contains("network.proxy_url"),
+            "unexpected error: {message}"
+        );
+        for secret in ["proxy-user-123", "proxy-password-456", "proxy.example.test"] {
+            assert!(
+                !message.contains(secret),
+                "error leaked {secret}: {message}"
+            );
+        }
+    }
+}
+
+#[test]
 fn accepts_zero_retry_values() {
     let input = VALID_CONFIG
         .replace("max_retries = 2", "max_retries = 0")
@@ -230,7 +300,7 @@ fn rejects_limits_config_values_below_minus_one() {
 
 #[test]
 fn network_client_rejects_zero_timeout() {
-    let err = match ReqwestNetworkClient::new(0, 2, 200, "moe-research-test/0.0.0") {
+    let err = match ReqwestNetworkClient::new(0, 2, 200, "moe-research-test/0.0.0", None) {
         Ok(_) => panic!("network client should reject zero timeout"),
         Err(error) => error,
     };
@@ -369,7 +439,7 @@ fn rejects_unknown_search_provider() {
 /// 2 / M9).
 #[test]
 fn network_client_rejects_invalid_user_agent() {
-    let err = match ReqwestNetworkClient::new(30_000, 2, 200, "moeresearch\u{0000}") {
+    let err = match ReqwestNetworkClient::new(30_000, 2, 200, "moeresearch\u{0000}", None) {
         Ok(_) => panic!("network client should reject invalid user_agent"),
         Err(error) => error,
     };

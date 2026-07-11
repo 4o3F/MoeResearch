@@ -29,7 +29,7 @@ eventsource-stream = "0.2"
 flate2 = "1"
 futures = "0.3"
 inquire = { version = "0.9.4", default-features = false, features = ["crossterm"] }
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "socks", "stream"] }
 rmcp = "1.8"
 schemars = { version = "1.2", features = ["uuid1"] }
 serde = { version = "1", features = ["derive"] }

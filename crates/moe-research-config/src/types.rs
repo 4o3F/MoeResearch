@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use reqwest::header::HeaderValue;
 use schemars::JsonSchema;
@@ -71,6 +72,61 @@ pub struct LoggingConfig {
     pub format: String,
 }
 
+#[derive(Clone, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct NetworkProxyUrl(String);
+
+impl NetworkProxyUrl {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn validate(&self) -> Result<()> {
+        let proxy_url = self.as_str();
+        if proxy_url.trim().is_empty() {
+            return Err(Error::ConfigInvalid {
+                message: "network.proxy_url must not be empty".to_owned(),
+            });
+        }
+        if proxy_url != proxy_url.trim() {
+            return Err(Error::ConfigInvalid {
+                message: "network.proxy_url must not include leading or trailing whitespace"
+                    .to_owned(),
+            });
+        }
+
+        let url = reqwest::Url::parse(proxy_url).map_err(|_| Error::ConfigInvalid {
+            message: "network.proxy_url must be an absolute URL with a host".to_owned(),
+        })?;
+        if url.host().is_none() {
+            return Err(Error::ConfigInvalid {
+                message: "network.proxy_url must be an absolute URL with a host".to_owned(),
+            });
+        }
+        if !matches!(url.scheme(), "http" | "https" | "socks5" | "socks5h") {
+            return Err(Error::ConfigInvalid {
+                message: "network.proxy_url must use http, https, socks5, or socks5h".to_owned(),
+            });
+        }
+
+        reqwest::Proxy::all(proxy_url).map_err(|_| Error::ConfigInvalid {
+            message: "network.proxy_url is not accepted by the HTTP client".to_owned(),
+        })?;
+
+        Ok(())
+    }
+}
+
+impl fmt::Debug for NetworkProxyUrl {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("NetworkProxyUrl")
+            .field(&"[REDACTED]")
+            .finish()
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NetworkConfig {
@@ -78,6 +134,8 @@ pub struct NetworkConfig {
     pub max_retries: usize,
     pub retry_backoff_ms: u64,
     pub user_agent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url: Option<NetworkProxyUrl>,
 }
 
 impl NetworkConfig {
@@ -98,6 +156,10 @@ impl NetworkConfig {
         HeaderValue::from_str(user_agent).map_err(|source| Error::ConfigInvalid {
             message: format!("network.user_agent must be a valid HTTP header value: {source}"),
         })?;
+
+        if let Some(proxy_url) = &self.proxy_url {
+            proxy_url.validate()?;
+        }
 
         Ok(())
     }

@@ -10,7 +10,7 @@ use crate::client::NetworkClient;
 use crate::log_safe::{SafeText, SafeUrl, SafeWireBody};
 use crate::{Header, JsonNetworkResponse, NetworkRequest, SseEvent, SseNetworkStream};
 use reqwest::header::{HeaderName, HeaderValue};
-use reqwest::{Method, RequestBuilder, Response, Url};
+use reqwest::{Method, Proxy, RequestBuilder, Response, Url};
 use uuid::Uuid;
 
 /// Maximum byte length captured in a wire body trace event.
@@ -46,27 +46,31 @@ struct RequestAttempt {
 impl ReqwestNetworkClient {
     /// Builds a reqwest-backed network client with explicit knobs.
     ///
-    /// Prefer `from_config` over this constructor in production code; this
-    /// version exists for tests that need to bypass the full TOML config.
-    ///
     /// # Errors
     /// - `Error::InvalidInput` if `default_timeout_ms` is zero.
     /// - `Error::ConfigInvalid` if `user_agent` is not a valid HTTP header
-    ///   value.
-    /// - `Error::HttpTransport` if the reqwest builder fails.
+    ///   value or `proxy_url` cannot be accepted by Reqwest.
+    /// - `Error::HttpTransport` if the Reqwest builder fails.
     pub fn new(
         default_timeout_ms: u64,
         max_retries: usize,
         retry_backoff_ms: u64,
         user_agent: &str,
+        proxy_url: Option<&str>,
     ) -> Result<Self> {
         validate_timeout("network.inactivity_timeout_ms", default_timeout_ms)?;
         let header_value =
             HeaderValue::from_str(user_agent).map_err(|source| Error::ConfigInvalid {
                 message: format!("invalid network.user_agent header: {source}"),
             })?;
-        let client = reqwest::Client::builder()
-            .user_agent(header_value)
+        let mut builder = reqwest::Client::builder().user_agent(header_value);
+        if let Some(proxy_url) = proxy_url {
+            let proxy = Proxy::all(proxy_url).map_err(|_| Error::ConfigInvalid {
+                message: "network.proxy_url is not accepted by the HTTP client".to_owned(),
+            })?;
+            builder = builder.no_proxy().proxy(proxy);
+        }
+        let client = builder
             .build()
             .map_err(|source| Self::transport_error(&source))?;
 
@@ -133,6 +137,73 @@ impl ReqwestNetworkClient {
             timeout_ms,
             correlation_id,
         })
+    }
+
+    /// Sends one HTTP attempt and reads a complete binary body.
+    async fn send_bytes_once(&self, request: NetworkRequest, attempt: u32) -> Result<Vec<u8>> {
+        let RequestAttempt {
+            builder,
+            attempt,
+            host,
+            path,
+            timeout_ms,
+            correlation_id,
+        } = self.prepare_request(request, attempt)?;
+        let started_at = Instant::now();
+        let response = send_request(
+            builder,
+            &TransportErrorLogContext {
+                phase: "send_request",
+                attempt,
+                correlation_id,
+                host: &host,
+                path: &path,
+                timeout_ms,
+            },
+        )
+        .await?;
+        let status = response.status();
+
+        if !status.is_success() {
+            return Err(handle_non_success_binary_response(
+                &TransportErrorLogContext {
+                    phase: "read_response_body",
+                    attempt,
+                    correlation_id,
+                    host: &host,
+                    path: &path,
+                    timeout_ms,
+                },
+                status.as_u16(),
+                response_headers(&response),
+                started_at,
+            ));
+        }
+
+        let bytes = read_response_bytes(
+            response,
+            &TransportErrorLogContext {
+                phase: "read_response_body",
+                attempt,
+                correlation_id,
+                host: &host,
+                path: &path,
+                timeout_ms,
+            },
+        )
+        .await?;
+        let duration_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+        emit_inbound_binary_response_metadata(
+            correlation_id,
+            attempt,
+            &host,
+            &path,
+            status.as_u16(),
+            duration_ms,
+            bytes.len(),
+        );
+
+        Ok(bytes)
     }
 
     /// Sends one HTTP attempt and reads a complete JSON/text body.
@@ -339,6 +410,48 @@ impl ReqwestNetworkClient {
         ))
     }
 
+    /// Sends a request and returns a complete binary response body.
+    ///
+    /// This shares request preparation, timeout, retry, and status handling
+    /// with JSON/SSE requests while intentionally omitting binary payloads
+    /// from wire traces.
+    pub async fn send_bytes(&self, request: NetworkRequest) -> Result<Vec<u8>> {
+        let mut last_error = None;
+
+        for attempt in 0..=self.max_retries {
+            let attempt_u32 = u32::try_from(attempt).unwrap_or(u32::MAX);
+            match self.send_bytes_once(request.clone(), attempt_u32).await {
+                Ok(bytes) => return Ok(bytes),
+                Err(error) => {
+                    let retryable = is_retryable_error(&error);
+                    if !retryable || attempt == self.max_retries {
+                        return Err(error);
+                    }
+
+                    tracing::warn!(
+                        event = "outbound_request_retrying",
+                        status = "retrying",
+                        provider_kind = "network",
+                        response_kind = "binary",
+                        attempt = attempt_u32,
+                        next_attempt = attempt_u32.saturating_add(1),
+                        max_retries = self.max_retries,
+                        backoff_ms = self.retry_backoff_ms,
+                        error_code = error.code().as_str(),
+                        retryable = error.retryable(),
+                        "retrying outbound binary request"
+                    );
+                    last_error = Some(error);
+                    tokio::time::sleep(Duration::from_millis(self.retry_backoff_ms)).await;
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| Error::NetworkFailed {
+            message: "request failed without an error".to_owned(),
+        }))
+    }
+
     /// Maps reqwest transport failures into MoeResearch retry-aware errors.
     fn transport_error(source: &reqwest::Error) -> Error {
         let retryable = is_retryable_transport_error(source);
@@ -486,6 +599,38 @@ async fn handle_non_success_response(
         message: "provider returned non-success status".to_owned(),
         retryable: is_retryable_status(status),
     })
+}
+
+fn handle_non_success_binary_response(
+    context: &TransportErrorLogContext<'_>,
+    status: u16,
+    headers: Vec<Header>,
+    started_at: Instant,
+) -> Error {
+    let duration_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let header_names = headers
+        .iter()
+        .map(|header| header.name.as_str())
+        .collect::<Vec<_>>();
+    tracing::debug!(
+        event = "outbound_response_non_success",
+        status = "failed",
+        provider_kind = "network",
+        response_kind = "binary",
+        http_status = status,
+        host = %context.host,
+        path = %context.path,
+        header_names = ?header_names,
+        duration_ms,
+        error_code = "http_status",
+        retryable = is_retryable_status(status),
+        "outbound binary response returned non-success status"
+    );
+    Error::HttpStatus {
+        status,
+        message: "provider returned non-success status".to_owned(),
+        retryable: is_retryable_status(status),
+    }
 }
 
 async fn pump_sse_events<S, E>(
@@ -647,6 +792,21 @@ async fn read_response_body(
     }
 }
 
+/// Reads a successful binary response without emitting a body wire trace.
+async fn read_response_bytes(
+    response: Response,
+    context: &TransportErrorLogContext<'_>,
+) -> Result<Vec<u8>> {
+    match tokio::time::timeout(Duration::from_millis(context.timeout_ms), response.bytes()).await {
+        Ok(Ok(bytes)) => Ok(bytes.to_vec()),
+        Ok(Err(source)) => Err(logged_transport_error(&source, context)),
+        Err(_) => Err(Error::HttpTransport {
+            message: "network inactivity timeout while reading response body".to_owned(),
+            retryable: true,
+        }),
+    }
+}
+
 /// Converts a reqwest transport error after emitting operator diagnostics.
 fn logged_transport_error(
     source: &reqwest::Error,
@@ -750,6 +910,31 @@ fn emit_outbound_wire_trace(
         body_truncated = truncated,
         body = %SafeWireBody::new(&body_str, MAX_WIRE_BODY_BYTES),
         "outbound request body"
+    );
+}
+
+/// Emits metadata for a binary response without rendering its body.
+fn emit_inbound_binary_response_metadata(
+    correlation_id: Uuid,
+    attempt: u32,
+    host: &str,
+    path: &str,
+    status: u16,
+    duration_ms: u64,
+    body_bytes: usize,
+) {
+    tracing::debug!(
+        event = "outbound_binary_response_received",
+        status = "ok",
+        provider_kind = "network",
+        correlation_id = %correlation_id,
+        attempt,
+        host = %host,
+        path = %path,
+        http_status = status,
+        duration_ms,
+        body_bytes,
+        "inbound binary response metadata"
     );
 }
 

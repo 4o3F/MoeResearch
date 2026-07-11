@@ -33,7 +33,7 @@ Rust/MoeResearch owns provider calls, search, budgets, agent loops, schema valid
 The supported release delivery path is a binary install plus CLI-installed skill assets:
 
 1. Install or build the `moeresearch` binary.
-2. Run `moeresearch assets install research-skills` for Claude Code, or use `--target <dir> --layout repo` for a generic asset root.
+2. Run `moeresearch assets install research-skills --config <path-to-moeresearch.toml>` for Claude Code, or use `--target <dir> --layout repo` for a generic asset root.
 3. Register the MoeResearch MCP server with your MCP client.
 4. Load the PM DeepResearch skill through your client's skill or instruction mechanism.
 
@@ -127,8 +127,8 @@ MCP protocol messages use stdin/stdout. Logs are written to stderr.
 For Claude Code, inspect the install plan first if desired, then install the user-level skill assets:
 
 ```bash
-moeresearch assets install research-skills --dry-run
-moeresearch assets install research-skills
+moeresearch assets install research-skills --config ~/.config/moeresearch/moeresearch.toml --dry-run
+moeresearch assets install research-skills --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 This creates the Claude Code discovery layout (PM profile plus shared Generic roots and other profiles):
@@ -157,6 +157,7 @@ For a project-local Claude Code skill:
 
 ```bash
 moeresearch assets install research-skills \
+  --config ~/.config/moeresearch/moeresearch.toml \
   --client claude-code \
   --scope project
 ```
@@ -167,6 +168,7 @@ For non-Claude clients, install a repository-style asset root:
 
 ```bash
 moeresearch assets install research-skills \
+  --config ~/.config/moeresearch/moeresearch.toml \
   --target ~/.config/moeresearch/assets \
   --layout repo
 ```
@@ -303,7 +305,7 @@ Continue with MoeResearch results only when claims can be supported by MoeResear
 For Claude Code, prefer the installer so `SKILL.md` and prompts are placed together:
 
 ```bash
-moeresearch assets install research-skills
+moeresearch assets install research-skills --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 Expected user-level layout:
@@ -332,7 +334,7 @@ For generic clients, ensure the installed repo-like asset root contains `skills/
 PM DeepResearch is one profile inside the installed MoeResearch research skill assets. The install command keeps the asset slug for the unified research entry:
 
 ```bash
-moeresearch assets install research-skills
+moeresearch assets install research-skills --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 The same asset also installs Academic DeepResearch prompts, Technical Evaluation prompts, Generic root prompts (`task-decomposition.md`, `final-report.md`, `aspect-agent.md`), and common evidence modules. Rust/MCP tool schemas remain domain-neutral; profile routing and methodology stay in Skill and prompt Markdown.

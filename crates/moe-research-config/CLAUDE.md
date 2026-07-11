@@ -32,7 +32,7 @@
 
 - `load_config`
 - `MoeResearchConfig`
-- `LoggingConfig`, `NetworkConfig`
+- `LoggingConfig`, `NetworkConfig`, `NetworkProxyUrl`
 - `ModelProviderRegistry`, `ModelProviderEndpoint`
 - `SearchProviderRegistry`, `SearchProviderEndpoint`
 - `LimitsConfig`, `ResearchLimitsConfig`, `AgentLimitsConfig`
@@ -58,6 +58,7 @@
 
 - `NetworkConfig.timeout_ms` 必须大于 0。
 - `NetworkConfig.user_agent` 必须非空且能作为 HTTP header value。
+- 可选 `NetworkConfig.proxy_url` 仅支持 HTTP、HTTPS、SOCKS5、SOCKS5h；其 `Debug` 输出会脱敏，防止代理认证信息泄露。
 - `LimitsConfig.research.max_concurrent_agents` 不能超过 `max_agents`。
 - `ConfigLimit<T>` 序列化为整数：`-1` 表示 unlimited，非负整数表示有限值。
 - `api_key_env` 必须是合法环境变量名，启用 provider 时该变量必须存在。

@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use moe_research_config::{
     ConfigLimit, GrokReasoningEffort as ConfigGrokReasoningEffort, LimitsConfig, MoeResearchConfig,
+    NetworkProxyUrl,
 };
 use moe_research_error::{Error, Result};
 use moe_research_model::{ModelService, OpenAiProvider};
@@ -115,6 +116,11 @@ pub fn build_network_client(config: &MoeResearchConfig) -> Result<Arc<dyn Networ
         config.network.max_retries,
         config.network.retry_backoff_ms,
         &config.network.user_agent,
+        config
+            .network
+            .proxy_url
+            .as_ref()
+            .map(NetworkProxyUrl::as_str),
     )?))
 }
 

@@ -32,7 +32,7 @@ moeresearch mcp register --scope local --config ~/.config/moeresearch/moeresearc
 MCP registration only configures the stdio server. It does not install research Skill or prompt assets. For Claude Code, run:
 
 ```bash
-moeresearch assets install research-skills
+moeresearch assets install research-skills --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 ## 3. MCP lifecycle

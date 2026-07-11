@@ -411,12 +411,12 @@ async fn drain_request_headers(socket: &mut tokio::net::TcpStream) {
 fn build_client() -> ReqwestNetworkClient {
     // `max_retries = 0` for tests that do not exercise retry; the retry
     // test overrides this via a dedicated constructor call.
-    ReqwestNetworkClient::new(5_000, 0, 50, "moe-research-tests/0.0.0")
+    ReqwestNetworkClient::new(5_000, 0, 50, "moe-research-tests/0.0.0", None)
         .expect("ReqwestNetworkClient::new")
 }
 
 fn build_client_with_retries(max_retries: usize) -> ReqwestNetworkClient {
-    ReqwestNetworkClient::new(5_000, max_retries, 50, "moe-research-tests/0.0.0")
+    ReqwestNetworkClient::new(5_000, max_retries, 50, "moe-research-tests/0.0.0", None)
         .expect("ReqwestNetworkClient::new")
 }
 
@@ -451,6 +451,16 @@ fn sse_request_to(url: String) -> NetworkRequest {
     request
 }
 
+fn bytes_request_to(url: String) -> NetworkRequest {
+    NetworkRequest {
+        method: "GET".to_owned(),
+        url,
+        headers: Vec::new(),
+        body: None,
+        inactivity_timeout_ms: Some(5_000),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -458,6 +468,36 @@ fn sse_request_to(url: String) -> NetworkRequest {
 /// When the operator runs with `RUST_LOG=moe_research_net=debug` (the default
 /// production case), no `direction` field — i.e. no trace-level wire
 /// body event — must appear in the captured stream.
+#[tokio::test(flavor = "current_thread")]
+async fn binary_response_body_is_not_written_to_wire_trace() {
+    let binary_body = "binary-response-secret";
+    let server = MockServer::start(vec![CannedResponse::new(200, binary_body)]).await;
+    let (buffer, _guard) = capture_tracing("moe_research_net::reqwest_client=trace").await;
+
+    let bytes = build_client()
+        .send_bytes(bytes_request_to(server.url("/asset.tar.gz")))
+        .await
+        .expect("binary response succeeds");
+
+    assert_eq!(bytes, binary_body.as_bytes());
+    let events = parse_events(&buffer);
+    let metadata = events
+        .iter()
+        .find(|event| field_str(event, "event") == Some("outbound_binary_response_received"))
+        .expect("binary response metadata event");
+    assert_eq!(
+        field_u64(metadata, "body_bytes"),
+        Some(binary_body.len() as u64)
+    );
+    assert!(
+        metadata
+            .get("fields")
+            .and_then(|fields| fields.get("body"))
+            .is_none()
+    );
+    assert!(!buffer.snapshot().contains(binary_body));
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn wire_trace_disabled_emits_no_body_events() {
     let server =
@@ -775,7 +815,7 @@ async fn network_timeout_is_sse_event_inactivity_not_total_stream_duration() {
     )
     .await;
 
-    let client = ReqwestNetworkClient::new(100, 0, 50, "moe-research-tests/0.0.0")
+    let client = ReqwestNetworkClient::new(100, 0, 50, "moe-research-tests/0.0.0", None)
         .expect("ReqwestNetworkClient::new");
     let mut request = sse_request_to(format!("{base_url}/responses"));
     request.inactivity_timeout_ms = Some(100);
@@ -817,7 +857,7 @@ async fn sse_stream_times_out_when_next_event_is_idle() {
     )
     .await;
 
-    let client = ReqwestNetworkClient::new(50, 0, 50, "moe-research-tests/0.0.0")
+    let client = ReqwestNetworkClient::new(50, 0, 50, "moe-research-tests/0.0.0", None)
         .expect("ReqwestNetworkClient::new");
     let mut request = sse_request_to(format!("{base_url}/responses"));
     request.inactivity_timeout_ms = Some(50);
@@ -848,7 +888,7 @@ async fn sse_stream_times_out_when_next_event_is_idle() {
 async fn non_sse_body_read_uses_network_inactivity_timeout() {
     let _trace_lock = lock_tracing_capture().await;
     let base_url = start_delayed_json_body(Duration::from_millis(200), r#"{"ok":true}"#).await;
-    let client = ReqwestNetworkClient::new(50, 0, 50, "moe-research-tests/0.0.0")
+    let client = ReqwestNetworkClient::new(50, 0, 50, "moe-research-tests/0.0.0", None)
         .expect("ReqwestNetworkClient::new");
     let mut request = request_to(format!("{base_url}/responses"));
     request.inactivity_timeout_ms = Some(50);

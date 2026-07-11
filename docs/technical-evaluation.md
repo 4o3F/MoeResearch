@@ -18,7 +18,7 @@ Technical Evaluation is a Skill/profile layer over the MoeResearch MCP core for 
 
 ```bash
 moeresearch mcp register --scope local --config ~/.config/moeresearch/moeresearch.toml
-moeresearch assets install research-skills
+moeresearch assets install research-skills --config ~/.config/moeresearch/moeresearch.toml
 ```
 
 The research skills asset installs Technical Evaluation prompts under `prompts/layer1/technical-evaluation/` and `prompts/layer2/technical-evaluation/`.

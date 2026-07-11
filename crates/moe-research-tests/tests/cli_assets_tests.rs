@@ -1,8 +1,11 @@
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use flate2::Compression;
@@ -152,6 +155,7 @@ fn help_exposes_assets_install_options() {
     assert!(stdout.contains("--layout"));
     assert!(stdout.contains("--force"));
     assert!(stdout.contains("--dry-run"));
+    assert!(stdout.contains("--config"));
 }
 
 #[test]
@@ -633,6 +637,55 @@ fn assets_install_force_overwrites_manifest_owned_file_only() {
     );
 }
 
+#[test]
+fn assets_install_routes_remote_downloads_through_configured_socks5h_proxy() {
+    let proxy = SocksAssetServer::new();
+    let target = TestDir::new("socks-target");
+    let config_dir = TestDir::new("socks-config");
+    let config_path = config_dir.path().join("moeresearch.toml");
+    write_disabled_config_with_proxy(&config_path, &proxy.proxy_url);
+
+    let output = moeresearch_command()
+        .env("NO_PROXY", "assets.invalid")
+        .args([
+            "assets",
+            "install",
+            "research-skills",
+            "--target",
+            target.path().to_str().expect("UTF-8 target path"),
+            "--layout",
+            "repo",
+            "--version",
+            env!("CARGO_PKG_VERSION"),
+            "--base-url",
+            "http://assets.invalid/releases/",
+            "--config",
+            config_path.to_str().expect("UTF-8 config path"),
+        ])
+        .output()
+        .expect("run assets install");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(target.path().join(SKILL_PATH).is_file());
+
+    let destinations = proxy
+        .destinations
+        .lock()
+        .expect("SOCKS destination lock")
+        .clone();
+    assert_eq!(
+        destinations,
+        vec![
+            (0x03, "assets.invalid".to_owned()),
+            (0x03, "assets.invalid".to_owned()),
+        ]
+    );
+}
+
 fn install_repo_layout(fixture: &AssetFixture, target: &TestDir) -> std::process::Output {
     moeresearch_command()
         .args([
@@ -856,4 +909,195 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hash.iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>()
+}
+
+struct SocksAssetServer {
+    proxy_url: String,
+    destinations: Arc<Mutex<Vec<(u8, String)>>>,
+    _thread: thread::JoinHandle<()>,
+}
+
+impl SocksAssetServer {
+    fn new() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind SOCKS asset proxy");
+        let address = listener.local_addr().expect("SOCKS asset proxy address");
+        let version = env!("CARGO_PKG_VERSION");
+        let archive_name = format!("{ASSET}-assets-v{version}.tar.gz");
+        let files = fixture_files();
+        let archive = archive_bytes(&files, None);
+        let manifest = serde_json::to_vec(&json!({
+            "schema_version": 1,
+            "asset": ASSET,
+            "version": version,
+            "archive": archive_name,
+            "sha256": sha256_hex(&archive),
+            "source_commit": "test",
+            "files": files.iter().map(|file| json!({
+                "path": file.path,
+                "sha256": sha256_hex(&file.bytes),
+                "size": file.bytes.len(),
+            })).collect::<Vec<_>>(),
+        }))
+        .expect("serialize asset manifest");
+        let destinations = Arc::new(Mutex::new(Vec::new()));
+        let destinations_for_thread = Arc::clone(&destinations);
+        let thread = thread::spawn(move || {
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().expect("accept SOCKS asset request");
+                let destination = read_blocking_socks5_connect(&mut stream);
+                destinations_for_thread
+                    .lock()
+                    .expect("SOCKS destination lock")
+                    .push(destination);
+                let request_line = read_blocking_http_request(&mut stream);
+                let body = if request_line.contains(".manifest.json") {
+                    &manifest
+                } else {
+                    &archive
+                };
+                write_blocking_http_response(&mut stream, body);
+            }
+        });
+
+        Self {
+            proxy_url: format!("socks5h://{address}"),
+            destinations,
+            _thread: thread,
+        }
+    }
+}
+
+fn read_blocking_socks5_connect(stream: &mut TcpStream) -> (u8, String) {
+    let mut greeting = [0_u8; 2];
+    stream
+        .read_exact(&mut greeting)
+        .expect("read SOCKS greeting");
+    assert_eq!(greeting[0], 0x05);
+    let mut methods = vec![0_u8; usize::from(greeting[1])];
+    stream.read_exact(&mut methods).expect("read SOCKS methods");
+    assert!(methods.contains(&0x00));
+    stream
+        .write_all(&[0x05, 0x00])
+        .expect("accept SOCKS no-auth method");
+
+    let mut request = [0_u8; 4];
+    stream
+        .read_exact(&mut request)
+        .expect("read SOCKS CONNECT header");
+    assert_eq!(request[..3], [0x05, 0x01, 0x00]);
+    let address_type = request[3];
+    let destination = match address_type {
+        0x03 => {
+            let mut length = [0_u8; 1];
+            stream
+                .read_exact(&mut length)
+                .expect("read SOCKS domain length");
+            let mut domain = vec![0_u8; usize::from(length[0])];
+            stream.read_exact(&mut domain).expect("read SOCKS domain");
+            String::from_utf8(domain).expect("SOCKS domain is UTF-8")
+        }
+        0x01 => {
+            let mut octets = [0_u8; 4];
+            stream
+                .read_exact(&mut octets)
+                .expect("read SOCKS IPv4 target");
+            std::net::Ipv4Addr::from(octets).to_string()
+        }
+        other => panic!("unexpected SOCKS address type {other}"),
+    };
+    let mut port = [0_u8; 2];
+    stream
+        .read_exact(&mut port)
+        .expect("read SOCKS target port");
+    stream
+        .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+        .expect("accept SOCKS CONNECT");
+
+    (address_type, destination)
+}
+
+fn read_blocking_http_request(stream: &mut TcpStream) -> String {
+    let mut bytes = Vec::new();
+    let mut buffer = [0_u8; 1024];
+    while !bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+        let read = stream.read(&mut buffer).expect("read asset HTTP request");
+        assert_ne!(read, 0, "asset request ended before headers");
+        bytes.extend_from_slice(&buffer[..read]);
+    }
+
+    String::from_utf8(bytes)
+        .expect("asset request headers are UTF-8")
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn write_blocking_http_response(stream: &mut TcpStream, body: &[u8]) {
+    write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    )
+    .expect("write asset response headers");
+    stream.write_all(body).expect("write asset response body");
+}
+
+fn write_disabled_config_with_proxy(path: &Path, proxy_url: &str) {
+    fs::write(
+        path,
+        format!(
+            r#"[logging]
+format = "json"
+
+[network]
+inactivity_timeout_ms = 30000
+max_retries = 0
+retry_backoff_ms = 1
+user_agent = "moeresearch-test/0.0.0"
+proxy_url = "{proxy_url}"
+
+[search.providers.exa]
+enabled = false
+base_url = "https://api.exa.ai"
+api_key_env = "EXA_API_KEY"
+inactivity_timeout_ms = 30000
+
+[search.providers.tavily]
+enabled = false
+base_url = "https://api.tavily.com"
+api_key_env = "TAVILY_API_KEY"
+inactivity_timeout_ms = 30000
+
+[search.providers.grok]
+enabled = false
+base_url = "https://api.x.ai/v1"
+api_key_env = "XAI_API_KEY"
+inactivity_timeout_ms = 30000
+model = "grok-4.3"
+
+[model.providers.openai]
+enabled = false
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+inactivity_timeout_ms = 30000
+model = "gpt-5.5"
+
+[limits.research]
+max_agents = -1
+max_concurrent_agents = -1
+max_total_model_calls = -1
+max_total_search_calls = -1
+total_timeout_ms = -1
+max_tokens = -1
+
+[limits.per_agent]
+max_turns = -1
+max_tool_calls = -1
+max_search_calls = -1
+timeout_ms = -1
+"#
+        ),
+    )
+    .expect("write proxy test config");
 }
