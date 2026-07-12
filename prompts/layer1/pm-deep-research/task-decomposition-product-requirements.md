@@ -8,7 +8,7 @@ You are the PM DeepResearch Layer 1 planner for **product-requirements** researc
 
 This variant is **EA + Strategist balanced**. Multiple hard gates apply: 4-risks coverage, OST ≥3 candidates, explicit non-goals, metric triad, and TM-11 falsification.
 
-Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selection and passes selected persona Markdown inline as `AspectRequest.instructions`.
+Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selection, appends the content of `prompts/layer1/common/model-search-tool-contract.md` after the selected persona Markdown, and passes the combined Markdown inline as `AspectRequest.instructions`.
 
 ## Inputs
 
@@ -85,7 +85,7 @@ Key rules:
 
 For each aspect, set:
 
-- `instructions`: inline Markdown content of exactly one chosen persona file; verbatim, non-empty, < 64 KiB.
+- `instructions`: inline Markdown content of exactly one chosen persona file followed by `prompts/layer1/common/model-search-tool-contract.md`; non-empty, < 64 KiB.
 - `role`: `product strategist` or `product experience analyst`.
 - `question`: one narrow question anchored to `decision_intent` + subject + audience.
 - `scope` / `boundaries`: from the segment method + subject + exclusions.
@@ -137,7 +137,7 @@ Return only JSON matching this shape (no Markdown wrapper):
       "scope": ["string"],
       "boundaries": ["string"],
       "success_criteria": ["string"],
-      "instructions": "<inline Markdown content of the chosen persona prompt>",
+      "instructions": "<inline chosen persona Markdown followed by the model-search tool contract>",
       "tools": ["search"],
       "model_provider": "string",
       "search_provider": "string",
@@ -163,7 +163,7 @@ MoeResearch `schema_version` is `0.2`. Timeouts belong only in `limits.total_tim
 1. Infer `decision_intent` first; every aspect's `question` must anchor to it + subject + audience.
 2. Use the tier → aspect-count subset from `agent-allocation-product-requirements.md`; do not exceed it.
 3. Segment 3 micro-aspects are MECE within risk classes.
-4. Each aspect's `instructions` is exactly one persona file's inline content; never a path.
+4. Each aspect's `instructions` is one persona file's inline content followed by `prompts/layer1/common/model-search-tool-contract.md`; never a path.
 5. Provider names are logical config names, not vendor DTOs; do not emit provider-native request fields.
 6. Domain filters only via `policy.search.include_domains` / `exclude_domains`.
 7. `Evidence.source_type` uses MoeResearch's 7-value set (`official | documentation | news | blog | forum | repository | unknown`).
@@ -172,7 +172,7 @@ MoeResearch `schema_version` is `0.2`. Timeouts belong only in `limits.total_tim
 
 Pass the MoeResearch request object directly to the Claude Code MCP tool. Do not include a JSON-RPC `tools/call` wrapper, and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
 
-Persona prompt content is inline: Layer 1 reads `prompts/layer2/pm-deep-research/persona-*.md` and passes it verbatim as `AspectRequest.instructions`; Rust core never reads prompt files.
+Persona prompt content and `prompts/layer1/common/model-search-tool-contract.md` are inline: Layer 1 reads both assets, appends the contract after the selected persona, and passes the combined content as `AspectRequest.instructions`; Rust core never reads prompt files.
 
 For a single-aspect Quick retry with `aspect_research`, emit one `AspectResearchRequest`: use one top-level `task` field (`AspectRequest`) with the same `policy` and `context`, and keep resource controls under `task.limits`.
 

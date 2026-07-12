@@ -2,9 +2,9 @@
 
 > Canonical mapping reference consumed by [`task-decomposition-product-capability.md`](task-decomposition-product-capability.md). It defines, for product-capability deep research: 六段 skeleton → aspect → persona prompt, the per-tier aspect subset, segment-5 persona ownership note, build-intent overlay on 段6, and the EA-heavy / Strategist-light TM rationale.
 
-## Two personas (each = one inline `instructions` value)
+## Two personas (each supplies one persona portion of `instructions`)
 
-Same two persona prompts as competitive (MoeResearch has no persona concept; persona = prompt). Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both:
+Same two persona prompts as competitive (MoeResearch has no persona concept; persona = prompt). Layer 1 appends `prompts/layer1/common/model-search-tool-contract.md` after the selected persona. Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both:
 
 | key | file | angle | owns (in this profile) | TM weighting |
 |---|---|---|---|---|
@@ -56,7 +56,7 @@ One MoeResearch aspect = one persona, 所以 profile §5 标段5 "Strategist + E
 
 ## Invariants
 
-1. 每 aspect → exactly one persona prompt, inline (verbatim, non-empty, < 64 KiB).
+1. 每 aspect → exactly one persona prompt followed by `prompts/layer1/common/model-search-tool-contract.md`, inline (non-empty, < 64 KiB).
 2. Aspects MECE across the 6 段 — 不重叠.
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `capability_domain` 写在 `context.summary` (aspect agents 读 it).

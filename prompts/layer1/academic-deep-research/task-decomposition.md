@@ -4,7 +4,7 @@
 
 Convert the user's academic research request into a valid `DeepResearchRequest`. Do not perform the research yourself and do not write the final report.
 
-Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selection and passes selected Layer 2 Markdown inline as `AspectRequest.instructions`.
+Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selection, appends the content of `prompts/layer1/common/model-search-tool-contract.md` after the selected Layer 2 Markdown, and passes the combined Markdown inline as `AspectRequest.instructions`.
 
 ## Inputs
 
@@ -88,7 +88,7 @@ For each aspect:
 - `scope` carries inclusion criteria, source classes, domain/time boundaries, and key terms for that aspect.
 - `boundaries` carries exclusion criteria and non-goals.
 - `success_criteria` must include the evidence bar: primary/source class preference, methodological appraisal, contradiction handling, and what to do when evidence is missing.
-- `instructions` is the inline Markdown content of exactly one selected Layer 2 persona prompt, never a path.
+- `instructions` is the inline Markdown content of exactly one selected Layer 2 persona prompt followed by `prompts/layer1/common/model-search-tool-contract.md`, never a path.
 
 ## Step 5 — Limits and policies
 
@@ -107,7 +107,7 @@ Per-aspect `limits`:
 | tier | max_turns | max_tool_calls | max_search_calls | timeout_ms |
 |---|---:|---:|---:|---:|
 | quick | 5 | 6 | 3 | 600000 |
-| standard | 8 | 12 | 6 | 600000 |
+| standard | 10 | 12 | 8 | 600000 |
 | deep | 8 | 8 | 4 | 600000 |
 
 Set every per-aspect `limits.timeout_ms = 600000`. It must not exceed top-level `limits.total_timeout_ms`.
@@ -117,7 +117,7 @@ Set every per-aspect `limits.timeout_ms = 600000`. It must not exceed top-level 
 - `policy.evidence.require_evidence_for_findings = true` always. Use `min_evidence_per_finding = 1` for Quick/Standard and `2` for Deep.
 - `policy.model.allowed_providers` and `policy.search.allowed_providers` are allowlists, not fallback order.
 - Every search-enabled aspect chooses exactly one `task.aspects[].search_provider` from `policy.search.allowed_providers`.
-- Search-policy defaults: `max_results_per_query = 5`, `recency = null`, `category = "academic"`, `depth = null`, `content_level = null`, `freshness = null`. Use date windows in aspect scope instead of forcing global freshness.
+- Search-policy defaults: `max_results_per_query = 5`, `recency = null`, `category = "academic"`, `depth = null`, `content_level = null`, `freshness = null`. Model search calls omit policy-controlled arguments; runtime applies the academic category and other policy defaults. Use date windows in aspect scope instead of forcing global freshness.
 - Use `policy.search.include_domains` / `exclude_domains` only when the user or discipline requires domain constraints.
 - Prefer primary papers, official guidelines, registries, datasets, systematic reviews, standards, and institutional sources.
 
@@ -139,7 +139,7 @@ Return only JSON matching `DeepResearchRequest`; no Markdown wrapper.
       "scope": ["string"],
       "boundaries": ["string"],
       "success_criteria": ["string"],
-      "instructions": "inline Layer 2 persona Markdown",
+      "instructions": "inline Layer 2 persona Markdown followed by the common model-search tool contract",
       "tools": ["search"],
       "model_provider": "selected provider",
       "search_provider": "selected provider",

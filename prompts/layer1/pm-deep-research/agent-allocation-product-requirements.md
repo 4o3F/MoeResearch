@@ -2,9 +2,9 @@
 
 > Mapping reference consumed by [`task-decomposition-product-requirements.md`](task-decomposition-product-requirements.md). It defines, for product-requirements deep research: 八段 PR-FAQ skeleton → aspect → persona prompt, the per-tier aspect subset, EA + Strategist **balanced** ownership rationale, the **five hard-gate segments** (段3 4-risks 全 / 段4 ≥3 候选 / 段5 非目标 显式 / 段6 三套指标 / 段8 TM-11 falsification), the "working backwards" PR-FAQ assembly note, and intent overlay.
 
-## Two personas (each = one inline `instructions` value)
+## Two personas (each supplies one persona portion of `instructions`)
 
-Same two persona prompts as competitive / product-capability / innovation-direction (MoeResearch has no persona concept; persona = prompt). Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both; **TM-11 is the open-questions aspect's hard gate** under product-requirements:
+Same two persona prompts as competitive / product-capability / innovation-direction (MoeResearch has no persona concept; persona = prompt). Layer 1 appends `prompts/layer1/common/model-search-tool-contract.md` after the selected persona. Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both; **TM-11 is the open-questions aspect's hard gate** under product-requirements:
 
 | key | file | angle | owns (in this profile) | TM weighting |
 |---|---|---|---|---|
@@ -105,7 +105,7 @@ This overlay does not add a new persona or aspect. It tightens success criteria 
 
 ## Invariants
 
-1. 每 aspect → exactly one persona prompt, inline (verbatim, non-empty, < 64 KiB).
+1. 每 aspect → exactly one persona prompt followed by `prompts/layer1/common/model-search-tool-contract.md`, inline (non-empty, < 64 KiB).
 2. Aspects MECE across the 8 段 — 不重叠. **例外**：段3 = 4 个 cagan single-class micro-aspect（value/usability/feasibility/business），共属段3、在段3 内部按风险类别 MECE 分区；跨段仍不重叠。
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `subject` + audience 写在 `context.summary` (aspect agents 读 it).

@@ -4,7 +4,7 @@
 
 Convert the user's technical decision request into a valid `DeepResearchRequest`. Do not perform the research yourself and do not write the final report.
 
-Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selection and passes selected Layer 2 Markdown inline as `AspectRequest.instructions`.
+Rust core never reads prompt files at runtime. Layer 1 owns prompt asset selection, appends the content of `prompts/layer1/common/model-search-tool-contract.md` after the selected Layer 2 Markdown, and passes the combined Markdown inline as `AspectRequest.instructions`.
 
 ## Inputs
 
@@ -91,7 +91,7 @@ For each aspect:
 - `scope` carries options, target environment, workload, constraints, and evidence classes for that aspect.
 - `boundaries` carries non-goals, unsupported environments, and assumptions not to make.
 - `success_criteria` must include the evidence bar: official source preference, benchmark validity when relevant, security/license checks when relevant, and what would change the recommendation.
-- `instructions` is the inline Markdown content of exactly one selected Layer 2 persona prompt, never a path.
+- `instructions` is the inline Markdown content of exactly one selected Layer 2 persona prompt followed by `prompts/layer1/common/model-search-tool-contract.md`, never a path.
 
 ## Step 5 — Limits and policies
 
@@ -110,7 +110,7 @@ Per-aspect `limits`:
 | tier | max_turns | max_tool_calls | max_search_calls | timeout_ms |
 |---|---:|---:|---:|---:|
 | quick | 5 | 6 | 3 | 600000 |
-| standard | 8 | 12 | 6 | 600000 |
+| standard | 10 | 12 | 8 | 600000 |
 | deep | 8 | 8 | 4 | 600000 |
 
 Set every per-aspect `limits.timeout_ms = 600000`. It must not exceed top-level `limits.total_timeout_ms`.
@@ -142,7 +142,7 @@ Return only JSON matching `DeepResearchRequest`; no Markdown wrapper.
       "scope": ["string"],
       "boundaries": ["string"],
       "success_criteria": ["string"],
-      "instructions": "inline Layer 2 persona Markdown",
+      "instructions": "inline Layer 2 persona Markdown followed by the common model-search tool contract",
       "tools": ["search"],
       "model_provider": "selected provider",
       "search_provider": "selected provider",

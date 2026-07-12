@@ -145,8 +145,8 @@ Top-level research limits (example = **standard** tier):
 {
   "max_agents": 4,
   "max_concurrent_agents": 2,
-  "max_total_model_calls": 32,
-  "max_total_search_calls": 20,
+  "max_total_model_calls": 40,
+  "max_total_search_calls": 28,
   "total_timeout_ms": 600000,
   "max_tokens": -1
 }
@@ -156,9 +156,9 @@ Per-aspect limits (example = **standard** tier):
 
 ```json
 {
-  "max_turns": 8,
+  "max_turns": 10,
   "max_tool_calls": 12,
-  "max_search_calls": 6,
+  "max_search_calls": 8,
   "timeout_ms": 600000
 }
 ```
@@ -172,7 +172,7 @@ Shipped skill source of truth: `prompts/layer1/common/budget-tiers.md` (installe
 | Tier | Top-level `limits` (`deep_research`) | Per-aspect `task.aspects[].limits` / `task.limits` |
 | --- | --- | --- |
 | `quick` | agents 2, concurrent 1, model calls 12, search calls 8, total_timeout_ms 300000, max_tokens -1 | turns 4, tool_calls 4, search_calls 2, timeout_ms 180000 |
-| `standard` | agents 4, concurrent 2, model calls 32, search calls 20, total_timeout_ms 600000, max_tokens -1 | turns 8, tool_calls 12, search_calls 6, timeout_ms 600000 |
+| `standard` | agents 4, concurrent 2, model calls 40, search calls 28, total_timeout_ms 600000, max_tokens -1 | turns 10, tool_calls 12, search_calls 8, timeout_ms 600000 |
 | `deep` | agents 6, concurrent 3, model calls 70, search calls 56, total_timeout_ms 1260000, max_tokens -1 | turns 8, tool_calls 8, search_calls 4, timeout_ms 600000 |
 
 Profile defaults: generic/academic/technical → `standard`; PM DeepResearch → `deep`.
@@ -306,15 +306,15 @@ Use `deep_research` for a multi-aspect plan.
         "tools": ["search"],
         "model_provider": "openai",
         "search_provider": "grok",
-        "limits": {"max_turns": 8, "max_tool_calls": 12, "max_search_calls": 6, "timeout_ms": 600000}
+        "limits": {"max_turns": 10, "max_tool_calls": 12, "max_search_calls": 8, "timeout_ms": 600000}
       }
     ]
   },
   "limits": {
     "max_agents": 4,
     "max_concurrent_agents": 2,
-    "max_total_model_calls": 32,
-    "max_total_search_calls": 20,
+    "max_total_model_calls": 40,
+    "max_total_search_calls": 28,
     "total_timeout_ms": 600000,
     "max_tokens": -1
   },

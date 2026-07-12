@@ -2,9 +2,9 @@
 
 > Canonical mapping reference consumed by [`task-decomposition-innovation-direction.md`](task-decomposition-innovation-direction.md). It defines, for innovation-direction deep research: 八段 skeleton → aspect → persona prompt, the per-tier aspect subset, segment-2 sole-EA ownership note, segment-6 pre-mortem-three-死因 hard rule, segment-8 TM-11 falsifiability hard gate, intent overlay, and the Strategist-heavy / EA-light TM rationale.
 
-## Two personas (each = one inline `instructions` value)
+## Two personas (each supplies one persona portion of `instructions`)
 
-Same two persona prompts as competitive / product-capability (MoeResearch has no persona concept; persona = prompt). Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both; **TM-11 is the recommended-bets aspect's hard gate** under innovation-direction:
+Same two persona prompts as competitive / product-capability (MoeResearch has no persona concept; persona = prompt). Layer 1 appends `prompts/layer1/common/model-search-tool-contract.md` after the selected persona. Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both; **TM-11 is the recommended-bets aspect's hard gate** under innovation-direction:
 
 | key | file | angle | owns (in this profile) | TM weighting |
 |---|---|---|---|---|
@@ -81,7 +81,7 @@ One MoeResearch aspect = one persona, 所以 profile §5 标 "EA 看 unmet" 在�
 
 ## Invariants
 
-1. 每 aspect → exactly one persona prompt, inline (verbatim, non-empty, < 64 KiB).
+1. 每 aspect → exactly one persona prompt followed by `prompts/layer1/common/model-search-tool-contract.md`, inline (non-empty, < 64 KiB).
 2. Aspects MECE across the 8 段 — 不重叠.
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `subject_domain` + `time_window_months` 写在 `context.summary` (aspect agents 读 it).

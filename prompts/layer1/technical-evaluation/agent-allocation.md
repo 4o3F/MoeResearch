@@ -11,4 +11,4 @@ Assign each technical evaluation aspect to exactly one Layer 2 persona.
 
 Deep technical runs must include adoption-gate and kill-criteria coverage. Prefer a dedicated `implementation_cost_analyst` or `security_reliability_reviewer` aspect when migration risk, rollback, security, compliance, or operational safety is load-bearing.
 
-Return JSON with `id`, `persona`, and `reason`. Copy the selected persona Markdown inline into `AspectRequest.instructions` before calling MoeResearch; do not pass prompt paths to Rust/MCP.
+Return JSON with `id`, `persona`, and `reason`. Copy the selected persona Markdown followed by `prompts/layer1/common/model-search-tool-contract.md` into `AspectRequest.instructions` before calling MoeResearch; do not pass prompt paths to Rust/MCP.

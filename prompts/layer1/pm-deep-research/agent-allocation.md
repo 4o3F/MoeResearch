@@ -2,9 +2,9 @@
 
 > Canonical mapping reference consumed by [`task-decomposition.md`](task-decomposition.md). It defines, for competitive deep research: five-dim spine → aspect → persona prompt, the per-tier aspect subset, the Build-intent version-history aspect, and the persona/TM rationale.
 
-## Two personas (each = one inline `instructions` value)
+## Two personas (each supplies one persona portion of `instructions`)
 
-MoeResearch has no persona concept; a persona is realised purely as the inline prompt passed on `task.aspects[].instructions`. There are exactly two persona prompts, both carrying the cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability):
+MoeResearch has no persona concept; a persona is realised as the selected inline prompt within `task.aspects[].instructions`. Layer 1 appends `prompts/layer1/common/model-search-tool-contract.md` after that prompt. There are exactly two persona prompts, both carrying the cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability):
 
 | key | file | angle | owns dims | TM |
 |---|---|---|---|---|
@@ -40,7 +40,7 @@ One MoeResearch aspect carries exactly one `instructions` persona prompt, so the
 
 ## Limits per aspect (hand off to `task-decomposition.md` Step 4)
 
-Each aspect carries its own `limits { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. The discriminating values per tier are: per-aspect `max_search_calls` = 3 (quick) / 6 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 always**. Top-level `limits` and `total_timeout_ms = ceil(max_agents / max_concurrent_agents) × 600000` are computed in `task-decomposition.md` Step 4.
+Each aspect carries its own `limits { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. The discriminating values per tier are: per-aspect `max_search_calls` = 3 (quick) / 8 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 always**. Top-level `limits` and `total_timeout_ms = ceil(max_agents / max_concurrent_agents) × 600000` are computed in `task-decomposition.md` Step 4.
 
 ## Provider selection per aspect
 
@@ -51,7 +51,7 @@ Each aspect carries its own `limits { max_turns, max_tool_calls, max_search_call
 
 ## Invariants
 
-1. Each aspect → exactly one persona prompt, passed inline (verbatim, non-empty, < 64 KiB).
+1. Each aspect → exactly one persona prompt followed by `prompts/layer1/common/model-search-tool-contract.md`, passed inline (non-empty, < 64 KiB).
 2. Aspects are MECE across the spine — no dimension covered twice.
 3. `success_criteria` carries the dimension's evidence standard so the engine enforces our evidence bar.
 4. `decision_intent` lives in `context.summary` (the aspect agents read it there).

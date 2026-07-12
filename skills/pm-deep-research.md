@@ -50,7 +50,7 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
    | `product-requirements` | `../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md` | `../prompts/layer1/pm-deep-research/agent-allocation-product-requirements.md` | `../prompts/layer1/pm-deep-research/final-report-product-requirements.md` |
 
    Then run profile skeleton → aspect decomposition. For **Build/Not Build** in `competitive`, add a version-history aspect for build-cost (迭代节奏与建设成本); in `product-capability`, 段6 already carries build-cost via the build-intent overlay.
-4. **Persona assembly**: each aspect carries the inline content of the chosen Layer 2 persona prompt as `AspectRequest.instructions`:
+4. **Persona assembly**: append `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`) after the inline content of the chosen Layer 2 persona prompt in each `AspectRequest.instructions` value:
    - `../prompts/layer2/pm-deep-research/persona-experience-analyst.md` — capability matrix / Kano / experience paths.
    - `../prompts/layer2/pm-deep-research/persona-strategist.md` — real competitive set / ODI / positioning / threat / build-cost.
    (MoeResearch has no persona concept — **persona = prompt**.)
@@ -73,7 +73,7 @@ PM runtime reminders:
 
 - Use `deep_research` for multi-aspect PM research; use `aspect_research` only for a single targeted retry.
 - For PM deep runs, keep per-aspect `limits.timeout_ms = 600000` unless intentionally choosing a smaller limit, and ensure it does not exceed top-level `limits.total_timeout_ms`.
-- `instructions` is the inline content of the selected Layer 2 persona prompt.
+- `instructions` is the inline content of the selected Layer 2 persona prompt followed by `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`).
 
 Compact `deep_research` direct payload skeleton:
 
@@ -94,7 +94,7 @@ Default PM skeleton = **deep** tier from `../prompts/layer1/common/budget-tiers.
         "scope": ["<in scope>"],
         "boundaries": ["<out of scope>"],
         "success_criteria": ["<criterion>"],
-        "instructions": "<inline Layer 2 persona Markdown prompt>",
+        "instructions": "<inline Layer 2 persona Markdown followed by the common model-search tool contract>",
         "tools": ["search"],
         "model_provider": "<selected allowed model provider>",
         "search_provider": "<selected allowed search provider>",
@@ -173,7 +173,7 @@ Retry skeleton uses the same per-aspect **deep** tier row from `../prompts/layer
     "scope": ["<in scope>"],
     "boundaries": ["<out of scope>"],
     "success_criteria": ["<criterion>"],
-    "instructions": "<inline Layer 2 persona Markdown prompt>",
+    "instructions": "<inline Layer 2 persona Markdown followed by the common model-search tool contract>",
     "tools": ["search"],
     "model_provider": "<selected allowed model provider>",
     "search_provider": "<selected allowed search provider>",
@@ -223,6 +223,7 @@ These are Skill-layer synthesis modules, not MoeResearch aspects and not Rust sc
 - `../prompts/layer1/pm-deep-research/task-decomposition-product-capability.md` · `agent-allocation-product-capability.md` · `final-report-product-capability.md` — product-capability variant.
 - `../prompts/layer1/pm-deep-research/task-decomposition-innovation-direction.md` · `agent-allocation-innovation-direction.md` · `final-report-innovation-direction.md` — innovation-direction variant.
 - `../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md` · `agent-allocation-product-requirements.md` · `final-report-product-requirements.md` — product-requirements variant (8-section PR-FAQ template).
+- `../prompts/layer1/common/model-search-tool-contract.md` — appended after every selected Layer 2 persona; instructs model search calls to use `query` and optional `max_results`.
 - `../prompts/layer1/common/evidence-postprocess.md` — shared evidence step (4-tier mapping / visual-evidence assembly / CiteEval). Domain-neutral only.
 - `../prompts/layer1/common/claim-ledger.md` — shared claim audit module. Domain-neutral only.
 - `../prompts/layer1/common/host-verification-backfill.md` — shared bounded host WebSearch/WebFetch verification/backfill contract; keeps host sources separate from MoeResearch evidence.
@@ -242,7 +243,7 @@ Layer 2 personas are shared across all four capabilities.
 
 - Layer 1 may plan, allocate, validate, synthesize; it must not call Exa/Grok/model APIs directly when MoeResearch MCP is available.
 - Host-native WebSearch/WebFetch is allowed only for bounded post-MoeResearch verification/backfill under `../prompts/layer1/common/host-verification-backfill.md`; it is not an alternate research engine and must be disclosed separately.
-- Rust never reads prompt files at runtime; Layer 1 loads the chosen Layer 2 prompt Markdown and passes its content inline as `AspectRequest.instructions` (non-empty, <64 KiB).
+- Rust never reads prompt files at runtime; Layer 1 loads the chosen Layer 2 prompt Markdown, appends the common search-tool contract, and passes the combined content inline as `AspectRequest.instructions` (non-empty, <64 KiB).
 - `SearchPolicy.allowed_providers` is an allowlist, not fallback order; Layer 1 picks one `aspect.search_provider`.
 - Provider keys/base URLs/operator limits/raw DTOs stay behind MoeResearch config.
 

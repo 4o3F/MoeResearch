@@ -9,7 +9,7 @@ Operator config still applies stricter-merge at the Rust core: a finite operator
 | Tier | Top-level `limits` (`deep_research`) | Per-aspect `task.aspects[].limits` / `task.limits` |
 | --- | --- | --- |
 | `quick` | `max_agents` 2, `max_concurrent_agents` 1, `max_total_model_calls` 12, `max_total_search_calls` 8, `total_timeout_ms` 300000, `max_tokens` -1 | `max_turns` 4, `max_tool_calls` 4, `max_search_calls` 2, `timeout_ms` 180000 |
-| `standard` | `max_agents` 4, `max_concurrent_agents` 2, `max_total_model_calls` 32, `max_total_search_calls` 20, `total_timeout_ms` 600000, `max_tokens` -1 | `max_turns` 8, `max_tool_calls` 12, `max_search_calls` 6, `timeout_ms` 600000 |
+| `standard` | `max_agents` 4, `max_concurrent_agents` 2, `max_total_model_calls` 40, `max_total_search_calls` 28, `total_timeout_ms` 600000, `max_tokens` -1 | `max_turns` 10, `max_tool_calls` 12, `max_search_calls` 8, `timeout_ms` 600000 |
 | `deep` | `max_agents` 6, `max_concurrent_agents` 3, `max_total_model_calls` 70, `max_total_search_calls` 56, `total_timeout_ms` 1260000, `max_tokens` -1 | `max_turns` 8, `max_tool_calls` 8, `max_search_calls` 4, `timeout_ms` 600000 |
 
 ## Profile defaults

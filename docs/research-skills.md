@@ -1,6 +1,6 @@
 # MoeResearch Research Skills
 
-MoeResearch has one Rust MCP backend and one Markdown asset installer. The asset slug is `research-skills`; the installed Markdown assets include Generic DeepResearch roots, PM DeepResearch, Academic DeepResearch, Technical Evaluation, and common evidence modules.
+MoeResearch has one Rust MCP backend and one Markdown asset installer. The asset slug is `research-skills`; the installed Markdown assets include Generic DeepResearch roots, PM DeepResearch, Academic DeepResearch, Technical Evaluation, common evidence modules, and a common model-search tool contract.
 
 ## Backend vs Markdown Skill Assets
 
@@ -16,9 +16,11 @@ MoeResearch has one Rust MCP backend and one Markdown asset installer. The asset
 | Academic DeepResearch | Literature review, evidence synthesis, paper evaluation, research gaps. | `prompts/layer1/academic-deep-research/`, `prompts/layer2/academic-deep-research/` |
 | Technical Evaluation | Library/framework comparison, architecture evaluation, dependency risk, migration assessment. | `prompts/layer1/technical-evaluation/`, `prompts/layer2/technical-evaluation/` |
 | Generic DeepResearch | Multi-aspect research that does not fit PM/academic/technical. | `prompts/layer1/task-decomposition.md`, `prompts/layer1/final-report.md`, `prompts/layer2/aspect-agent.md` |
-| Common evidence modules | Evidence tiering, claim ledger, host verification, verifier, annex, partial-status host contract, budget tiers. | `prompts/layer1/common/` |
+| Common modules | Evidence tiering, claim ledger, host verification, verifier, annex, partial-status host contract, budget tiers, model-search tool contract. | `prompts/layer1/common/` |
 
 Optional Generic Layer-2 helpers (not required when `aspect-agent.md` is inlined): `prompts/layer2/search-planner.md`, `prompts/layer2/evidence-extractor.md`.
+
+Layer 1 appends `prompts/layer1/common/model-search-tool-contract.md` after each selected Layer 2 persona inside `AspectRequest.instructions`. This is prompt guidance only and does not change public MCP schema 0.2.
 
 ## Installation
 
@@ -26,7 +28,7 @@ Optional Generic Layer-2 helpers (not required when `aspect-agent.md` is inlined
 moeresearch assets install research-skills --config /path/to/moeresearch.toml
 ```
 
-Remote asset installation uses the complete MoeResearch configuration, including the optional network proxy. Omit `--config` only when a valid `moeresearch.toml` is available in the current working directory. The content is the full MoeResearch research skill asset set.
+Remote asset installation uses the complete MoeResearch configuration, including the optional network proxy. Omit `--config` only when a valid `moeresearch.toml` is available in the current working directory. The content is the full MoeResearch research skill asset set. Re-run this command after upgrading MoeResearch to install the matching common model-search tool contract.
 
 ## Claude Code Layout
 
@@ -40,6 +42,7 @@ Default install target:
       task-decomposition.md
       final-report.md
       common/
+        model-search-tool-contract.md
       pm-deep-research/
       academic-deep-research/
       technical-evaluation/
