@@ -218,6 +218,55 @@ fn package_script_manifest_covers_expanded_research_roots() {
 }
 
 #[test]
+fn prompt_assets_keep_budget_selection_in_generic_skill() {
+    let skill = fs::read_to_string(workspace().join(SKILL_PATH)).expect("read generic skill");
+    assert!(skill.contains("profiles must not change them"));
+    let pm_skill = fs::read_to_string(workspace().join(PM_SKILL_PATH)).expect("read PM skill");
+    assert!(pm_skill.contains("Apply `limits_preset`"));
+    assert!(!pm_skill.contains("Deep+Evidence-Pack"));
+    for report in [
+        "prompts/layer1/pm-deep-research/final-report.md",
+        "prompts/layer1/pm-deep-research/final-report-product-capability.md",
+        "prompts/layer1/pm-deep-research/final-report-innovation-direction.md",
+        "prompts/layer1/pm-deep-research/final-report-product-requirements.md",
+    ] {
+        let report = fs::read_to_string(workspace().join(report)).expect("read PM report prompt");
+        assert!(!report.contains("Deep+Evidence-Pack"));
+        assert!(!report.contains("Deep+EP"));
+    }
+    for (asset, prohibited) in [
+        (
+            "prompts/layer1/pm-deep-research/agent-allocation-product-requirements.md",
+            "4 micro-aspect",
+        ),
+        (
+            "prompts/layer1/pm-deep-research/agent-allocation.md",
+            "per-competitor profile on demand",
+        ),
+    ] {
+        let asset = fs::read_to_string(workspace().join(asset)).expect("read PM allocation prompt");
+        assert!(!asset.contains(prohibited));
+    }
+
+    for profile in [
+        GENERIC_LAYER1_TASK,
+        ACADEMIC_LAYER1_PATH,
+        TECHNICAL_LAYER1_PATH,
+        PM_LAYER1_PATH,
+        "prompts/layer1/pm-deep-research/task-decomposition-product-capability.md",
+        "prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md",
+        "prompts/layer1/pm-deep-research/task-decomposition-innovation-direction.md",
+    ] {
+        let prompt = fs::read_to_string(workspace().join(profile)).expect("read profile prompt");
+        assert!(prompt.contains("common/budget-tiers.md"), "{profile}");
+        assert!(!prompt.contains("deep_evidence_pack"), "{profile}");
+        assert!(!prompt.contains("infer the tier"), "{profile}");
+        assert!(!prompt.contains("\"limits\": \"selected"), "{profile}");
+        assert!(prompt.contains("timeout_ms"), "{profile}");
+    }
+}
+
+#[test]
 fn assets_install_repo_layout_preserves_skills_and_prompts() {
     let fixture = AssetFixture::new(|_| {}, None);
     let target = TestDir::new("target");

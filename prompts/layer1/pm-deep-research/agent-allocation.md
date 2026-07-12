@@ -34,13 +34,13 @@ One MoeResearch aspect carries exactly one `instructions` persona prompt, so the
 |---|---|---|
 | `quick` | `job-and-competitive-set`, `capability-and-importance` | fastest defensible read: who's the real competitor + how do capabilities compare |
 | `standard` | + `opportunity-gaps`, `positioning-whitespace` (4 total) | adds gap ranking + positioning |
-| `deep` / `deep_evidence_pack` | + `experience-paths` (5 total; + per-competitor profile on demand) | adds experience-breakpoint + visual evidence |
+| `deep` | + `experience-paths` (5 total) | adds experience-breakpoint + visual evidence |
 
-**Build-intent overlay (any tier where `decision_intent = build`)**: append `build-cost-version-history` (strategist). Judging "should we build X" requires a build-cost estimate from competitor iteration cadence, not just user value. Treat the changelog as the competitor's *deeds* (TM-12 say-vs-do): what they ship, how many versions, how often, reveals true investment priority.
+**Build-intent overlay**: include build-cost evidence; add `build-cost-version-history` only when it fits the selected `max_agents`, otherwise fold it into an existing strategist aspect.
 
-## Limits per aspect (hand off to `task-decomposition.md` Step 4)
+## Limits
 
-Each aspect carries its own `limits { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. The discriminating values per tier are: per-aspect `max_search_calls` = 3 (quick) / 8 (standard) / 8 (deep); per-aspect `timeout_ms` = **600000 always**. Top-level `limits` and `total_timeout_ms = ceil(max_agents / max_concurrent_agents) × 600000` are computed in `task-decomposition.md` Step 4.
+Use the supplied `limits_preset` from `common/budget-tiers.md` unchanged.
 
 ## Provider selection per aspect
 

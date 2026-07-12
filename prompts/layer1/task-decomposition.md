@@ -47,23 +47,11 @@ Return only JSON matching this `DeepResearchRequest` shape; do not wrap it in Ma
         "tools": ["search"],
         "model_provider": "string",
         "search_provider": "string",
-        "limits": {
-          "max_turns": 10,
-          "max_tool_calls": 12,
-          "max_search_calls": 8,
-          "timeout_ms": 600000
-        }
+        "limits": {"max_turns": 10, "max_tool_calls": 12, "max_search_calls": 8, "timeout_ms": 600000}
       }
     ]
   },
-  "limits": {
-    "max_agents": 4,
-    "max_concurrent_agents": 2,
-    "max_total_model_calls": 40,
-    "max_total_search_calls": 28,
-    "total_timeout_ms": 1200000,
-    "max_tokens": null
-  },
+  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 40, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
   "policy": {
     "model": {
       "allowed_providers": ["string"],
@@ -84,10 +72,7 @@ Return only JSON matching this `DeepResearchRequest` shape; do not wrap it in Ma
       "include_domains": [],
       "exclude_domains": []
     },
-    "evidence": {
-      "require_evidence_for_findings": true,
-      "min_evidence_per_finding": 1
-    },
+    "evidence": {"require_evidence_for_findings": true, "min_evidence_per_finding": 1},
     "output": {
       "language": "string",
       "max_findings_per_aspect": null
@@ -122,21 +107,9 @@ Return only JSON matching this `DeepResearchRequest` shape; do not wrap it in Ma
 12. The appended Model Retrieval Intent Contract defines the model-only `search` arguments. `intent` belongs in those model tool calls, never in this public MCP request or `policy.search`.
 13. Timeouts belong only in `limits.total_timeout_ms` and `task.aspects[].limits.timeout_ms`; `policy.execution` has no timeout field.
 
-## Limits guidance
+## Limits
 
-| tier | max_agents | max_concurrent_agents | max_total_model_calls | max_total_search_calls | total_timeout_ms | max_tokens |
-|---|---:|---:|---:|---:|---:|---|
-| quick | 2 | 2 | 15 | 8 | 600000 | null |
-| standard | 4 | 2 | 40 | 28 | 1200000 | null |
-| deep | 6 | 3 | 70 | 56 | 1200000 | null |
-
-| tier | max_turns | max_tool_calls | max_search_calls | timeout_ms |
-|---|---:|---:|---:|---:|
-| quick | 5 | 6 | 3 | 600000 |
-| standard | 10 | 12 | 8 | 600000 |
-| deep | 8 | 8 | 4 | 600000 |
-
-Set every per-aspect `limits.timeout_ms = 600000`. It must not exceed top-level `limits.total_timeout_ms`.
+Copy the supplied `limits_preset` from `common/budget-tiers.md` unchanged.
 
 ## MCP request wrapper
 

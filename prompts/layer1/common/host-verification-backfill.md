@@ -37,7 +37,7 @@ WebSearch snippets alone are not enough for a high-impact claim. If the page can
 
 - Quick: 0-2 host checks.
 - Standard: up to 5 host checks.
-- Deep / Deep+Evidence-Pack: up to 10 host checks.
+- Deep (with `evidence_pack` optional): up to 10 host checks.
 
 Spend checks on load-bearing claims first. Stop once the decision cannot materially change or once remaining gaps are better framed as open questions / experiments.
 

@@ -36,7 +36,7 @@ Extract these fields from the user request:
   "domain_signals": ["product", "academic", "technical", "generic"],
   "named_entities": ["products, papers, libraries, frameworks, standards, competitors, markets"],
   "constraints": ["time window, geography, audience, stack, evidence requirements, output language"],
-  "depth": "quick | standard | deep | inferred",
+  "depth_signal": "user hint | inferred",
   "language": "requested output language or inferred default"
 }
 ```
@@ -68,14 +68,15 @@ Do not run multiple profile decompositions unless the user explicitly asks for a
 
 ### Step 4 — emit routing plan
 
-Before reading the selected profile prompt, produce this internal routing plan:
+Choose a concrete non-null `limits_preset` here; profiles only apply it. Then produce this internal routing plan:
 
 ```json
 {
   "selected_profile": "pm-deep-research | academic-deep-research | technical-evaluation | generic",
   "secondary_lenses": ["pm | academic | technical"],
   "capability": "profile-specific capability or generic",
-  "depth": "quick | standard | deep",
+  "limits_preset": "quick | standard | deep",
+  "evidence_pack": false,
   "prompt_paths": {
     "task_decomposition": "string",
     "agent_allocation": "string|null",
@@ -86,6 +87,8 @@ Before reading the selected profile prompt, produce this internal routing plan:
   "unavailable_handling": "fail fast if selected prompts or MCP tools are unavailable; do not switch search providers or replace MoeResearch with host-only execution"
 }
 ```
+
+Select it once: explicit `limits_hint` wins; otherwise use `quick` for narrow low-stakes work, `standard` for normal multi-aspect work, and `deep` for broad, high-stakes, or ambiguous work. Copy limits and the evidence minimum from `../prompts/layer1/common/budget-tiers.md`; profiles must not change them. Set `evidence_pack=true` only for an explicit PM review/archive request with `deep`; it never changes limits.
 
 Then read only the selected profile's task-decomposition prompt and continue the normal workflow. Common evidence modules and the mandatory model-search tool contract are available under `../prompts/layer1/common/` for all profiles.
 
@@ -134,10 +137,7 @@ The skill produces a Markdown report for the user and may also persist intermedi
 
 ## Workflow
 
-1. Classify complexity.
-   - Quick: one aspect, narrow answer, low ambiguity.
-   - Standard: 2-4 aspects, comparison or evaluation, moderate ambiguity.
-   - Deep: 4-6 aspects, decision support, competitive/market/product analysis, or high ambiguity.
+1. Use the `limits_preset` chosen in Step 4; do not re-infer it.
 2. Route to PM, academic, technical, or generic profile.
 3. Read the selected profile's task-decomposition prompt and convert the user request into a `DeepResearchRequest`.
 4. Select `aspect_research` for one aspect or `deep_research` for multi-aspect execution.

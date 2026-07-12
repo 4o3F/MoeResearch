@@ -57,8 +57,8 @@ Ch 4/5/6/7 may be trimmed when needed so the report can prioritize future-bet co
 ### Trimming rules
 
 - **Quick** (2 aspect 段1+段8)：Ch 1 + 1-3 推荐下注 + 每注 TM-11 + sources (with labels).
-- **Standard** (5 aspect 段1+2+3+4+8)：Ch 1/2/4/8/9/10 + simplified Ch 5 白地图 + Ch 11 验证实验 essentials.
-- **Deep / Deep+Evidence-Pack** (8 aspect 全段)：all 13 chapters with weighting above; **never drop** Ch 1/2/8/9/10/12/13.
+- **Standard** (4 aspect)：Ch 1/2/4/8/9/10 + simplified Ch 5 白地图 + Ch 11 验证实验 essentials.
+- **Deep (with `evidence_pack` optional)** (6 aspect)：all 13 chapters with weighting above; **never drop** Ch 1/2/8/9/10/12/13.
 
 ### Chapter-specific assembly
 
@@ -143,7 +143,7 @@ Body and Annex A are separated **during synthesis** — not post-hoc. Rules:
 
 ### Annex A output spec (8 subsections, fixed order)
 
-**A.1 Evidence Index · 4-tier 来源全表** — MoeResearch evidence only: `evidence_id | claim_summary | source_url | source_type | tier | confidence | cited_in`. Min: Quick ≥3, Standard ≥10, Deep ≥20, Deep+EP ≥40.
+**A.1 Evidence Index · 4-tier 来源全表** — MoeResearch evidence only: `evidence_id | claim_summary | source_url | source_type | tier | confidence | cited_in`. Min: Quick ≥3, Standard ≥10, Deep ≥20, Deep + `evidence_pack` ≥40.
 
 **A.2 Visual Evidence · 视觉证据资产** — `asset_id | subject | artifact_type | source_url | timestamp | observed_signal | related_claim | confidence`. Types: trend chart / canvas / 时间线 / 树状图 / 雷达. Include "(gap)" rows. Standard ≥3 or gaps; Deep ≥5.
 

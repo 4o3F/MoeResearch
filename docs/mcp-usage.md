@@ -175,7 +175,7 @@ Shipped skill source of truth: `prompts/layer1/common/budget-tiers.md` (installe
 | `standard` | agents 4, concurrent 2, model calls 40, search calls 28, total_timeout_ms 600000, max_tokens -1 | turns 10, tool_calls 12, search_calls 8, timeout_ms 600000 |
 | `deep` | agents 6, concurrent 3, model calls 70, search calls 56, total_timeout_ms 1260000, max_tokens -1 | turns 8, tool_calls 8, search_calls 4, timeout_ms 600000 |
 
-Profile defaults: generic/academic/technical → `standard`; PM DeepResearch → `deep`.
+`skills/deep-research.md` selects `quick`, `standard`, or `deep` once; profiles apply that selection unchanged.
 
 ### 5.4 `ResearchPolicy`
 

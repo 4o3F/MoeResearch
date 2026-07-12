@@ -38,13 +38,13 @@ One MoeResearch aspect = one persona, 所以 profile §5 标段5 "Strategist + E
 |---|---|---|
 | `quick` | `capability-domain-jtbd`, `capability-teardown-deep` | 能力域 + 单域 teardown = 最小可决策（能力做得多好的快速读）|
 | `standard` | + `experience-paths-breakpoints`, `kano-in-domain` (4 total) | 加体验路径 + Kano（断点 visual 强制启用）|
-| `deep` / `deep_evidence_pack` | + `odi-in-domain`, `benchmark-buildcost-upgrade` (**6 total**) | 加 ODI 域内 + benchmark + build-cost; 体验路径图 ≥1 + 断点 visual ≥每断点 1 张 |
+| `deep` | + `odi-in-domain`, `benchmark-buildcost-upgrade` (**6 total**) | 加 ODI 域内 + benchmark + build-cost; 体验路径图 ≥1 + 断点 visual ≥每断点 1 张 |
 
-> Per-tier 计数 vs. competitive：quick 2 (vs 2), standard 4 (vs 4), deep **6 (vs 5)** — 多 1 段（段5 ODI 域内单独成 aspect; competitive 的 ODI 与 capability matrix 同 aspect 合并）. Deep `max_agents=6` / `max_concurrent_agents=3` / `total_timeout_ms=1200000` (2 waves), per-aspect `timeout_ms=600000` 不变. 详 [`task-decomposition-product-capability.md`](task-decomposition-product-capability.md) Step 4.
+> Per-tier 计数 vs. competitive：quick 2 (vs 2), standard 4 (vs 4), deep **6 (vs 5)** — 多 1 段（段5 ODI 域内单独成 aspect; competitive 的 ODI 与 capability matrix 同 aspect 合并）。
 
-## Limits per aspect (hand off to `task-decomposition-product-capability.md` Step 4)
+## Limits
 
-每 aspect 自带 `limits { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 4 (standard) / 3 (deep); per-aspect `timeout_ms` = **600000 恒**. Top-level `limits`: deep `max_total_model_calls=40` / `max_total_search_calls=30`.
+Use the supplied `limits_preset` from `common/budget-tiers.md` unchanged.
 
 ## Provider selection per aspect
 

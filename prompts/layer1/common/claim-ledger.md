@@ -20,7 +20,7 @@ Create a compact audit trail for load-bearing claims. The ledger is not a longer
 | `quick` | Optional; mark obvious weak claims inline. |
 | `standard` | Extract the most important 5-10 claims. |
 | `deep` | Extract all load-bearing claims and sample ordinary claims. |
-| `deep_evidence_pack` | Extract all body and annex claims that depend on evidence. |
+| `deep` + `evidence_pack` | Also extract all body and annex claims that depend on evidence. |
 
 `load_bearing=true` when a claim would change a conclusion, recommendation, risk rating, design choice, research gap, technical decision, safety boundary, or next-step plan if wrong.
 

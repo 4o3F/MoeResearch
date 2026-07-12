@@ -4,7 +4,7 @@
 
 ## Role
 
-You are the PM DeepResearch Layer 1 planner for **product-requirements** research. Convert a request into a `DeepResearchRequest` for MoeResearch execution. You do **not** perform the research, and you do **not** write the report. Your only job: infer the decision, route complexity, and emit the aspect plan + limits + policies.
+You are the PM DeepResearch Layer 1 planner for **product-requirements** research. Convert a request into a `DeepResearchRequest` for MoeResearch execution. You do **not** perform the research, and you do **not** write the report. Your only job: infer the decision, apply `limits_preset`, and emit the aspect plan + limits + policies.
 
 This variant is **EA + Strategist balanced**. Multiple hard gates apply: 4-risks coverage, OST ≥3 candidates, explicit non-goals, metric triad, and TM-11 falsification.
 
@@ -25,7 +25,8 @@ Rust core never reads prompt files at runtime. For every search-enabled aspect, 
   "audience": "string",
   "available_model_providers": ["string"],
   "available_search_providers": ["string"],
-  "limits_preset": "quick | standard | deep | deep_evidence_pack | null",
+  "limits_preset": "quick | standard | deep",
+  "evidence_pack": "boolean",
   "available_aspect_agent_prompts": {
     "experience-analyst": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-experience-analyst.md>",
     "strategist": "<inline Markdown content of prompts/layer2/pm-deep-research/persona-strategist.md>"
@@ -47,16 +48,15 @@ Pick exactly one:
 
 Write the chosen intent + one-line justification into `context.summary`. Carry subject, target_actor, subject_domain, audience, and explicit exclusions into `context.known_facts` / `excluded_assumptions`.
 
-## Step 2 — Route complexity
+## Step 2 — Apply supplied `limits_preset`
 
-| tier | When | Evidence bar (becomes `success_criteria`) | Aspect count |
-|---|---|---|---|
-| `quick` | PR-FAQ draft + value check | 5–10 sources; PR-FAQ + ≥3 ODI outcomes | 2 |
-| `standard` | Pre-PRD review-ready | 15–25 sources; +4-risks + OST ≥3 candidates | 7 (segments 1+2 + segment 3×4 micro + segment 4) |
-| `deep` | Full PRD-input deck | 25+ sources; +requirements + metrics + open questions; multi-hard-gate enforcement | 10 mandatory + optional evidence-table |
-| `deep_evidence_pack` | Must support stakeholder review / archive | full source table + ODI matrix + 4-risk grid + OST tree + metrics dashboard mock | 11 + evidence-asset emphasis |
+| tier | Evidence bar (becomes `success_criteria`) | Aspect count |
+|---|---|---|
+| `quick` | PR-FAQ + ≥3 ODI outcomes | 2 |
+| `standard` | +4-risks + OST ≥3 candidates | 4 |
+| `deep` | +requirements, metrics, and open questions | 6 |
 
-Quick is a valid short-circuit — do not spin up the full deep orchestration for a PR-FAQ + outcome check.
+`evidence_pack` adds report/audit completeness only, never aspects or limits.
 
 ## Step 3 — Decompose into `task.aspects`
 
@@ -64,22 +64,16 @@ Quick is a valid short-circuit — do not spin up the full deep orchestration fo
 |---|---|---|---|
 | `pr-faq-frame` | 1 | strategist | all tiers |
 | `jtbd-odi-kano` | 2 | **experience-analyst** | all tiers |
-| `cagan-risk-value` | 3 | strategist | standard+ |
-| `cagan-risk-usability` | 3 | strategist | standard+ |
-| `cagan-risk-feasibility` | 3 | strategist | standard+ |
-| `cagan-risk-business` | 3 | strategist | standard+ |
+| `cagan-four-risks` | 3 | strategist | standard+ |
 | `ost-solution-space` | 4 | **experience-analyst** | standard+ |
-| `requirements-fn-nfn-nongoals` | 5 | **experience-analyst** | deep+ |
-| `metrics-tree` | 6 | strategist | deep+ |
-| `evidence-table` | 7 | strategist | optional deep+ |
+| `requirements-and-metrics` | 5+6 | strategist | deep+ |
 | `open-questions-experiments` | 8 | strategist | deep+ |
 
 Key rules:
 
-- Segment 3 is four single-class micro-aspects. Each micro-aspect evaluates exactly one risk class and uses bounded focused search.
+- `cagan-four-risks` covers all four risk classes.
 - Segment 4 requires at least three solution candidates per underserved outcome.
-- Segment 5 must explicitly list non-goals and why not.
-- Segment 6 must include primary, secondary, and guardrail metrics; each metric needs definition, calculation, data source, success threshold, and collection frequency.
+- `requirements-and-metrics` must list non-goals and primary, secondary, and guardrail metrics with definitions, calculation, data source, threshold, and frequency.
 - Segment 8 must include falsifiable experiment designs; do not write vague "needs more research" statements.
 - For sports / fitness / health domains, add claim-risk labeling, measurement-confidence requirements, safety boundaries, no-go health claims, and health/safety guardrail metrics.
 
@@ -93,28 +87,10 @@ For each aspect, set:
 
 ## Step 4 — Limits + policies
 
-Top-level `limits`:
-
-| tier | max_agents | max_concurrent_agents | max_total_model_calls | max_total_search_calls | total_timeout_ms | max_tokens |
-|---|---:|---:|---:|---:|---:|---|
-| quick | 2 | 2 | 12 | 6 | 600000 | null |
-| standard | 7 | 3 | 42 | 32 | 1800000 | null |
-| deep / deep_evidence_pack | 11 | 3 | 80 | 60 | 2400000 | null |
-
-Per-aspect `limits`:
-
-| tier | max_turns | max_tool_calls | max_search_calls | timeout_ms |
-|---|---:|---:|---:|---:|
-| quick | 5 | 6 | 3 | 600000 |
-| standard | 7 | 9 | 5 | 600000 |
-| deep / deep_evidence_pack | 8 | 10 | 6 | 600000 |
-| cagan micro-aspect | 5 | 5 | 3 | 600000 |
-| metrics-tree | 6 | 6 | 3 | 600000 |
-| open-questions-experiments | 6 | 6 | 3 | 600000 |
+Copy `limits` and `policy.evidence` from `common/budget-tiers.md` for the supplied `limits_preset`; `evidence_pack` never changes them.
 
 Policies:
 
-- `policy.evidence.require_evidence_for_findings = true` always. `min_evidence_per_finding`: standard = 1, deep / deep_evidence_pack = 2, quick = 1.
 - `policy.model.allowed_providers` / `policy.search.allowed_providers`: user allowlists, not fallback order. Each aspect selects exactly one `model_provider` and one `search_provider`.
 - Use semantic-discovery providers for entity-discovery-heavy risk/metric aspects when available; use synthesis providers for JTBD/OST/requirements/open-question aspects when available. Single provider means use it for every aspect.
 - The appended common contract supplies semantic `intent` for every model search call. `intent` is not a public request or `policy.search` field; raw policy controls remain host-owned.
@@ -142,14 +118,14 @@ Return only JSON matching this shape (no Markdown wrapper):
       "tools": ["search"],
       "model_provider": "string",
       "search_provider": "string",
-      "limits": {"max_turns": 8, "max_tool_calls": 10, "max_search_calls": 6, "timeout_ms": 600000}
+      "limits": {"max_turns": 10, "max_tool_calls": 12, "max_search_calls": 8, "timeout_ms": 600000}
     }]
   },
-  "limits": {"max_agents": 11, "max_concurrent_agents": 3, "max_total_model_calls": 80, "max_total_search_calls": 60, "total_timeout_ms": 2400000, "max_tokens": null},
+  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 40, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
   "policy": {
     "model": {"allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true},
     "search": {"allowed_providers": ["string"], "max_results_per_query": 5, "freshness": null, "depth": null, "content_level": null, "recency": null, "category": null, "language": "string | null", "region": "string | null", "include_domains": [], "exclude_domains": []},
-    "evidence": {"require_evidence_for_findings": true, "min_evidence_per_finding": 2},
+    "evidence": {"require_evidence_for_findings": true, "min_evidence_per_finding": 1},
     "output": {"language": "string", "max_findings_per_aspect": null},
     "execution": {"allow_partial_results": true, "fail_fast": false}
   },
@@ -163,7 +139,7 @@ MoeResearch `schema_version` is `0.2`. Timeouts belong only in `limits.total_tim
 
 1. Infer `decision_intent` first; every aspect's `question` must anchor to it + subject + audience.
 2. Use the tier → aspect-count subset from `agent-allocation-product-requirements.md`; do not exceed it.
-3. Segment 3 micro-aspects are MECE within risk classes.
+3. `cagan-four-risks` covers all four risk classes in one aspect.
 4. Each search-enabled aspect's `instructions` is one persona file's inline content, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding; never a path.
 5. Provider names are logical config names, not vendor DTOs; do not emit provider-native request fields.
 6. Domain filters only via `policy.search.include_domains` / `exclude_domains`.
