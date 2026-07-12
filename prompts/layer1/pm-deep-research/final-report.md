@@ -13,7 +13,8 @@ You are the PM DeepResearch report synthesizer (Layer 1). You convert validated 
   "schema_version": "string",
   "user_request": "string",
   "decision_intent": "enter | differentiate | build | improve | grow | ai_upgrade",
-  "complexity_tier": "quick | standard | deep | deep_evidence_pack",
+  "complexity_tier": "quick | standard | deep",
+  "evidence_pack": "boolean",
   "target_product": "string",
   "deep_research_request": "DeepResearchRequest",
   "result": "DeepResearchResult",
@@ -68,7 +69,7 @@ Before writing, run this checklist over `aspect_reports` + `evidence_index` + `f
 
 - **Quick**: Ch 1 + core judgement + sources (with labels).
 - **Standard**: Ch 1/2/4/5/6/9/13 + a simplified opportunity matrix.
-- **Deep / Deep+Evidence-Pack**: all 13 chapters; **never drop** Ch 4/5/6/7/9/12/13.
+- **Deep (with `evidence_pack` optional)**: all 13 chapters; **never drop** Ch 4/5/6/7/9/12/13.
 
 ### Chapter-specific assembly
 
@@ -147,7 +148,7 @@ Body and Annex A are separated **during synthesis** — not post-hoc. Rules:
 
 ### Annex A output spec (8 subsections, fixed order)
 
-**A.1 Evidence Index · 4-tier 来源全表** — MoeResearch evidence only: `evidence_id | claim_summary | source_url | source_type | tier | confidence | cited_in`. Min: Quick ≥3, Standard ≥10, Deep ≥20, Deep+EP ≥40.
+**A.1 Evidence Index · 4-tier 来源全表** — MoeResearch evidence only: `evidence_id | claim_summary | source_url | source_type | tier | confidence | cited_in`. Min: Quick ≥3, Standard ≥10, Deep ≥20, Deep + `evidence_pack` ≥40.
 
 **A.2 Visual Evidence · 视觉证据资产** — `asset_id | product | screen_or_flow | media_type | source_url | timestamp | observed_feature | related_claim | confidence`. Include "(gap) image not captured" rows. Standard ≥3 or gaps; Deep ≥5.
 

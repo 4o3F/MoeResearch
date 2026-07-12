@@ -17,7 +17,7 @@ Rust core never reads prompt files at runtime. For every search-enabled aspect, 
   "language": "string",
   "available_model_providers": ["string"],
   "available_search_providers": ["string"],
-  "limits_preset": "quick | standard | deep | null",
+  "limits_preset": "quick | standard | deep",
   "available_aspect_agent_prompts": {
     "architecture_analyst": "<inline Markdown content>",
     "security_reliability_reviewer": "<inline Markdown content>",
@@ -26,8 +26,6 @@ Rust core never reads prompt files at runtime. For every search-enabled aspect, 
   }
 }
 ```
-
-If `limits_preset` is null, infer the tier from decision stakes, number of options, expected report depth, and whether production adoption is in scope.
 
 ## Step 1 — Build an internal decision brief
 
@@ -62,15 +60,13 @@ else: technical-due-diligence
 
 For mixed requests, pick one primary capability and preserve secondary lenses inside aspect `success_criteria`.
 
-## Step 3 — Route complexity
+## Step 3 — Apply supplied `limits_preset`
 
-| tier | When | Aspect count | Evidence bar |
-|---|---|---:|---|
-| `quick` | One option or narrow issue, directional answer acceptable | 1-2 | Official docs/repo/advisory when available; identify missing context. |
-| `standard` | Normal comparison, architecture decision, dependency review, or migration plan | 3-4 | Evidence from official docs plus independent/repository signals. |
-| `deep` | Production adoption, security/reliability stakes, costly migration, benchmark-sensitive decision | 5-6 | Decision matrix, adoption gate, kill criteria, spike/verification plan, rollback/exit path. |
-
-Quick is a valid short-circuit. Do not create the full aspect set for a trivial package lookup.
+| tier | Aspect count | Evidence bar |
+|---|---:|---|
+| `quick` | 1-2 | Official docs/repo/advisory when available; identify missing context. |
+| `standard` | 3-4 | Evidence from official docs plus independent/repository signals. |
+| `deep` | 5-6 | Decision matrix, adoption gate, kill criteria, spike/verification plan, rollback/exit path. |
 
 ## Step 4 — Decompose into technical aspects
 
@@ -97,27 +93,10 @@ For each aspect:
 
 ### Limits
 
-Top-level `limits`:
-
-| tier | max_agents | max_concurrent_agents | max_total_model_calls | max_total_search_calls | total_timeout_ms | max_tokens |
-|---|---:|---:|---:|---:|---:|---|
-| quick | 2 | 2 | 15 | 8 | 660000 | null |
-| standard | 4 | 2 | 40 | 28 | 1260000 | null |
-| deep | 6 | 3 | 70 | 56 | 1260000 | null |
-
-Per-aspect `limits`:
-
-| tier | max_turns | max_tool_calls | max_search_calls | timeout_ms |
-|---|---:|---:|---:|---:|
-| quick | 5 | 6 | 3 | 600000 |
-| standard | 10 | 12 | 8 | 600000 |
-| deep | 8 | 8 | 4 | 600000 |
-
-Set every per-aspect `limits.timeout_ms = 600000`. It must not exceed top-level `limits.total_timeout_ms`.
+Copy the supplied `limits_preset` from `common/budget-tiers.md` unchanged.
 
 ### Policies
 
-- `policy.evidence.require_evidence_for_findings = true` always. Use `min_evidence_per_finding = 1` for Quick/Standard and `2` for Deep.
 - `policy.model.allowed_providers` and `policy.search.allowed_providers` are allowlists, not fallback order.
 - Every search-enabled aspect chooses exactly one `task.aspects[].search_provider` from `policy.search.allowed_providers`.
 - Search-policy defaults: `max_results_per_query = 5`, `recency = "fresh"`, `category = null`, `depth = null`, `content_level = null`, `freshness = null`. These are host policy constraints, not model tool parameters. The appended common contract requires semantic `intent` in every model search call. Use aspect scope and domain filters for docs, repositories, advisories, standards, or benchmarks instead of forcing one global search category.
@@ -146,14 +125,14 @@ Return only JSON matching `DeepResearchRequest`; no Markdown wrapper.
       "tools": ["search"],
       "model_provider": "selected provider",
       "search_provider": "selected provider",
-      "limits": {"max_turns": 8, "max_tool_calls": 8, "max_search_calls": 4, "timeout_ms": 600000}
+      "limits": {"max_turns": 10, "max_tool_calls": 12, "max_search_calls": 8, "timeout_ms": 600000}
     }]
   },
-  "limits": {"max_agents": 6, "max_concurrent_agents": 3, "max_total_model_calls": 70, "max_total_search_calls": 56, "total_timeout_ms": 1260000, "max_tokens": null},
+  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 40, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
   "policy": {
     "model": {"allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true},
     "search": {"allowed_providers": ["string"], "max_results_per_query": 5, "freshness": null, "depth": null, "content_level": null, "recency": "fresh", "category": null, "language": null, "region": null, "include_domains": [], "exclude_domains": []},
-    "evidence": {"require_evidence_for_findings": true, "min_evidence_per_finding": 2},
+    "evidence": {"require_evidence_for_findings": true, "min_evidence_per_finding": 1},
     "output": {"language": "user language", "max_findings_per_aspect": null},
     "execution": {"allow_partial_results": true, "fail_fast": false}
   },

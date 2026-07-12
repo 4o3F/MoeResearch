@@ -56,7 +56,7 @@ Run this checklist over `aspect_reports` + `evidence_index` + `failed_aspects`. 
 
 - **Quick** (2 aspect)：Ch 1 + core capability judgement + sources (with labels).
 - **Standard** (4 aspect)：Ch 1/2/4/6/9 + simplified Ch 5 benchmark hint.
-- **Deep / Deep+Evidence-Pack** (6 aspect)：all 13 chapters with weighting above; **never drop** Ch 4/6/7/9/11/12/13.
+- **Deep (with `evidence_pack` optional)** (6 aspect)：all 13 chapters with weighting above; **never drop** Ch 4/6/7/9/11/12/13.
 
 ### Chapter-specific assembly
 
@@ -134,7 +134,7 @@ Body and Annex A are separated **during synthesis** — not post-hoc. Rules:
 
 ### Annex A output spec (8 subsections, fixed order)
 
-**A.1 Evidence Index · 4-tier 来源全表** — MoeResearch evidence only: `evidence_id | claim_summary | source_url | source_type | tier | confidence | cited_in`. Min: Quick ≥3, Standard ≥10, Deep ≥20, Deep+EP ≥40.
+**A.1 Evidence Index · 4-tier 来源全表** — MoeResearch evidence only: `evidence_id | claim_summary | source_url | source_type | tier | confidence | cited_in`. Min: Quick ≥3, Standard ≥10, Deep ≥20, Deep + `evidence_pack` ≥40.
 
 **A.2 Visual Evidence · 视觉证据资产** — `asset_id | product | screen_or_flow | media_type | source_url | timestamp | observed_feature | related_claim | confidence`. Include "(gap) image not captured" rows; 断点 visual ≥每断点 1 张. Standard ≥3 or gaps; Deep ≥5.
 

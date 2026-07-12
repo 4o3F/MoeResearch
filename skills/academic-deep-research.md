@@ -31,7 +31,7 @@ Use this profile for scholarly research that needs literature mapping, source qu
 
 ## Workflow
 
-1. Classify the capability from the user request.
+1. Classify the capability and obtain `limits_preset` from `skills/deep-research.md`; do not re-infer it.
 2. Read `../prompts/layer1/academic-deep-research/task-decomposition.md` and produce a `DeepResearchRequest`.
 3. Use `../prompts/layer1/academic-deep-research/agent-allocation.md` to assign Layer 2 personas.
 4. For each search-enabled aspect, assemble `AspectRequest.instructions` as selected persona Markdown, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific `moe.run_binding.v1` Run Binding projected from that aspect and `policy.search`.

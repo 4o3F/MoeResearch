@@ -22,7 +22,7 @@ Additional load-bearing defaults and report placement for product-decision work:
 Product-research specializations:
 
 1. Prefer `source_type` + domain heuristics used by PM reports (official / docs / release notes / app-store → High; named media/engineering blogs → Medium; app-store reviews / social / forums → Low; undated social → Unknown).
-2. Visual-evidence assembly feeds Ch 7 / Annex A.2. For Deep / Deep+Evidence-Pack, if visual items `< 5`, trigger host browser capture once for missing product surfaces named in experience-path open questions. If still short, record `visual_gap` and forbid strong UI breakpoint conclusions.
+2. Visual-evidence assembly feeds Ch 7 / Annex A.2. For Deep (with `evidence_pack` optional), if visual items `< 5`, trigger host browser capture once for missing product surfaces named in experience-path open questions. If still short, record `visual_gap` and forbid strong UI breakpoint conclusions.
 3. Host browser capture may save files under the project working directory (for example `captures/`) and add rows with `media_type=screenshot` and a real page URL or local path. Do not fabricate a URL for an image you did not capture.
 4. CiteEval should sample importance ∈ {critical, high} findings and, at minimum, load-bearing claims that drive Ch 1 / Ch 5 / Ch 9 / Ch 10 narrative sections or the 8-section PR-FAQ decision spine. Unsupported claims move to the active profile's open-questions / assumptions section (13-section narrative Ch 12, or PR-FAQ 段8).
 

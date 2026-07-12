@@ -13,7 +13,7 @@ Host or manual rows can affect confidence and action, but they do not become Moe
 
 ## Verification steps
 
-Run these steps for every load-bearing claim in `deep` / `deep_evidence_pack`, and for selected key claims in `standard`.
+Run these steps for every load-bearing claim in `deep`; with `evidence_pack`, also verify all evidence-dependent claims. Sample key claims in `standard`.
 
 1. Support check: cited evidence directly supports the claim.
 2. Contradiction check: equal or stronger sources do not disagree, or conflict is disclosed. Use host WebSearch/WebFetch only through `host-verification-backfill.md`.

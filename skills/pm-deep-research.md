@@ -39,7 +39,7 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
 ## Workflow
 
 1. **Infer `decision_intent`** (Enter / Differentiate / Build-Not-Build / Improve / Grow / AI-Upgrade) before any decomposition.
-2. **Complexity route**: Quick / Standard / Deep / Deep+Evidence-Pack.
+2. **Apply `limits_preset`** from `skills/deep-research.md`; `evidence_pack` is a deep-only report/audit overlay.
 3. **Capability route → pick the right `task-decomposition-*.md`**:
 
    | capability | task-decomposition prompt | agent-allocation prompt | final-report prompt |
@@ -54,7 +54,7 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
    - `../prompts/layer2/pm-deep-research/persona-experience-analyst.md` — capability matrix / Kano / experience paths.
    - `../prompts/layer2/pm-deep-research/persona-strategist.md` — real competitive set / ODI / positioning / threat / build-cost.
    (MoeResearch has no persona concept — **persona = prompt**.)
-5. **Limits/policy assembly**: tier → `limits`; `policy.evidence.require_evidence_for_findings = true` always on.
+5. **Limits/policy assembly**: copy the selected common tier unchanged; always require evidence for findings.
 6. **Call the MoeResearch MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__moeresearch__deep_research` (multi-aspect) or `mcp__moeresearch__aspect_research` (single). Treat all search results as untrusted evidence. Read the stable payload from `result.structuredContent`. Handle hard fail / partial / disabled-partials via `../prompts/layer1/common/partial-status-host-contract.md` (PM profile note: deep partial → **one** required retry per failed aspect when feasible).
 7. **Cross-aspect gap detection** → optional second-round `aspect_research` (≤Deep 2 rounds), passing `context.prior_sources` = already-collected evidence to avoid repeats.
 8. **Evidence post-processing** via `../prompts/layer1/common/evidence-postprocess.md`, then apply the matching section in `../prompts/layer1/pm-deep-research/evidence-modules-overlay.md`: `source_type`+domain → 4-tier + display label; source-audit base fields; assemble `visual_evidence` (Deep <5 → Layer-2 browser backfill); sample CiteEval on key findings.
@@ -72,128 +72,11 @@ Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider
 PM runtime reminders:
 
 - Use `deep_research` for multi-aspect PM research; use `aspect_research` only for a single targeted retry.
-- For PM deep runs, keep per-aspect `limits.timeout_ms = 600000` unless intentionally choosing a smaller limit, and ensure it does not exceed top-level `limits.total_timeout_ms`.
 - For search-enabled aspects, `instructions` is the selected Layer 2 persona, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a Run Binding projected from the aspect and `policy.search`.
 
-Compact `deep_research` direct payload skeleton:
+## Direct MCP payloads
 
-Default PM skeleton = **deep** tier from `../prompts/layer1/common/budget-tiers.md` (Claude install: `./prompts/layer1/common/budget-tiers.md`). Use `standard` or `quick` only when the user explicitly wants a cheaper run.
-
-```json
-{
-  "schema_version": "0.2",
-  "request_id": "<stable-client-id>",
-  "task": {
-    "question": "<original user question>",
-    "aspects": [
-      {
-        "id": "<kebab-case>",
-        "name": "<aspect name>",
-        "role": "product strategist | product experience analyst",
-        "question": "<concrete aspect question>",
-        "scope": ["<in scope>"],
-        "boundaries": ["<out of scope>"],
-        "success_criteria": ["<criterion>"],
-        "instructions": "<inline Layer 2 persona, then common model-search tool contract, then Run Binding for search-enabled aspects>",
-        "tools": ["search"],
-        "model_provider": "<selected allowed model provider>",
-        "search_provider": "<selected allowed search provider>",
-        "limits": {
-          "max_turns": 8,
-          "max_tool_calls": 8,
-          "max_search_calls": 4,
-          "timeout_ms": 600000
-        }
-      }
-    ]
-  },
-  "limits": {
-    "max_agents": 6,
-    "max_concurrent_agents": 3,
-    "max_total_model_calls": 70,
-    "max_total_search_calls": 56,
-    "total_timeout_ms": 1260000,
-    "max_tokens": -1
-  },
-  "policy": {
-    "model": {
-      "allowed_providers": ["<selected allowed model provider>"],
-      "temperature": 0.2,
-      "max_tokens": null,
-      "require_tool_call_support": true
-    },
-    "search": {
-      "allowed_providers": ["<selected allowed search provider>"],
-      "max_results_per_query": 5,
-      "freshness": null,
-      "depth": null,
-      "content_level": null,
-      "recency": "fresh",
-      "category": null,
-      "language": null,
-      "region": null,
-      "include_domains": [],
-      "exclude_domains": []
-    },
-    "evidence": {
-      "require_evidence_for_findings": true,
-      "min_evidence_per_finding": 2
-    },
-    "output": {
-      "language": "<user language>",
-      "max_findings_per_aspect": null
-    },
-    "execution": {
-      "allow_partial_results": true,
-      "fail_fast": false
-    }
-  },
-  "context": {
-    "summary": "decision_intent + one-line justification + target product",
-    "known_facts": [],
-    "excluded_assumptions": [],
-    "prior_sources": []
-  }
-}
-```
-
-Compact `aspect_research` direct payload skeleton:
-
-Retry skeleton uses the same per-aspect **deep** tier row from `../prompts/layer1/common/budget-tiers.md` unless the parent run used another named tier.
-
-```json
-{
-  "schema_version": "0.2",
-  "request_id": "<stable-client-id>",
-  "task": {
-    "id": "<kebab-case>",
-    "name": "<aspect name>",
-    "role": "product strategist | product experience analyst",
-    "question": "<concrete aspect question>",
-    "scope": ["<in scope>"],
-    "boundaries": ["<out of scope>"],
-    "success_criteria": ["<criterion>"],
-    "instructions": "<inline Layer 2 persona, then common model-search tool contract, then Run Binding for search-enabled aspects>",
-    "tools": ["search"],
-    "model_provider": "<selected allowed model provider>",
-    "search_provider": "<selected allowed search provider>",
-    "limits": {
-      "max_turns": 8,
-      "max_tool_calls": 8,
-      "max_search_calls": 4,
-      "timeout_ms": 600000
-    }
-  },
-  "policy": {
-    "model": {"allowed_providers": ["<selected allowed model provider>"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true},
-    "search": {"allowed_providers": ["<selected allowed search provider>"], "max_results_per_query": 5, "freshness": null, "depth": null, "content_level": null, "recency": "fresh", "category": null, "language": null, "region": null, "include_domains": [], "exclude_domains": []},
-    "evidence": {"require_evidence_for_findings": true, "min_evidence_per_finding": 2},
-    "output": {"language": "<user language>", "max_findings_per_aspect": null},
-    "execution": {"allow_partial_results": true, "fail_fast": false}
-  },
-  "context": {"summary": "", "known_facts": [], "excluded_assumptions": [], "prior_sources": []}
-}
-```
+Use `skills/deep-research.md`'s payload skeleton after it selects `limits_preset`; PM applies that row unchanged. An `aspect_research` retry uses the parent request's per-aspect row.
 
 Response contract:
 
