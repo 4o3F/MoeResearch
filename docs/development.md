@@ -57,6 +57,33 @@ Install locally through Cargo:
 cargo install --path crates/moe-research-cli --locked
 ```
 
+### Version display and build provenance
+
+`moeresearch -V` prints only the package SemVer. `moeresearch --version` adds
+compile-time build provenance:
+
+```text
+moeresearch 0.2.7
+local version: v0.2.7-10-g322c563
+git commit: 322c5634f211b6e67aef937ce6148d48710dfe25
+dirty: false
+profile: debug
+target: x86_64-unknown-linux-gnu
+```
+
+- `local version` comes from `git describe --tags --always` at build time.
+- `git commit` is the full 40-character SHA, and `dirty` is the build-time
+  working-tree state.
+- Git is optional. Builds without a Git checkout or `git` on `PATH` still
+  succeed and show `unknown` for Git-related fields.
+- Validated one-line overrides are available through
+  `MOERESEARCH_LOCAL_VERSION`, `MOERESEARCH_GIT_COMMIT`, and
+  `MOERESEARCH_GIT_DIRTY`.
+- Package SemVer (`CARGO_PKG_VERSION`) is unchanged and remains the default
+  version for `assets install` release downloads.
+- The release workflow intentionally uses `fetch-depth: 0` for binary builds;
+  retain that setting after regenerating cargo-dist CI.
+
 ## 4. Run locally
 
 Generate a local config with one model provider enabled:

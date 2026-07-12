@@ -120,6 +120,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+          fetch-depth: 0
       - name: Install Rust non-interactively if not already installed
         if: ${{ matrix.container }}
         run: |

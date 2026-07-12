@@ -113,6 +113,56 @@ fn assert_generated_search_provider_without_model(
 }
 
 #[test]
+fn short_version_remains_package_semver() {
+    let output = moe_research_command().arg("-V").output().expect("run -V");
+    let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let expected = format!("moeresearch {}\n", env!("CARGO_PKG_VERSION"));
+
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert_eq!(stdout, expected);
+}
+
+#[test]
+fn long_version_reports_build_provenance() {
+    let output = moe_research_command()
+        .arg("--version")
+        .output()
+        .expect("run --version");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let lines: Vec<_> = stdout.lines().collect();
+    let expected_header = format!("moeresearch {}", env!("CARGO_PKG_VERSION"));
+
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert_eq!(lines.len(), 6, "version output: {stdout}");
+    assert_eq!(lines[0], expected_header.as_str());
+
+    let local_version = lines[1]
+        .strip_prefix("local version: ")
+        .expect("local version line");
+    let git_commit = lines[2]
+        .strip_prefix("git commit: ")
+        .expect("git commit line");
+    let dirty = lines[3].strip_prefix("dirty: ").expect("dirty line");
+    let profile = lines[4].strip_prefix("profile: ").expect("profile line");
+    let target = lines[5].strip_prefix("target: ").expect("target line");
+
+    assert!(!local_version.is_empty());
+    assert!(
+        git_commit == "unknown"
+            || (git_commit.len() == 40 && git_commit.bytes().all(|byte| byte.is_ascii_hexdigit())),
+        "invalid git commit: {git_commit}"
+    );
+    assert!(matches!(dirty, "true" | "false" | "unknown"));
+    assert!(!profile.is_empty());
+    assert!(!target.is_empty());
+    assert!(!stdout.contains("api_key"));
+    assert!(!stdout.contains("Authorization"));
+    assert!(!stdout.contains(&workspace().display().to_string()));
+}
+
+#[test]
 fn help_exposes_onboarding_commands() {
     let output = moe_research_command()
         .arg("--help")

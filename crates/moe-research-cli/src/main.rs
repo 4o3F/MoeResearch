@@ -10,9 +10,27 @@ use moe_research_cli::commands;
 use moe_research_error::{Error, Result};
 use tracing_subscriber::EnvFilter;
 
+const LONG_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    "\nlocal version: ",
+    env!("MOERESEARCH_BUILD_LOCAL_VERSION"),
+    "\ngit commit: ",
+    env!("MOERESEARCH_BUILD_GIT_COMMIT"),
+    "\ndirty: ",
+    env!("MOERESEARCH_BUILD_GIT_DIRTY"),
+    "\nprofile: ",
+    env!("MOERESEARCH_BUILD_PROFILE"),
+    "\ntarget: ",
+    env!("MOERESEARCH_BUILD_TARGET"),
+);
+
 #[derive(Debug, Parser)]
-#[command(name = "moeresearch")]
-#[command(version, about = "MoeResearch Rust Core")]
+#[command(
+    name = "moeresearch",
+    version = env!("CARGO_PKG_VERSION"),
+    long_version = LONG_VERSION,
+    about = "MoeResearch Rust Core"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

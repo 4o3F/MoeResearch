@@ -6,6 +6,7 @@
 
 | 时间 | 变更 |
 | --- | --- |
+| 2026-07-12 | 新增 package-local `build.rs` 与 clap `long_version`：`--version` 展示构建溯源，`-V` 保持 package SemVer。 |
 | 2026-07-10 | Phase 2：抽出 `src/compose.rs` 作为 composition root；`serve` 瘦身为 host；测试迁入 `moe-research-tests`。 |
 | 2026-06-29 13:22:02 | 初次扫描并生成模块级文档。 |
 
@@ -28,6 +29,7 @@ crate 以 **bin + lib** 组织（`publish = false`）：`src/lib.rs` 暴露 `com
 
 - 库入口：`src/lib.rs`（composition / commands / onboarding）
 - 二进制入口：`src/main.rs`
+- 构建入口：`build.rs`（编译期 Git/CI 溯源 → `MOERESEARCH_BUILD_*`）
 - Cargo bin：`[[bin]] name = "moeresearch"`, path = `src/main.rs`
 - 默认 workspace member：根 `Cargo.toml` 的 `default-members = ["crates/moe-research-cli"]`
 
@@ -44,6 +46,9 @@ cargo run -- onboard --config moeresearch.toml --dry-run
 ## 对外接口
 
 CLI 命令由 `clap` 派生：
+
+- `-V`：仅显示 package SemVer（`CARGO_PKG_VERSION`）。
+- `--version`：显示 package SemVer、`local version`、full `git commit`、`dirty`、Cargo `profile` 和 `target`；无 Git 时相关字段为 `unknown`。
 
 | 命令 | 文件 | 说明 |
 | --- | --- | --- |
@@ -74,7 +79,7 @@ CLI 命令由 `clap` 派生：
 相关测试（均在 `moe-research-tests`，不在本 crate 源码内嵌 `#[cfg(test)]`）：
 
 - `crates/moe-research-tests/tests/cli_compose_tests.rs`: pure limit / Grok / credential mapping。
-- `crates/moe-research-tests/tests/cli_onboarding_tests.rs`: CLI help、init、check、dry-run、配置生成、注册命令等。
+- `crates/moe-research-tests/tests/cli_onboarding_tests.rs`: CLI help、init、check、dry-run、配置生成、注册命令和 `-V` / `--version` 构建溯源契约。
 - `crates/moe-research-tests/tests/cli_assets_tests.rs`: assets 打包/安装契约。
 - `crates/moe-research-tests/tests/mcp_tests.rs`: 通过构造 server 验证 MCP 工具与 envelope 行为。
 
@@ -97,6 +102,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 ## 相关文件清单
 
 - `Cargo.toml`
+- `build.rs` — 编译期 provenance（Git best-effort、CI override、无 Git 降级）
 - `src/lib.rs`
 - `src/main.rs`
 - `src/compose.rs` — composition root（limit/Grok maps、network/model/search builders）
