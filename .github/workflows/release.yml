@@ -276,12 +276,25 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
-      - name: Upload research skill assets
+      - name: Create GitHub Release
+        env:
+          PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
+          ANNOUNCEMENT_TITLE: "${{ fromJson(steps.host.outputs.manifest).announcement_title }}"
+          ANNOUNCEMENT_BODY: "${{ fromJson(steps.host.outputs.manifest).announcement_github_body }}"
+          RELEASE_COMMIT: "${{ github.sha }}"
         run: |
-          gh release upload "${{ needs.plan.outputs.tag }}" \
-            artifacts/research-skills-assets-v*.tar.gz \
-            artifacts/research-skills-assets-v*.manifest.json \
-            --clobber
+          if gh release view "${{ needs.plan.outputs.tag }}" >/dev/null 2>&1; then
+            gh release upload "${{ needs.plan.outputs.tag }}" artifacts/* --clobber
+            exit 0
+          fi
+
+          printf '%s\n' "$ANNOUNCEMENT_BODY" > "$RUNNER_TEMP/notes.txt"
+          gh release create "${{ needs.plan.outputs.tag }}" \
+            --target "$RELEASE_COMMIT" \
+            $PRERELEASE_FLAG \
+            --title "$ANNOUNCEMENT_TITLE" \
+            --notes-file "$RUNNER_TEMP/notes.txt" \
+            artifacts/*
 
   announce:
     needs:
