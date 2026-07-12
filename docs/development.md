@@ -63,8 +63,8 @@ cargo install --path crates/moe-research-cli --locked
 compile-time build provenance:
 
 ```text
-moeresearch 0.2.8
-local version: v0.2.8-<distance>-g<short-sha>
+moeresearch 0.2.9
+local version: v0.2.9-<distance>-g<short-sha>
 git commit: <40-character-sha>
 dirty: false
 profile: debug
