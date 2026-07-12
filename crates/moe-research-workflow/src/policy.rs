@@ -43,7 +43,8 @@ pub struct ModelPolicy {
 }
 
 pub use moe_research_search::{
-    Freshness, SearchCategory, SearchContentLevel, SearchDepth, SearchRecency,
+    Freshness, SearchCategory, SearchContentLevel, SearchDepth, SearchIntentConstraints,
+    SearchRecency,
 };
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
@@ -95,6 +96,24 @@ impl ModelPolicy {
 }
 
 impl SearchPolicy {
+    /// Projects the public MCP policy into constraints for the internal model
+    /// retrieval-intent resolver. The public schema remains unchanged.
+    #[must_use]
+    pub fn intent_constraints(&self) -> SearchIntentConstraints {
+        SearchIntentConstraints {
+            max_results_per_query: self.max_results_per_query,
+            fixed_category: self.category,
+            max_depth: self.depth,
+            max_content_level: self.content_level,
+            max_recency: self.recency,
+            freshness: self.freshness.clone(),
+            language: self.language.clone(),
+            region: self.region.clone(),
+            include_domains: self.include_domains.clone(),
+            exclude_domains: self.exclude_domains.clone(),
+        }
+    }
+
     pub(crate) fn validate_for_search(&self) -> Result<()> {
         if self.max_results_per_query == 0 {
             return Err(Error::InvalidInput {

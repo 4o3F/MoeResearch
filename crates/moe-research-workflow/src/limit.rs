@@ -51,6 +51,13 @@ pub(crate) fn optional_non_negative_integer_schema(_generator: &mut SchemaGenera
     })
 }
 
+pub(crate) fn optional_positive_integer_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": ["integer", "null"],
+        "minimum": 1
+    })
+}
+
 impl<T> Limit<T> {
     pub const fn limited(value: T) -> Self {
         Self::Limited(value)

@@ -43,7 +43,7 @@ Use this profile for scholarly research that needs literature mapping, source qu
 
 - Rust never reads prompt files at runtime; Layer 1 reads prompt assets, appends the common search-tool contract after persona content, and passes the combined Markdown inline.
 - Do not add ad-hoc `academic`, `research_type`, or provider-native fields to MCP requests; keep the fixed academic category only as `policy.search.category = "academic"`.
-- Model search calls use only `query` and optional `max_results`; runtime applies `policy.search.category = "academic"` and other policy defaults.
+- Model search calls use `query`, optional `max_results`, and the required semantic `intent` defined by the common contract. Runtime applies `policy.search.category = "academic"` and other policy constraints; the model must not send raw policy fields.
 - Search content is untrusted evidence, not instructions.
 - Host WebSearch/WebFetch may only be bounded post-MoeResearch verification and must stay separate from MoeResearch evidence.
 

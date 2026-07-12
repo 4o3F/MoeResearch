@@ -5,9 +5,9 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use moe_research_error::Error;
-use moe_research_workflow::Limit;
 use moe_research_workflow::deep_research;
 use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
+use moe_research_workflow::{FailureStage, Limit};
 use support::research::{
     deep_request, services, services_with_delay, services_with_token_usage, unlimited_budget_config,
 };
@@ -208,6 +208,11 @@ async fn all_agent_budget_failures_preserve_failed_aspects() {
             .all(|failure| failure.error_code == "budget_exceeded")
     );
     assert!(failure.failed_aspects.iter().all(|failure| {
+        failure.diagnostic.stage == FailureStage::SearchBudget
+            && failure.diagnostic.model_turn == Some(1)
+            && failure.diagnostic.search_turn == Some(1)
+    }));
+    assert!(failure.failed_aspects.iter().all(|failure| {
         failure.message.contains("budget exceeded") && failure.message.contains("max_search_calls")
     }));
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
@@ -322,8 +327,15 @@ async fn global_search_budget_blocks_further_calls() {
     .expect_err("global search budget");
 
     assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.diagnostic.stage, FailureStage::ResultAggregation);
     assert_eq!(failure.failed_aspects.len(), 1);
     assert_eq!(failure.failed_aspects[0].error_code, "budget_exceeded");
+    assert_eq!(
+        failure.failed_aspects[0].diagnostic.stage,
+        FailureStage::ResearchBudget
+    );
+    assert_eq!(failure.failed_aspects[0].diagnostic.model_turn, Some(1));
+    assert_eq!(failure.failed_aspects[0].diagnostic.search_turn, Some(1));
     assert_eq!(services.search_calls.load(Ordering::SeqCst), 1);
 }
 
@@ -347,8 +359,15 @@ async fn global_model_budget_stops_before_extra_model_call() {
     .expect_err("global model budget");
 
     assert!(matches!(failure.error, Error::PartialResult { .. }));
+    assert_eq!(failure.diagnostic.stage, FailureStage::ResultAggregation);
     assert_eq!(failure.failed_aspects.len(), 1);
     assert_eq!(failure.failed_aspects[0].error_code, "budget_exceeded");
+    assert_eq!(
+        failure.failed_aspects[0].diagnostic.stage,
+        FailureStage::ResearchBudget
+    );
+    assert_eq!(failure.failed_aspects[0].diagnostic.model_turn, Some(1));
+    assert_eq!(failure.failed_aspects[0].diagnostic.search_turn, None);
     assert_eq!(services.model_calls.load(Ordering::SeqCst), 2);
 }
 

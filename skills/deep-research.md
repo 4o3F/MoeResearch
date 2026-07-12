@@ -248,7 +248,7 @@ For `aspect_research`, use the same `schema_version`, `request_id`, `policy`, an
 - Rust never reads prompt files at runtime. Layer 1 loads the chosen Layer 2 aspect-agent Markdown asset from the workspace, appends `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), and passes the combined content inline as `AspectRequest.instructions`. Layer 1 owns prompt selection, version pinning, and any per-aspect customization. The string must be non-empty and under 64 KiB.
 - Provider API keys, base URLs, retry policy, operator limits, and raw DTOs stay behind Rust configuration and provider adapters.
 - Domain filters belong to `SearchPolicy`, not to ad-hoc search request text.
-- `SearchPolicy.allowed_providers` is an allowlist, not fallback order; Layer 1 selects one `aspect.search_provider`, and Layer 2 search tool args contain only `query` and optional `max_results`.
+- `SearchPolicy.allowed_providers` is an allowlist, not fallback order; Layer 1 selects one `aspect.search_provider`. Layer 2 search calls use `query`, optional `max_results`, and a required semantic `intent`; the common model-search tool contract defines that model-only protocol.
 
 ## Failure handling
 

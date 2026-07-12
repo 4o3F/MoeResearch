@@ -23,6 +23,10 @@ moeresearch assets install research-skills --config ~/.config/moeresearch/moeres
 
 The research skills asset installs Academic DeepResearch prompts under `prompts/layer1/academic-deep-research/` and `prompts/layer2/academic-deep-research/`.
 
+## Model Retrieval Contract
+
+Academic personas use the shared model-only `search` protocol: `query`, optional `max_results`, and a required semantic `intent` with `source_focus`, `timeliness`, `coverage`, and `detail`. Rust applies the fixed academic `policy.search.category` and resolves each intent against the one selected provider. Read returned `intent_resolution` (`enforced`, `best_effort`, or `unsupported`) before judging source coverage. The model final JSON selects candidate evidence IDs only; the host rehydrates provenance and evidence metadata.
+
 ## Request Example
 
 ```text

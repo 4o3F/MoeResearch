@@ -16,8 +16,7 @@ use moe_research_search::{SearchRequest, SearchResponse, SearchResult};
 use moe_research_workflow::Limit;
 use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
 use moe_research_workflow::{
-    AspectReport, AspectResearchResult, Confidence, Evidence, Finding, FindingType, Importance,
-    OpenQuestion, TokenUsage,
+    AspectReport, Confidence, Evidence, Finding, FindingType, Importance, OpenQuestion, TokenUsage,
 };
 use moe_research_workflow::{
     AspectRequest, AspectResearchRequest, DeepResearchRequest, ResearchContext, ResearchPolicy,
@@ -193,11 +192,24 @@ pub fn deep_request(count: usize) -> DeepResearchRequest {
     }
 }
 
+pub fn default_search_intent() -> serde_json::Value {
+    json!({
+        "source_focus": "general",
+        "timeliness": "any",
+        "coverage": "balanced",
+        "detail": "standard",
+    })
+}
+
 pub fn tool_response() -> ModelResponse {
     let tool_call = ModelToolCall {
         id: "call-1".to_owned(),
         name: "search".to_owned(),
-        arguments: json!({"query": "private query", "max_results": 1}),
+        arguments: json!({
+            "query": "private query",
+            "max_results": 1,
+            "intent": default_search_intent(),
+        }),
     };
     ModelResponse {
         provider: "model".to_owned(),
@@ -390,6 +402,14 @@ fn report(
     }
 }
 
+pub fn model_output_json(report: &AspectReport, evidence: &[Evidence]) -> String {
+    serde_json::to_string(&json!({
+        "aspect_report": report,
+        "selected_evidence": evidence.iter().map(|item| &item.id).collect::<Vec<_>>(),
+    }))
+    .expect("model output json")
+}
+
 fn result_json(
     aspect_id: &str,
     aspect_name: &str,
@@ -397,9 +417,8 @@ fn result_json(
     mut evidence: Evidence,
 ) -> String {
     evidence.supports_findings = vec![format!("finding-{aspect_id}")];
-    serde_json::to_string(&AspectResearchResult {
-        aspect_report: report(aspect_id, aspect_name, confidence, evidence.id.clone()),
-        evidence: vec![evidence],
-    })
-    .expect("result json")
+    model_output_json(
+        &report(aspect_id, aspect_name, confidence, evidence.id.clone()),
+        &[evidence],
+    )
 }

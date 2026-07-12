@@ -8,8 +8,8 @@ use crate::error_log_safe::{error_message_for_log, safe_model_identifier_for_log
 use crate::policy::SearchPolicy;
 use crate::report::OutputValidator;
 use crate::report::{
-    AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, SourceType,
-    TokenUsage,
+    AgentBudgetUsage, AspectReport, AspectResearchResult, Confidence, Evidence, FailureDiagnostic,
+    FailureStage, SourceType, TokenUsage,
 };
 use crate::research::{ASPECT_PROMPT_MAX_BYTES, AspectPromptInput, EffectiveAspectPlan};
 use crate::runtime::search_tool::{SearchToolArgs, ToolPolicyGuard};
@@ -22,8 +22,9 @@ use moe_research_model::ModelService;
 use moe_research_model::{
     ModelInputItem, ModelMessageRole, ModelRequest, ModelResponse, ModelToolCall, ModelToolOutput,
 };
-use moe_research_search::SearchService;
-use moe_research_search::{SearchRequest, SearchResponse, SearchResult};
+use moe_research_search::{
+    IntentDimensionResolution, SearchRequest, SearchResponse, SearchResult, SearchService,
+};
 
 pub(crate) struct AgentRuntime<'a> {
     model_service: &'a ModelService,
@@ -42,6 +43,7 @@ pub(crate) struct AgentRuntimeOutput {
 #[derive(Debug)]
 pub(crate) struct AgentRuntimeFailure {
     pub(crate) error: Error,
+    pub(crate) diagnostic: FailureDiagnostic,
     pub(crate) partial_output: Option<AgentRuntimeOutput>,
 }
 
@@ -51,6 +53,8 @@ struct RuntimeState {
     previous_response_id: Option<String>,
     candidate_evidence: Vec<Evidence>,
     token_usage: Option<TokenUsage>,
+    diagnostic: FailureDiagnostic,
+    search_turns_started: usize,
 }
 
 impl RuntimeState {
@@ -61,7 +65,29 @@ impl RuntimeState {
             previous_response_id: None,
             candidate_evidence: Vec::new(),
             token_usage: None,
+            diagnostic: FailureDiagnostic::new(FailureStage::RequestValidation, None, None),
+            search_turns_started: 0,
         }
+    }
+
+    fn begin_search_turn(&mut self, model_turn: usize) -> usize {
+        self.search_turns_started += 1;
+        let search_turn = self.search_turns_started;
+        self.diagnostic = FailureDiagnostic::new(
+            FailureStage::SearchIntentResolution,
+            Some(model_turn),
+            Some(search_turn),
+        );
+        search_turn
+    }
+
+    fn set_diagnostic(
+        &mut self,
+        stage: FailureStage,
+        model_turn: Option<usize>,
+        search_turn: Option<usize>,
+    ) {
+        self.diagnostic = FailureDiagnostic::new(stage, model_turn, search_turn);
     }
 
     fn append_model_output_and_tool_outputs(
@@ -133,6 +159,8 @@ impl<'a> AgentRuntime<'a> {
         let mut state = RuntimeState::new(self.initial_input());
 
         loop {
+            let next_model_turn = budget.usage().turns_used.saturating_add(1);
+            state.set_diagnostic(FailureStage::ModelTurn, Some(next_model_turn), None);
             let model_response = match deadline
                 .run(self.complete_model_turn(&mut state, &mut budget, &tool_policy))
                 .await
@@ -141,6 +169,11 @@ impl<'a> AgentRuntime<'a> {
                 Err(error) => return Err(self.failure(error, &state, &budget)),
             };
             if model_response.tool_calls.is_empty() {
+                state.set_diagnostic(
+                    FailureStage::OutputValidation,
+                    Some(budget.usage().turns_used),
+                    None,
+                );
                 let content = match model_response.content.as_deref().ok_or_else(|| {
                     Error::SchemaValidationFailed {
                         message: "model final response must include content".to_owned(),
@@ -154,6 +187,11 @@ impl<'a> AgentRuntime<'a> {
                     .map_err(|failure| *failure);
             }
 
+            state.set_diagnostic(
+                FailureStage::ToolValidation,
+                Some(budget.usage().turns_used),
+                None,
+            );
             if let Err(error) = Self::ensure_unique_tool_call_ids(&model_response.tool_calls) {
                 return Err(self.failure(error, &state, &budget));
             }
@@ -234,6 +272,7 @@ impl<'a> AgentRuntime<'a> {
                 );
                 return Err(Error::ToolPolicyDenied {
                     message: "model returned duplicate tool call id".to_owned(),
+                    public: false,
                 });
             }
         }
@@ -252,6 +291,11 @@ impl<'a> AgentRuntime<'a> {
     ) -> Result<ModelResponse> {
         budget.consume_model_turn()?;
         if let Err(error) = self.research_budget.try_consume_model_call() {
+            state.set_diagnostic(
+                FailureStage::ResearchBudget,
+                Some(budget.usage().turns_used),
+                None,
+            );
             tracing::warn!(
                 request_id = %self.request.request_id,
                 aspect_id = %self.request.task.id,
@@ -291,6 +335,11 @@ impl<'a> AgentRuntime<'a> {
         let usage = model_response.usage.clone();
         add_token_usage(&mut state.token_usage, usage.clone());
         if let Err(error) = self.research_budget.record_token_usage(usage.clone()) {
+            state.set_diagnostic(
+                FailureStage::ResearchBudget,
+                Some(budget.usage().turns_used),
+                None,
+            );
             tracing::warn!(
                 request_id = %self.request.request_id,
                 aspect_id = %self.request.task.id,
@@ -334,6 +383,8 @@ impl<'a> AgentRuntime<'a> {
         search_provider: Option<&str>,
         state: &mut RuntimeState,
     ) -> Result<ModelToolOutput> {
+        let model_turn = budget.usage().turns_used;
+        state.set_diagnostic(FailureStage::ToolValidation, Some(model_turn), None);
         let args = match tool_policy.validate_search_call(tool_call) {
             Ok(args) => args,
             Err(error) => {
@@ -351,9 +402,67 @@ impl<'a> AgentRuntime<'a> {
                 return Err(error);
             }
         };
+        let search_turn = state.begin_search_turn(model_turn);
         let search_provider = search_provider.ok_or_else(|| Error::InvalidInput {
             message: "search provider must be explicitly selected".to_owned(),
         })?;
+        let max_results = args
+            .max_results
+            .unwrap_or(self.request.policy.search.max_results_per_query);
+        let resolved = match self.search_service.resolve_intent(
+            search_provider,
+            self.base_search_request(search_provider, &args, max_results),
+            &args.intent,
+            &search_policy.intent_constraints(),
+        ) {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                tracing::warn!(
+                    request_id = %self.request.request_id,
+                    aspect_id = %self.request.task.id,
+                    tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
+                    provider = %search_provider,
+                    diagnostic_branch = "search_intent_resolution",
+                    diagnostic_key = search_resolution_diagnostic_key(&error),
+                    error_code = error.code().as_str(),
+                    error_message = %error_message_for_log(&error),
+                    retryable = error.retryable(),
+                    status = "denied",
+                    "search intent resolution rejected"
+                );
+                return Err(error);
+            }
+        };
+        let intent_resolution = resolved.resolution;
+        state.set_diagnostic(
+            FailureStage::SearchPolicy,
+            Some(model_turn),
+            Some(search_turn),
+        );
+        let search_request = match search_policy.apply_to(resolved.request) {
+            Ok(request) => request,
+            Err(error) => {
+                tracing::warn!(
+                    request_id = %self.request.request_id,
+                    aspect_id = %self.request.task.id,
+                    tool_call_id = %safe_model_identifier_for_log(&tool_call.id),
+                    provider = %search_provider,
+                    diagnostic_branch = "search_policy_guard",
+                    diagnostic_key = "final_guard_rejected",
+                    error_code = error.code().as_str(),
+                    error_message = %error_message_for_log(&error),
+                    retryable = error.retryable(),
+                    status = "denied",
+                    "resolved search request rejected by policy"
+                );
+                return Err(error);
+            }
+        };
+        state.set_diagnostic(
+            FailureStage::SearchBudget,
+            Some(model_turn),
+            Some(search_turn),
+        );
         if let Err(error) = budget.consume_search_tool_call() {
             let budget_usage = budget.usage();
             tracing::warn!(
@@ -375,6 +484,11 @@ impl<'a> AgentRuntime<'a> {
             return Err(error);
         }
         if let Err(error) = self.research_budget.try_consume_search_call() {
+            state.set_diagnostic(
+                FailureStage::ResearchBudget,
+                Some(model_turn),
+                Some(search_turn),
+            );
             tracing::warn!(
                 request_id = %self.request.request_id,
                 aspect_id = %self.request.task.id,
@@ -390,9 +504,6 @@ impl<'a> AgentRuntime<'a> {
             return Err(error);
         }
 
-        let max_results = args
-            .max_results
-            .unwrap_or(self.request.policy.search.max_results_per_query);
         tracing::debug!(
             request_id = %self.request.request_id,
             aspect_id = %self.request.task.id,
@@ -403,13 +514,13 @@ impl<'a> AgentRuntime<'a> {
             status = "accepted",
             "search tool call accepted"
         );
+        state.set_diagnostic(
+            FailureStage::SearchDispatch,
+            Some(model_turn),
+            Some(search_turn),
+        );
         let search_started = Instant::now();
-        let search_request = self.search_request(search_provider, &args, max_results);
-        let response = match self
-            .search_service
-            .search(search_policy.apply_to(search_request)?)
-            .await
-        {
+        let response = match self.search_service.search(search_request).await {
             Ok(response) => response,
             Err(error) => {
                 tracing::warn!(
@@ -458,7 +569,8 @@ impl<'a> AgentRuntime<'a> {
             "tool call completed"
         );
 
-        let tool_output = Self::search_result_message(&args.query, &response, &new_evidence);
+        let tool_output =
+            Self::search_result_message(&args.query, &response, &new_evidence, &intent_resolution);
         state.candidate_evidence.extend(new_evidence);
 
         Ok(ModelToolOutput::new(tool_call.id.clone(), tool_output))
@@ -467,10 +579,15 @@ impl<'a> AgentRuntime<'a> {
     fn finish(
         &self,
         content: &str,
-        state: RuntimeState,
+        mut state: RuntimeState,
         budget: &AgentBudgetGuard,
         validator: &OutputValidator<'_>,
     ) -> std::result::Result<AgentRuntimeOutput, Box<AgentRuntimeFailure>> {
+        state.set_diagnostic(
+            FailureStage::OutputValidation,
+            Some(budget.usage().turns_used),
+            None,
+        );
         let (result, _) = match validator.validate_content(content, &state.candidate_evidence) {
             Ok(result) => result,
             Err(error) => {
@@ -571,23 +688,17 @@ impl<'a> AgentRuntime<'a> {
             .filter(|provider| !provider.trim().is_empty())
     }
 
-    fn search_request(
+    fn base_search_request(
         &self,
         provider: &str,
         args: &SearchToolArgs,
         max_results: usize,
     ) -> SearchRequest {
-        let policy = &self.request.policy.search;
-        let mut request = SearchRequest::new(
+        SearchRequest::new(
             provider,
             &args.query,
-            max_results.min(policy.max_results_per_query),
-        );
-        request.depth = args.depth;
-        request.content_level = args.content_level;
-        request.recency = args.recency;
-        request.category = args.category;
-        request
+            max_results.min(self.request.policy.search.max_results_per_query),
+        )
     }
 
     fn evidence_from_search(
@@ -644,12 +755,14 @@ impl<'a> AgentRuntime<'a> {
         query: &str,
         response: &SearchResponse,
         evidence: &[Evidence],
+        intent_resolution: &[IntentDimensionResolution],
     ) -> String {
         json!({
             "tool": "search",
             "query": query,
             "provider": response.provider,
             "result_count": response.results.len(),
+            "intent_resolution": { "dimensions": intent_resolution },
             "results": evidence,
         })
         .to_string()
@@ -684,6 +797,11 @@ impl<'a> AgentRuntime<'a> {
                         error.public_message()
                     )],
                 },
+                selected_evidence: state
+                    .candidate_evidence
+                    .iter()
+                    .map(|evidence| evidence.id.clone())
+                    .collect(),
                 evidence: state.candidate_evidence.clone(),
             },
             budget_usage: budget.usage(),
@@ -694,6 +812,7 @@ impl<'a> AgentRuntime<'a> {
     fn untraced_failure(error: Error) -> AgentRuntimeFailure {
         AgentRuntimeFailure {
             error,
+            diagnostic: FailureDiagnostic::new(FailureStage::RequestValidation, None, None),
             partial_output: None,
         }
     }
@@ -729,8 +848,18 @@ impl<'a> AgentRuntime<'a> {
         );
         AgentRuntimeFailure {
             error,
+            diagnostic: state.diagnostic.clone(),
             partial_output,
         }
+    }
+}
+
+fn search_resolution_diagnostic_key(error: &Error) -> &'static str {
+    match error {
+        Error::ToolPolicyDenied { .. } => "intent_policy_conflict",
+        Error::ProviderUnavailable { .. } => "provider_unavailable",
+        Error::InvalidInput { .. } => "provider_intent_incompatible",
+        _ => "resolution_failed",
     }
 }
 

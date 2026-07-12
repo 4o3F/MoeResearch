@@ -23,6 +23,10 @@ moeresearch assets install research-skills --config ~/.config/moeresearch/moeres
 
 The research skills asset installs Technical Evaluation prompts under `prompts/layer1/technical-evaluation/` and `prompts/layer2/technical-evaluation/`.
 
+## Model Retrieval Contract
+
+Technical personas use the shared model-only `search` protocol: `query`, optional `max_results`, and a required semantic `intent` with `source_focus`, `timeliness`, `coverage`, and `detail`. Rust resolves intent against exactly one selected provider and `policy.search`, then reports actual per-dimension `intent_resolution` as `enforced`, `best_effort`, or `unsupported`. The model final JSON selects candidate evidence IDs only; the host rehydrates provenance and evidence metadata.
+
 ## Request Example
 
 ```text

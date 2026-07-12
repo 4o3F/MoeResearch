@@ -63,7 +63,7 @@ Run this checklist over `aspect_reports` + `evidence_index` + `failed_aspects`. 
 - **Ch 4 加重**: 能力域 ≥3 job statement (situation→motivation→outcome); 能力域 boundary 排除理由必须 ≥1 条 explicit.
 - **Ch 5 benchmark 段**: best-in-class 2-3 对手 + 选择理由 (why best-in-class, 非随机); **不做** 完整 positioning map / Porter / SWOT — 那些属 competitive profile.
 - **Ch 6 加重**: 单域 teardown 矩阵 + 体验路径图 + 断点地图并列; 每 teardown cell 显示 inline evidence id 或标 assumption; 断点地图标注 step / type / visual_refs / user_evidence_refs. Kano 分级叠在 teardown 矩阵之上.
-- **Ch 7 → body summary + Annex A.2 (加重)**: full visual-evidence table moves to **A.2** (断点 visual ≥每断点 1 张 + teardown 截图; fields: `product / screen_or_flow / media_type / source_url / timestamp / observed_feature / related_claim / confidence`; include "(gap)" rows). `source_url` = `Evidence.url`; provenance byte-equal. **Body Ch 7**: ≤1 paragraph: "本研究抓取 N 张断点/teardown 截图，覆盖 X/Y/Z 断点；N 处 gap（见 Annex A.2）影响 Ch 6 某行信度。" Deep <5 visual → state gap in both body and A.2.
+- **Ch 7 → body summary + Annex A.2 (加重)**: full visual-evidence table moves to **A.2** (断点 visual ≥每断点 1 张 + teardown 截图; fields: `product / screen_or_flow / media_type / source_url / timestamp / observed_feature / related_claim / confidence`; include "(gap)" rows). `source_url` = host-returned `Evidence.url`; keep host provenance unchanged. **Body Ch 7**: ≤1 paragraph: "本研究抓取 N 张断点/teardown 截图，覆盖 X/Y/Z 断点；N 处 gap（见 Annex A.2）影响 Ch 6 某行信度。" Deep <5 visual → state gap in both body and A.2.
 - **Ch 9 域内 ODI**: ≥3 desired outcomes (段1 拆出); 每个显示 Importance, Satisfaction (1–10), `Opportunity = Importance + max(0, Importance − Satisfaction)`, `estimated` flag (>10 underserved, <7 overserved). 域内 outcome 排序优先; overlay Kano (Must-be = hygiene, Performance = linear, Attractive = differentiation bet). ODI ≠ 最终优先级 — value/complexity/risk 仍要调整.
 - **Ch 10 升级方向**: 段6 推荐方向落 P0/P1/P2 + 依赖 + 验证条件 + 4 风险 (TM-3: value / usability / feasibility / business viability).
 - **Ch 12 → body summary + Annex A.3/A.4/A.5/A.6 (加重)**: **(a)** Risk summary ≤1 para stays — "最大风险为 X，应对 Y；4 类矩阵见 Annex A.3"; **(b)** Top ≤3 open questions stay + link to A.4; **(c)** Full risk table → **A.3**; full open-Q table → **A.4**; TM-11 matrix → **A.5**; self-verification record → **A.6**.
@@ -128,7 +128,7 @@ Body and Annex A are separated **during synthesis** — not post-hoc. Rules:
 2. **Annex A** = 8 subsections in fixed order A.1→A.8 (never reorder). Placed as the **last top-level `##` section** after all body chapters.
 3. **Inline honesty markers stay in body** — confidence labels, `[E##]` citation ids, TM-4 tags, `(estimated)` flags, abstain placeholders remain inline. They also appear structured in Annex A. Never "move to Annex and delete from body".
 4. **Honesty-marker verification**: confidence labels, evidence gaps, abstain logs, and tool provenance must not regress. Record in A.6.
-5. `evidence_index` byte-equal with source `DeepResearchResult` — never reorder, rename, or drop.
+5. Preserve host-returned `evidence_index` IDs and provenance. Do not rewrite, rename, or drop source data; add report annotations in sidecar tables only.
 
 **Product-capability-specific body-must-keep**: build-cost timeline (Ch 9/10 core deliverable) / ODI formula inline / 4-tier source label + estimated flag double-track / dimension underserved explanation / 段6 build-cost overlay.
 

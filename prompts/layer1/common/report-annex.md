@@ -1,6 +1,6 @@
 # Layer 1 Common Module: Report Annex
 
-Domain-neutral Annex contract for research reports synthesized from MoeResearch results. Active report prompts may add domain-specific tables, but must preserve source-origin separation, byte-equal MoeResearch evidence provenance, abstention logging, and tool provenance disclosure.
+Domain-neutral Annex contract for research reports synthesized from MoeResearch results. Active report prompts may add domain-specific tables, but must preserve source-origin separation, host-owned MoeResearch evidence provenance, abstention logging, and tool provenance disclosure.
 
 ## Required source-origin separation
 

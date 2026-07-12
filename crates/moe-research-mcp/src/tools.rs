@@ -3,7 +3,7 @@ use rmcp::{Json, handler::server::wrapper::Parameters, tool, tool_router};
 use moe_research_error::{Error, ErrorCode};
 use moe_research_workflow::{
     AspectFailure, AspectResearchOutput, AspectResearchRequest, AspectResearchResult,
-    DeepResearchRequest, DeepResearchResult,
+    DeepResearchRequest, DeepResearchResult, FailureDiagnostic,
 };
 
 use crate::envelope::{ToolEnvelope, ToolError, ToolErrorCode, ToolStatus};
@@ -58,6 +58,7 @@ impl MoeResearchMcpServer {
                             data: Some(output.result),
                             error: Some(tool_error_from_error(
                                 &failure.error,
+                                failure.diagnostic.clone(),
                                 Some(aspect_id.clone()),
                                 Vec::new(),
                             )),
@@ -67,6 +68,7 @@ impl MoeResearchMcpServer {
                             request_id.clone(),
                             Some(aspect_id.clone()),
                             &failure.error,
+                            failure.diagnostic.clone(),
                             Vec::new(),
                         ),
                     };
@@ -140,6 +142,7 @@ impl MoeResearchMcpServer {
                         request_id,
                         None,
                         &failure.error,
+                        failure.diagnostic,
                         failure.failed_aspects,
                     )
                 }
@@ -190,6 +193,7 @@ fn failed_envelope<T>(
     request_id: String,
     aspect_id: Option<String>,
     error: &Error,
+    diagnostic: FailureDiagnostic,
     failed_aspects: Vec<AspectFailure>,
 ) -> ToolEnvelope<T> {
     ToolEnvelope {
@@ -198,19 +202,26 @@ fn failed_envelope<T>(
         run_id: None,
         status: ToolStatus::Failed,
         data: None,
-        error: Some(tool_error_from_error(error, aspect_id, failed_aspects)),
+        error: Some(tool_error_from_error(
+            error,
+            diagnostic,
+            aspect_id,
+            failed_aspects,
+        )),
     }
 }
 
 #[must_use]
 fn tool_error_from_error(
     error: &Error,
+    diagnostic: FailureDiagnostic,
     aspect_id: Option<String>,
     failed_aspects: Vec<AspectFailure>,
 ) -> ToolError {
     ToolError {
         code: tool_error_code(error.code()),
         message: error.public_message(),
+        diagnostic,
         aspect_id,
         retryable: tool_error_retryable(error, &failed_aspects),
         failed_aspects,

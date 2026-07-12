@@ -9,8 +9,10 @@ use moe_research_net::NetworkClient;
 use moe_research_net::provider_http::bearer_json_post;
 
 use crate::{
-    Freshness, SearchCategory, SearchContentLevel, SearchDepth, SearchProvider, SearchRecency,
-    SearchRequest, SearchResponse, SearchResult,
+    Coverage, Detail, Freshness, IntentDimension, IntentDimensionResolution, IntentEnforcement,
+    ResolvedSearchIntent, SearchCategory, SearchContentLevel, SearchDepth, SearchIntent,
+    SearchIntentConstraints, SearchProvider, SearchRecency, SearchRequest, SearchResponse,
+    SearchResult, Timeliness,
 };
 
 pub struct TavilySearchProvider {
@@ -40,6 +42,86 @@ impl TavilySearchProvider {
 impl SearchProvider for TavilySearchProvider {
     fn name(&self) -> &'static str {
         "tavily"
+    }
+
+    fn resolve_intent(
+        &self,
+        base: SearchRequest,
+        intent: &SearchIntent,
+        constraints: &SearchIntentConstraints,
+    ) -> Result<ResolvedSearchIntent> {
+        let request = constraints.prepare(base, intent)?.request;
+
+        let (source_enforcement, source_reason) =
+            if constraints.policy_constrains_source_focus(intent) {
+                (IntentEnforcement::BestEffort, "policy_source_focus_applied")
+            } else {
+                match request.category {
+                    None => (IntentEnforcement::Enforced, "neutral_general"),
+                    Some(SearchCategory::News | SearchCategory::FinancialFilings) => {
+                        (IntentEnforcement::Enforced, "tavily_topic_mapped")
+                    }
+                    Some(_) => (
+                        IntentEnforcement::Unsupported,
+                        "tavily_category_unsupported",
+                    ),
+                }
+            };
+        let (timeliness_enforcement, timeliness_reason) =
+            if constraints.policy_constrains_timeliness(intent) {
+                (IntentEnforcement::BestEffort, "policy_timeliness_applied")
+            } else {
+                match intent.timeliness {
+                    Timeliness::Any => (IntentEnforcement::Enforced, "tavily_default_time_range"),
+                    Timeliness::Stable => (
+                        IntentEnforcement::Unsupported,
+                        "tavily_stable_not_supported",
+                    ),
+                    Timeliness::Recent | Timeliness::Fresh => {
+                        (IntentEnforcement::Enforced, "tavily_time_range_mapped")
+                    }
+                    Timeliness::Live => (IntentEnforcement::BestEffort, "tavily_live_maps_to_day"),
+                }
+            };
+
+        let resolution = vec![
+            IntentDimensionResolution::new(
+                IntentDimension::SourceFocus,
+                intent.source_focus.as_str(),
+                source_enforcement,
+                source_reason,
+            ),
+            IntentDimensionResolution::new(
+                IntentDimension::Timeliness,
+                intent.timeliness.as_str(),
+                timeliness_enforcement,
+                timeliness_reason,
+            ),
+            IntentDimensionResolution::new(
+                IntentDimension::Coverage,
+                intent.coverage.as_str(),
+                match intent.coverage {
+                    Coverage::Focused | Coverage::Balanced | Coverage::Broad => {
+                        IntentEnforcement::Enforced
+                    }
+                },
+                "tavily_search_depth_mapped",
+            ),
+            IntentDimensionResolution::new(
+                IntentDimension::Detail,
+                intent.detail.as_str(),
+                match intent.detail {
+                    Detail::Detailed => IntentEnforcement::Enforced,
+                    Detail::Compact | Detail::Standard => IntentEnforcement::BestEffort,
+                },
+                "tavily_content_level_mapped",
+            ),
+        ];
+
+        Ok(ResolvedSearchIntent {
+            request,
+            resolution,
+        })
     }
 
     async fn search(&self, request: SearchRequest) -> Result<SearchResponse> {

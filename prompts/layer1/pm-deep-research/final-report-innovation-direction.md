@@ -65,7 +65,7 @@ Ch 4/5/6/7 may be trimmed when needed so the report can prioritize future-bet co
 - **Ch 1 加重**: BLUF/SCQA → 1-3 个推荐下注 (TM-11 leading indicator 直接嵌入 thesis 行, 不放附录); 每注 (action-title) 标题 = "押 X (赛道分支), 条件不满足 Y 即停"; 每注后 1 段 prose 综合 4 风险评级 + 显性权衡 + 验证 owner / cadence.
 - **Ch 5 白地图段**: 段3 canvas (轴 / value curve / 白地标注) + 段5 颠覆威胁列 (sustaining vs disruptive 区分); ≤1 页; **不做** 完整 positioning map / Porter / SWOT — 那些属 competitive profile.
 - **Ch 6 承载力评估**: 段4 future_capability_map 中 `our_carry_capacity` 列展开 — 每候选能力 (AI / 硬件 / 内容 / 社区 / 数据) × `target_actor` (若有) 矩阵, 每格 = (现有资产 / gap / 6-12 月可达 / 6-12 月不可达); **不做** 单产品 teardown — 那属 product-capability profile.
-- **Ch 7 → body summary + Annex A.2**: full visual table moves to **A.2** (types: trend chart / changelog 时间线 / canvas / 树状图 / 雷达 — 不强求 in-app; fields: `subject / artifact_type / source_url / timestamp / observed_signal / related_claim / confidence`; include "(gap)" rows). `source_url` = `Evidence.url`; provenance byte-equal. **Body Ch 7**: ≤1 paragraph: "本研究收集 N 张战略图表/趋势图/canvas，覆盖 X/Y/Z 方向；N 处 gap（见 Annex A.2）。" Deep <5 visual → state gap in both body and A.2.
+- **Ch 7 → body summary + Annex A.2**: full visual table moves to **A.2** (types: trend chart / changelog 时间线 / canvas / 树状图 / 雷达 — 不强求 in-app; fields: `subject / artifact_type / source_url / timestamp / observed_signal / related_claim / confidence`; include "(gap)" rows). `source_url` = host-returned `Evidence.url`; keep host provenance unchanged. **Body Ch 7**: ≤1 paragraph: "本研究收集 N 张战略图表/趋势图/canvas，覆盖 X/Y/Z 方向；N 处 gap（见 Annex A.2）。" Deep <5 visual → state gap in both body and A.2.
 - **Ch 8 核心加重**: 段4 future_capability_map 主表 — 行 = 候选能力 (AI / 硬件 / 内容 / 社区 / 数据), 列 = (能干什么 / Tier 1/2 技术依据 / 现状承载力 / 与段2 unmet 对位 / 与段3 白地对位 / 适配 decision_intent 评级). 每行 prose 1 段综合 "这个能力如果押对长什么样 / 押错长什么样".
 - **Ch 9 赛道级 ODI**: 段2 ≥3 desired outcomes; 每个显示 Importance, Satisfaction (1–10), `Opportunity = Importance + max(0, Importance − Satisfaction)`, `estimated` flag (>10 underserved, <7 overserved). 赛道级 (跨当前 incumbent set 的用户视角), 不局限单产品; overlay Kano (Must-be / Performance / Attractive) when available. ODI ≠ 最终下注 — value/复杂度/风险/可证伪性 仍要在段8 段8 综合.
 - **Ch 10 推荐下注核心加重**: 段8 推荐下注落 P0 (确信高 / 短期可启动) / P1 (中等确信 / 6-12 月启动) / P2 (探索 / 12-36 月观察) + 依赖 + 验证条件 + **TM-11 leading indicator + 阈值** 行内列, 4 风险 (TM-3 value/usability/feasibility/business viability) 评级 + 显性权衡 (TM-5).
@@ -137,7 +137,7 @@ Body and Annex A are separated **during synthesis** — not post-hoc. Rules:
 2. **Annex A** = 8 subsections in fixed order A.1→A.8 (never reorder). Placed as the **last top-level `##` section** after all body chapters.
 3. **Inline honesty markers stay in body** — confidence labels, `[E##]` citation ids, TM-4 tags, `(estimated)` flags, abstain placeholders remain inline. They also appear structured in Annex A. Never "move to Annex and delete from body".
 4. **Honesty-marker verification**: confidence labels, evidence gaps, abstain logs, and tool provenance must not regress. Record in A.6.
-5. `evidence_index` byte-equal with source `DeepResearchResult` — never reorder, rename, or drop.
+5. Preserve host-returned `evidence_index` IDs and provenance. Do not rewrite, rename, or drop source data; add report annotations in sidecar tables only.
 
 **Innovation-direction-specific body-must-keep**: 12-36 month time window / Cagan 4-risks segment / TM-11 falsifiable test per bet (Ch 1 thesis-line mandatory) / changelog timeline evidence / explicit low-confidence-area markers.
 

@@ -5,7 +5,7 @@ pub(crate) fn error_message_for_log(error: &Error) -> String {
         Error::InvalidInput { message }
         | Error::ConfigInvalid { message }
         | Error::BudgetExceeded { message }
-        | Error::ToolPolicyDenied { message }
+        | Error::ToolPolicyDenied { message, .. }
         | Error::SchemaValidationFailed { message }
         | Error::Timeout { message }
         | Error::PartialResult { message }

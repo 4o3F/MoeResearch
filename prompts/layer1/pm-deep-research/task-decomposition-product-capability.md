@@ -106,7 +106,7 @@ Policies:
 
 - `policy.evidence.require_evidence_for_findings = true` always. `min_evidence_per_finding`: standard = 1, deep / deep_evidence_pack = 2, quick = 1.
 - `policy.model.allowed_providers` / `policy.search.allowed_providers`: user allowlists, not fallback order. Each aspect selects exactly one `model_provider` and one `search_provider`.
-- Set `policy.search.recency = "fresh"` and `policy.search.max_results_per_query = 5`. Do not set broad-recall or detailed global hints unless the whole study requires them.
+- Set `policy.search.recency = "fresh"` and `policy.search.max_results_per_query = 5` as host constraints. The appended common contract supplies semantic `intent` for every model search call; do not expose raw policy knobs to the model. Do not set global broad-recall or detailed constraints unless the whole study requires them.
 - `policy.output.language` = the request language.
 
 ## Output schema

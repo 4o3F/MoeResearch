@@ -10,9 +10,7 @@ use moe_research_model::{
     ModelResponseFormat, ModelTool, ModelToolCall,
 };
 use moe_research_model::{ModelProvider, OpenAiProvider};
-use moe_research_workflow::AspectResearchResult;
 use moe_research_workflow::ModelPolicy;
-use schemars::schema_for;
 use serde_json::{Value, json};
 use support::network::{MockNetworkClient, mock_completed_sse, sse_json_event, sse_response};
 
@@ -99,10 +97,17 @@ fn request_with_input(input: Vec<ModelInputItem>) -> ModelRequest {
 
 fn aspect_response_format() -> ModelResponseFormat {
     ModelResponseFormat::JsonSchema(JsonSchemaFormat {
-        name: "aspect_research_result_v1".to_owned(),
+        name: "test_structured_output".to_owned(),
         strict: true,
-        schema: serde_json::to_value(schema_for!(AspectResearchResult))
-            .expect("AspectResearchResult schema serializes"),
+        schema: json!({
+            "type": "object",
+            "properties": {
+                "aspect_report": { "type": "object" },
+                "selected_evidence": { "type": "array" }
+            },
+            "required": ["aspect_report", "selected_evidence"],
+            "additionalProperties": false
+        }),
     })
 }
 
@@ -670,7 +675,7 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
     assert_eq!(body["tools"][0]["description"], "Search the web");
     assert_eq!(body["tools"][0]["parameters"]["type"], "object");
     assert_eq!(body["text"]["format"]["type"], "json_schema");
-    assert_eq!(body["text"]["format"]["name"], "aspect_research_result_v1");
+    assert_eq!(body["text"]["format"]["name"], "test_structured_output");
     assert_eq!(body["text"]["format"]["strict"], true);
     assert!(
         body["tools"]
@@ -684,64 +689,18 @@ async fn request_uses_responses_endpoint_and_openai_tool_schema() {
 }
 
 #[tokio::test]
-async fn openai_structured_output_schema_restricts_source_type_enum() {
-    let body = captured_openai_request_body().await;
-    let schema = openai_text_schema(&body);
-    let source_type = schema_def(schema, "SourceType");
-    let enum_values = source_type["enum"]
-        .as_array()
-        .expect("SourceType enum")
-        .iter()
-        .map(|value| value.as_str().expect("enum string"))
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        enum_values,
-        vec![
-            "official",
-            "documentation",
-            "news",
-            "blog",
-            "forum",
-            "repository",
-            "unknown"
-        ]
-    );
-    assert!(!enum_values.contains(&"discussion"));
-}
-
-#[tokio::test]
-async fn openai_structured_output_schema_closes_objects_for_strict_mode() {
+async fn openai_structured_output_schema_preserves_caller_contract() {
     let body = captured_openai_request_body().await;
     let schema = openai_text_schema(&body);
 
     assert_eq!(schema["additionalProperties"], false);
     assert_eq!(
-        schema_def(schema, "Evidence")["additionalProperties"],
-        false
+        schema["required"],
+        json!(["aspect_report", "selected_evidence"])
     );
-    assert_eq!(
-        schema_def(schema, "AspectReport")["additionalProperties"],
-        false
-    );
-}
-
-#[tokio::test]
-async fn openai_structured_output_schema_requires_nullable_evidence_fields() {
-    let body = captured_openai_request_body().await;
-    let schema = openai_text_schema(&body);
-    let evidence = schema_def(schema, "Evidence");
-    let required = evidence["required"]
-        .as_array()
-        .expect("Evidence required fields")
-        .iter()
-        .map(|value| value.as_str().expect("required string"))
-        .collect::<Vec<_>>();
-
-    assert!(required.contains(&"url"));
-    assert!(required.contains(&"published_at"));
-    assert!(schema_allows_null(&evidence["properties"]["url"]));
-    assert!(schema_allows_null(&evidence["properties"]["published_at"]));
+    assert_eq!(schema["properties"]["aspect_report"]["type"], "object");
+    assert_eq!(schema["properties"]["selected_evidence"]["type"], "array");
+    assert!(schema["properties"].get("evidence").is_none());
 }
 
 async fn captured_openai_request_body() -> Value {
@@ -766,35 +725,6 @@ async fn captured_openai_request_body() -> Value {
 
 fn openai_text_schema(body: &Value) -> &Value {
     &body["text"]["format"]["schema"]
-}
-
-fn schema_def<'a>(schema: &'a Value, name: &str) -> &'a Value {
-    schema["$defs"]
-        .get(name)
-        .unwrap_or_else(|| panic!("missing schema definition {name}"))
-}
-
-fn schema_allows_null(schema: &Value) -> bool {
-    schema_type_allows_null(schema)
-        || schema_keyword_allows_null(schema, "anyOf")
-        || schema_keyword_allows_null(schema, "oneOf")
-}
-
-fn schema_keyword_allows_null(schema: &Value, keyword: &str) -> bool {
-    schema
-        .get(keyword)
-        .and_then(Value::as_array)
-        .is_some_and(|items| items.iter().any(schema_allows_null))
-}
-
-fn schema_type_allows_null(schema: &Value) -> bool {
-    match schema.get("type") {
-        Some(Value::String(schema_type)) => schema_type == "null",
-        Some(Value::Array(schema_types)) => schema_types
-            .iter()
-            .any(|schema_type| schema_type.as_str() == Some("null")),
-        _ => false,
-    }
 }
 
 #[tokio::test]

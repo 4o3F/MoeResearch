@@ -3,10 +3,9 @@
 //! # Unknown-field policy
 //!
 //! Request and policy DTOs use `serde(deny_unknown_fields)` so Layer 1 typos fail closed.
-//! **Result DTOs intentionally do not.** Model final outputs frequently include extra keys;
-//! unknown fields are dropped on deserialize. Required known fields remain mandatory, and
-//! `OutputValidator` enforces semantic constraints (evidence refs, provenance, policy caps).
-//! Do not add `deny_unknown_fields` here without a product decision to break flexible models.
+//! `AspectResearchResult` is the shared model and public result shape. Models
+//! select candidate evidence IDs; the host rehydrates immutable provenance into
+//! its `evidence` field before returning the result.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -105,12 +104,62 @@ pub struct OpenQuestion {
     pub suggested_follow_up: Vec<String>,
 }
 
+/// Stable host-owned execution stage for a public failure diagnostic.
+///
+/// This identifies where the failure occurred without exposing provider
+/// payloads, user queries, tool-call IDs, URLs, or host paths.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureStage {
+    RequestValidation,
+    ModelTurn,
+    ToolValidation,
+    SearchIntentResolution,
+    SearchPolicy,
+    SearchBudget,
+    SearchDispatch,
+    OutputValidation,
+    ResearchBudget,
+    ResultAggregation,
+}
+
+/// Public, host-owned execution context for a failure.
+///
+/// Aspect identity remains on the containing `ToolError` or `AspectFailure`;
+/// turn numbers are one-based logical operation ordinals within that aspect.
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+pub struct FailureDiagnostic {
+    pub stage: FailureStage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(schema_with = "crate::limit::optional_positive_integer_schema")]
+    pub model_turn: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(schema_with = "crate::limit::optional_positive_integer_schema")]
+    pub search_turn: Option<usize>,
+}
+
+impl FailureDiagnostic {
+    #[must_use]
+    pub(crate) const fn new(
+        stage: FailureStage,
+        model_turn: Option<usize>,
+        search_turn: Option<usize>,
+    ) -> Self {
+        Self {
+            stage,
+            model_turn,
+            search_turn,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct AspectFailure {
     pub aspect_id: String,
     pub error_code: String,
     pub message: String,
     pub retryable: bool,
+    pub diagnostic: FailureDiagnostic,
 }
 
 pub use moe_research_model::TokenUsage;
@@ -243,12 +292,16 @@ impl ConfidenceSummary {
     }
 }
 
-/// Model-facing final aspect payload.
+/// Aspect payload returned by MoeResearch.
 ///
-/// Soft on unknown fields (see module docs). Required fields still must be present.
+/// Models emit `aspect_report` and `selected_evidence`. The runtime rehydrates
+/// the host-owned provenance into `evidence` before returning this value.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AspectResearchResult {
     pub aspect_report: AspectReport,
+    pub selected_evidence: Vec<String>,
+    #[serde(default)]
     pub evidence: Vec<Evidence>,
 }
 

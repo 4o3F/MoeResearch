@@ -6,7 +6,9 @@ use uuid::Uuid;
 
 use crate::budget::BudgetConfig;
 use crate::error_log_safe::error_message_for_log;
-use crate::report::{AspectFailure, CoverageSummary, DeepResearchResult};
+use crate::report::{
+    AspectFailure, CoverageSummary, DeepResearchResult, FailureDiagnostic, FailureStage,
+};
 use crate::research::{
     DeepResearchRequest, EffectiveAspectPlan, EffectiveResearchPlan, SUPPORTED_SCHEMA_VERSIONS,
     WorkflowValidationContext,
@@ -26,6 +28,7 @@ use super::aggregation::{
 #[derive(Debug)]
 pub struct DeepResearchFailure {
     pub error: Error,
+    pub diagnostic: FailureDiagnostic,
     pub failed_aspects: Vec<AspectFailure>,
 }
 
@@ -33,13 +36,19 @@ impl DeepResearchFailure {
     pub(super) fn top_level(error: Error) -> Box<Self> {
         Box::new(Self {
             error,
+            diagnostic: FailureDiagnostic::new(FailureStage::RequestValidation, None, None),
             failed_aspects: Vec::new(),
         })
     }
 
-    pub(super) fn with_aspects(error: Error, failed_aspects: Vec<AspectFailure>) -> Box<Self> {
+    pub(super) fn with_aspects(
+        error: Error,
+        diagnostic: FailureDiagnostic,
+        failed_aspects: Vec<AspectFailure>,
+    ) -> Box<Self> {
         Box::new(Self {
             error,
+            diagnostic,
             failed_aspects,
         })
     }
@@ -99,18 +108,21 @@ pub async fn deep_research(
         Err(error) => {
             return Err(DeepResearchFailure::with_aspects(
                 error,
+                FailureDiagnostic::new(FailureStage::ResearchBudget, None, None),
                 order_failures_by_request(&plan, run.failures),
             ));
         }
     };
     if let Err(error) = plan.limits.ensure_usage_within(&run.budget_usage) {
+        let diagnostic = FailureDiagnostic::new(FailureStage::ResearchBudget, None, None);
         let failures_before = run.failures.len();
         let mut accounted = run.completed.iter().cloned().collect::<BTreeSet<_>>();
         accounted.extend(run.failures.iter().map(|failure| failure.aspect_id.clone()));
         for aspect in &plan.task.aspects {
             let aspect_id = &aspect.id;
             if accounted.insert(aspect_id.clone()) {
-                run.failures.push(aspect_failure(aspect_id, &error));
+                run.failures
+                    .push(aspect_failure(aspect_id, &error, diagnostic.clone()));
             }
         }
         let terminal_failures_added = run.failures.len() - failures_before;
@@ -138,6 +150,7 @@ pub async fn deep_research(
         if !return_partial {
             return Err(DeepResearchFailure::with_aspects(
                 error,
+                diagnostic,
                 order_failures_by_request(&plan, run.failures),
             ));
         }
@@ -261,6 +274,7 @@ fn finalize_deep_result(
             Error::PartialResult {
                 message: "all aspects failed".to_owned(),
             },
+            FailureDiagnostic::new(FailureStage::ResultAggregation, None, None),
             order_failures_by_request(request, run.failures),
         ));
     }
@@ -270,6 +284,7 @@ fn finalize_deep_result(
             Error::PartialResult {
                 message: "deep research produced partial results".to_owned(),
             },
+            FailureDiagnostic::new(FailureStage::ResultAggregation, None, None),
             order_failures_by_request(request, run.failures),
         ));
     }

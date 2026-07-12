@@ -7,7 +7,11 @@ use moe_research_error::{Error, JsonSnafu, Result};
 use moe_research_net::NetworkClient;
 use moe_research_net::provider_http::{bearer_sse_post, provider_status_retryable};
 
-use crate::{SearchProvider, SearchRequest, SearchResponse};
+use crate::{
+    IntentDimension, IntentDimensionResolution, IntentEnforcement, ResolvedSearchIntent,
+    SearchIntent, SearchIntentConstraints, SearchProvider, SearchRequest, SearchResponse,
+    Timeliness,
+};
 
 mod excerpt;
 mod map;
@@ -117,6 +121,71 @@ impl GrokSearchProvider {
 impl SearchProvider for GrokSearchProvider {
     fn name(&self) -> &'static str {
         "grok"
+    }
+
+    fn resolve_intent(
+        &self,
+        base: SearchRequest,
+        intent: &SearchIntent,
+        constraints: &SearchIntentConstraints,
+    ) -> Result<ResolvedSearchIntent> {
+        let request = constraints.prepare(base, intent)?.request;
+
+        let (source_enforcement, source_reason) =
+            if constraints.policy_constrains_source_focus(intent) {
+                (IntentEnforcement::BestEffort, "policy_source_focus_applied")
+            } else if request.category.is_none() {
+                (IntentEnforcement::Enforced, "grok_prompt_hint")
+            } else {
+                (IntentEnforcement::BestEffort, "grok_prompt_hint")
+            };
+        let (timeliness_enforcement, timeliness_reason) = if constraints
+            .policy_constrains_timeliness(intent)
+        {
+            (IntentEnforcement::BestEffort, "policy_timeliness_applied")
+        } else {
+            match intent.timeliness {
+                Timeliness::Any if request.recency.is_none() => {
+                    (IntentEnforcement::Enforced, "grok_prompt_hint")
+                }
+                Timeliness::Any => (IntentEnforcement::BestEffort, "grok_prompt_hint"),
+                Timeliness::Stable | Timeliness::Recent | Timeliness::Fresh | Timeliness::Live => {
+                    (IntentEnforcement::BestEffort, "grok_prompt_hint")
+                }
+            }
+        };
+
+        let resolution = vec![
+            IntentDimensionResolution::new(
+                IntentDimension::SourceFocus,
+                intent.source_focus.as_str(),
+                source_enforcement,
+                source_reason,
+            ),
+            IntentDimensionResolution::new(
+                IntentDimension::Timeliness,
+                intent.timeliness.as_str(),
+                timeliness_enforcement,
+                timeliness_reason,
+            ),
+            IntentDimensionResolution::new(
+                IntentDimension::Coverage,
+                intent.coverage.as_str(),
+                IntentEnforcement::BestEffort,
+                "grok_prompt_hint",
+            ),
+            IntentDimensionResolution::new(
+                IntentDimension::Detail,
+                intent.detail.as_str(),
+                IntentEnforcement::BestEffort,
+                "grok_prompt_hint",
+            ),
+        ];
+
+        Ok(ResolvedSearchIntent {
+            request,
+            resolution,
+        })
     }
 
     async fn search(&self, request: SearchRequest) -> Result<SearchResponse> {

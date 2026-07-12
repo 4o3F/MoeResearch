@@ -6,8 +6,9 @@ use moe_research_workflow::aspect_research;
 use moe_research_workflow::{
     AgentLimits, AspectReport, AspectResearchRequest, AspectResearchResult, Confidence,
     EvidencePolicy, ExecutionPolicy, Finding, FindingType, Importance, Limit, ModelPolicy,
-    OutputPolicy, ResearchContext, ResearchPolicy, SearchPolicy, SourceType,
+    OutputPolicy, ResearchContext, ResearchPolicy, SearchPolicy,
 };
+use serde_json::json;
 
 struct StaticModelProvider {
     content: String,
@@ -133,6 +134,7 @@ fn finding(id: &str) -> Finding {
 fn result(report: AspectReport) -> AspectResearchResult {
     AspectResearchResult {
         aspect_report: report,
+        selected_evidence: Vec::new(),
         evidence: Vec::new(),
     }
 }
@@ -144,7 +146,11 @@ async fn run_result(
     moe_research_workflow::AspectResearchOutput,
     Box<moe_research_workflow::AspectResearchFailure>,
 > {
-    let content = serde_json::to_string(&result).expect("serialize result");
+    let content = serde_json::to_string(&json!({
+        "aspect_report": result.aspect_report,
+        "selected_evidence": result.selected_evidence,
+    }))
+    .expect("serialize model output");
     let model_service = model_service(content);
     let search_service = SearchService::new();
 
@@ -192,6 +198,33 @@ async fn public_workflow_rejects_malformed_json() {
 }
 
 #[tokio::test]
+async fn public_workflow_rejects_empty_model_evidence_array() {
+    let content = serde_json::to_string(&json!({
+        "aspect_report": report(),
+        "selected_evidence": [],
+        "evidence": [],
+    }))
+    .expect("serialize invalid model output");
+    let model_service = model_service(content);
+    let search_service = SearchService::new();
+
+    let err = aspect_research(
+        aspect_request(output_policy()),
+        &model_service,
+        &search_service,
+        &moe_research_workflow::BudgetConfig {
+            research: moe_research_workflow::ResearchLimits::unlimited(),
+            per_agent: AgentLimits::unlimited(),
+        },
+    )
+    .await
+    .expect_err("model must not return even an empty evidence array");
+
+    assert!(matches!(err.error, Error::SchemaValidationFailed { .. }));
+    assert!(err.error.to_string().contains("unexpected_model_evidence"));
+}
+
+#[tokio::test]
 async fn public_workflow_rejects_wrong_aspect_id() {
     let mut report = report();
     report.aspect_id = "other".to_owned();
@@ -233,22 +266,14 @@ async fn public_workflow_rejects_selected_evidence_not_seen_in_search_output() {
     request.policy.evidence.require_evidence_for_findings = true;
     let result = AspectResearchResult {
         aspect_report: report,
-        evidence: vec![moe_research_workflow::Evidence {
-            id: "evidence-1".to_owned(),
-            source_title: "Source".to_owned(),
-            url: None,
-            provider: "manual".to_owned(),
-            query: "query".to_owned(),
-            snippet: "snippet".to_owned(),
-            summary: String::new(),
-            published_at: None,
-            retrieved_at: "2026-05-22T00:00:00Z".to_owned(),
-            supports_findings: vec!["finding-1".to_owned()],
-            source_type: SourceType::Official,
-            confidence: Confidence::High,
-        }],
+        selected_evidence: vec!["evidence-1".to_owned()],
+        evidence: Vec::new(),
     };
-    let content = serde_json::to_string(&result).expect("serialize result");
+    let content = serde_json::to_string(&json!({
+        "aspect_report": result.aspect_report,
+        "selected_evidence": result.selected_evidence,
+    }))
+    .expect("serialize model output");
     let model_service = model_service(content);
     let search_service = SearchService::new();
 

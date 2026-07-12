@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use moe_research_error::ErrorCode;
-use moe_research_workflow::AspectFailure;
+use moe_research_workflow::{AspectFailure, FailureDiagnostic};
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct ToolEnvelope<T> {
@@ -30,14 +30,17 @@ pub enum ToolStatus {
 /// `message` is intentionally public-safe. Most variants use a stable,
 /// redacted summary; `SchemaValidationFailed` may include curated validator
 /// diagnostics such as issue code, JSON path, and human-readable message.
-/// Raw provider bodies, host file paths, header values, and secrets stay in
-/// `tracing`.
+/// `diagnostic` supplies host-owned execution stage and safe operation
+/// ordinals. Raw provider bodies, host file paths, header values, and secrets
+/// stay in `tracing`.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct ToolError {
     pub code: ToolErrorCode,
     /// User-facing message. Never contains secrets, host paths, or raw provider
     /// responses; schema validation failures may include JSON paths.
     pub message: String,
+    /// Host-owned stage and safe execution ordinals for this failure.
+    pub diagnostic: FailureDiagnostic,
     pub aspect_id: Option<String>,
     pub retryable: bool,
     pub failed_aspects: Vec<AspectFailure>,

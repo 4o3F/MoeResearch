@@ -103,7 +103,7 @@ Policies:
 
 - `policy.evidence.require_evidence_for_findings = true` always. `min_evidence_per_finding`: standard = 1, deep / deep_evidence_pack = 2, quick = 1.
 - `policy.model.allowed_providers` / `policy.search.allowed_providers`: user allowlists, not fallback order. Each aspect selects exactly one `model_provider` and one `search_provider`.
-- Set `policy.search.recency = "fresh"` and `policy.search.max_results_per_query = 5`. Do not set broad-recall, detailed-content, or global category hints for mixed aspects.
+- Set `policy.search.recency = "fresh"` and `policy.search.max_results_per_query = 5` as host constraints. The appended common contract supplies semantic `intent` for every model search call; do not expose raw policy knobs to the model. Do not set global broad-recall, detailed-content, or category constraints for mixed aspects.
 - `policy.output.language` = the request language.
 
 ## Output schema
@@ -152,7 +152,7 @@ MoeResearch `schema_version` is `0.2`. Timeouts belong only in `limits.total_tim
 3. Each aspect's `instructions` is one persona file's inline content followed by `prompts/layer1/common/model-search-tool-contract.md`; never a path.
 4. Provider names are logical config names, not vendor DTOs; do not emit provider-native request fields.
 5. Domain filters only via `policy.search.include_domains` / `exclude_domains`.
-6. `Evidence.source_type` uses MoeResearch's 7-value set (`official | documentation | news | blog | forum | repository | unknown`).
+6. Evidence source type and evidence-level confidence are host-owned after candidate selection; report post-processing may consume returned values but model prompts must not emit them.
 
 ## MCP request wrapper
 

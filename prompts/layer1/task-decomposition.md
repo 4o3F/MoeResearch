@@ -119,7 +119,8 @@ Return only JSON matching this `DeepResearchRequest` shape; do not wrap it in Ma
 9. Every aspect that allows `search` must set exactly one `search_provider` from `available_search_providers` and `policy.search.allowed_providers`.
 10. Domain filters must be represented only in `policy.search.include_domains` and `policy.search.exclude_domains`.
 11. Do not include provider-native request fields from Exa, Grok, Tavily, OpenAI, Anthropic, HTTP, or SDK DTOs.
-12. Timeouts belong only in `limits.total_timeout_ms` and `task.aspects[].limits.timeout_ms`; `policy.execution` has no timeout field.
+12. The appended Model Retrieval Intent Contract defines the model-only `search` arguments. `intent` belongs in those model tool calls, never in this public MCP request or `policy.search`.
+13. Timeouts belong only in `limits.total_timeout_ms` and `task.aspects[].limits.timeout_ms`; `policy.execution` has no timeout field.
 
 ## Limits guidance
 

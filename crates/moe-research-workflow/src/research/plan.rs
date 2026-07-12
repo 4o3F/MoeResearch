@@ -295,6 +295,7 @@ fn ensure_runtime_tools_allowed(tools: &[ToolName], supported_tool_name: &str) -
     if let Some(tool) = tools.iter().find(|tool| tool.0 != supported_tool_name) {
         return Err(Error::ToolPolicyDenied {
             message: format!("unsupported tool for aspect runtime: {}", tool.0),
+            public: false,
         });
     }
     Ok(())

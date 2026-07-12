@@ -252,7 +252,7 @@ Body (段 1-6 + 段 8 summary) and Annex A are separated **during synthesis** �
 2. **Annex A** = 8 subsections in fixed order A.1→A.8 (never reorder). Placed as the **last top-level section** after 段 8.
 3. **Inline honesty markers stay in body** — confidence labels, `[E##]` citation ids, TM-4 tags, `(estimated)` flags, abstain placeholders remain inline. They also appear structured in Annex A. Never "move to Annex and delete from body".
 4. **Honesty-marker verification**: confidence labels, evidence gaps, abstain logs, and tool provenance must not regress. Record in A.6.
-5. `evidence_index` byte-equal with source `DeepResearchResult` — never reorder, rename, or drop.
+5. Preserve host-returned `evidence_index` IDs and provenance. Do not rewrite, rename, or drop source data; add report annotations in sidecar tables only.
 6. **段号保留**: 段 7 移 A.1 后保留占位 ("见 Annex A.1")，维持 8-段骨架可识别。
 
 **Product-requirements-specific body-must-keep**: PR-FAQ "FAQ" segment (user-question verbatim) / No-gos segment (段 5 非目标) / three-metric definitions (leading / lagging / health in 段 6) / TM-11 counterargument per open question.

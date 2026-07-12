@@ -29,7 +29,7 @@ Same two persona prompts as competitive / product-capability / innovation-direct
 | `evidence-table` | 7 **optional** | 跨人格 TM-4 (strategist 主笔) | 一手 / 二手来源表 + 每条声明置信度 + 4-tier 全套 | **默认不 spin**：4-tier 表由 final-report Phase B 跨段聚合产出。仅 standalone evidence pack 时 spin，此时 4-tier 全套 (≥1 each tier 或 显式声明 absence reason) + 每声明 confidence label + TM-4 全员 + **"聚合 prior aspects，不重复 search"**（MoeResearch `evidence_refs` 不许 cite prior_sources by id，meta-aggregation 自搜容易制造 provenance mismatch）|
 | `open-questions-experiments` | 8 | strategist (**TM-11 hard gate**) | 未决问题清单 + 每个 "为何还未决" + **"靠什么会决"** (discovery sprint / prototype / A-B test 等可执行实验设计) + 下一步 owner / 时间窗 | **每未决问题 TM-11 hard gate**：必须含 "靠什么会决" (实验设计)；缺 → 强制 backfill；不可写 "需要更多研究" 此类空话 |
 
-> **段3 Cagan 4-risks = 4 micro-aspect**：段3 以 4 个 single-class micro-aspect 落地（`cagan-risk-value` / `-usability` / `-feasibility` / `-business`），每个只评 1 类风险、`max_search_calls=3`、bounded 预算强制收敛。**Why**：单个 4-class `cagan-4risks` aspect 在 strategist persona 下持续搜证不收敛、4-risk 评估深度受损；4 个 bounded single-class 任务各自收敛，恢复 dedicated 段3 输出深度。Keep the ceiling at 3 because broader retrieval increases provenance-copy risk for these narrow micro-aspects; unresolved coverage must become a gap, assumption, or follow-up test. 段3 hard gate "4 类全覆盖" = "4 个 micro-aspect 全 present 且各自该类完备"；final-report Phase B 段3 从 4 micro-aspect 装配。段3 仍是 **Strategist 拥有的一个段**（段所有权不变）。
+> **段3 Cagan 4-risks = 4 micro-aspect**：段3 以 4 个 single-class micro-aspect 落地（`cagan-risk-value` / `-usability` / `-feasibility` / `-business`），每个只评 1 类风险、`max_search_calls=3`、bounded 预算强制收敛。**Why**：单个 4-class `cagan-4risks` aspect 在 strategist persona 下持续搜证不收敛、4-risk 评估深度受损；4 个 bounded single-class 任务各自收敛，恢复 dedicated 段3 输出深度。Keep the request cap at 3 because broader retrieval weakens focus for these narrow micro-aspects; unresolved coverage must become a gap, assumption, or follow-up test. 段3 hard gate "4 类全覆盖" = "4 个 micro-aspect 全 present 且各自该类完备"；final-report Phase B 段3 从 4 micro-aspect 装配。段3 仍是 **Strategist 拥有的一个段**（段所有权不变）。
 
 ### EA + Strategist balanced persona ownership note
 
@@ -93,7 +93,7 @@ This overlay does not add a new persona or aspect. It tightens success criteria 
 
 ## Limits per aspect (hand off to `task-decomposition-product-requirements.md` Step 4)
 
-每 aspect 自带 `limits { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 5 (standard) / 6 (deep, only for full aspects that need enumeration); **段3 cagan micro-aspect (任一 tier) 用更小限额 `max_turns=5` / `max_tool_calls=5` / `max_search_calls=3`**（单 1 类风险，bounded 限额强制收敛，并降低 provenance mutation 风险）; `metrics-tree` / `open-questions-experiments` 同样使用 search=3 ceiling；per-aspect `timeout_ms` = **600000 恒**. Top-level `limits`: deep `max_agents=11` / `max_total_model_calls=80` / `max_total_search_calls=60` / `total_timeout_ms=2400000`; standard `max_agents=7` / `max_total_model_calls=42` / `max_total_search_calls=32` / `total_timeout_ms=1800000`. If an aspect reaches limits, retry sequentially once with `context.prior_sources`; do not raise the search cap.
+每 aspect 自带 `limits { max_turns, max_tool_calls, max_search_calls, timeout_ms }`. Per-tier 关键值: per-aspect `max_search_calls` = 3 (quick) / 5 (standard) / 6 (deep, only for full aspects that need enumeration); **段3 cagan micro-aspect (任一 tier) 用更小限额 `max_turns=5` / `max_tool_calls=5` / `max_search_calls=3`**（单 1 类风险，bounded 限额强制收敛）; `metrics-tree` / `open-questions-experiments` 同样使用 search=3 ceiling；per-aspect `timeout_ms` = **600000 恒**. Top-level `limits`: deep `max_agents=11` / `max_total_model_calls=80` / `max_total_search_calls=60` / `total_timeout_ms=2400000`; standard `max_agents=7` / `max_total_model_calls=42` / `max_total_search_calls=32` / `total_timeout_ms=1800000`. If an aspect reaches limits, retry sequentially once with `context.prior_sources`; do not raise the search cap.
 
 ## Provider selection per aspect
 
@@ -109,7 +109,7 @@ This overlay does not add a new persona or aspect. It tightens success criteria 
 2. Aspects MECE across the 8 段 — 不重叠. **例外**：段3 = 4 个 cagan single-class micro-aspect（value/usability/feasibility/business），共属段3、在段3 内部按风险类别 MECE 分区；跨段仍不重叠。
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `subject` + audience 写在 `context.summary` (aspect agents 读 it).
-5. Downstream `Evidence.source_type` 用 MoeResearch 7-value 集; 4-tier credibility 是 Skill 后处理, never an engine enum.
+5. Evidence source type 与 evidence-level confidence 在 candidate selection 后由 host 拥有；4-tier credibility 是 Skill 后处理，绝非模型输出字段。
 6. **EA + Strategist balanced invariant（按段所有权，非 aspect 计数）**: **段所有权** EA 3 段 (段2/4/5) / Strategist 5 段 (段1/3/6/7/8) — 此平衡是 profile 关键契约，**不变**。注意段3 以 4 micro-aspect 落地，故 deep **aspect 计数** = EA 3 / Strategist 8 (段1 + 段3×4 + 段6/7/8)，但这只是段3 单段的执行展开，不改段所有权平衡。若某课题 EA-load 不平衡 (如 subject 已有完整 JTBD 不需 EA 段2 deep)，先合段 (如段2+段4 合并)，不要切给 strategist (会破坏用户视角)。
 7. **段3 / 段4 / 段5 / 段6 / 段8 是 hard floor aspects** — 缺对应 hard gate (4-risks 全 / ≥3 候选 / 非目标 / 三套指标 / TM-11) → 整段 0 分, 拒绝软化. 4 profile 中 hard-gate density 最高 (5 hard gates), by design.
 8. 段1 PR-FAQ 不可包含实现细节 (技术架构 / 模块名 / DB schema 等) — strategist 在 success_criteria 中显式禁止.

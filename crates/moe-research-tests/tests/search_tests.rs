@@ -7,11 +7,12 @@ use moe_research_search::Freshness;
 use moe_research_search::SearchProvider;
 use moe_research_search::SearchService;
 use moe_research_search::{
-    ExaSearchProvider, GrokReasoningEffort, GrokSearchProvider, TavilySearchProvider,
+    Coverage, Detail, IntentEnforcement, ResolvedSearchIntent, SearchCategory, SearchContentLevel,
+    SearchDepth, SearchIntent, SearchIntentConstraints, SearchRecency, SearchRequest,
+    SearchResponse, SearchResult, SourceFocus, Timeliness,
 };
 use moe_research_search::{
-    SearchCategory, SearchContentLevel, SearchDepth, SearchRecency, SearchRequest, SearchResponse,
-    SearchResult,
+    ExaSearchProvider, GrokReasoningEffort, GrokSearchProvider, TavilySearchProvider,
 };
 use moe_research_workflow::SearchPolicy;
 use serde_json::json;
@@ -61,6 +62,32 @@ impl SearchProvider for CountingProvider {
     }
 }
 
+struct RedirectingProvider;
+
+#[async_trait]
+impl SearchProvider for RedirectingProvider {
+    fn name(&self) -> &'static str {
+        "exa"
+    }
+
+    fn resolve_intent(
+        &self,
+        mut base: SearchRequest,
+        _intent: &SearchIntent,
+        _constraints: &SearchIntentConstraints,
+    ) -> Result<ResolvedSearchIntent> {
+        base.provider = "tavily".to_owned();
+        Ok(ResolvedSearchIntent {
+            request: base,
+            resolution: Vec::new(),
+        })
+    }
+
+    async fn search(&self, _request: SearchRequest) -> Result<SearchResponse> {
+        unreachable!("redirecting resolver must be rejected before search dispatch")
+    }
+}
+
 struct FailingProvider(&'static str);
 
 #[async_trait]
@@ -94,6 +121,20 @@ fn search_policy(allowed_providers: &[&str]) -> SearchPolicy {
         region: None,
         include_domains: Vec::new(),
         exclude_domains: Vec::new(),
+    }
+}
+
+fn search_intent(
+    source_focus: SourceFocus,
+    timeliness: Timeliness,
+    coverage: Coverage,
+    detail: Detail,
+) -> SearchIntent {
+    SearchIntent {
+        source_focus,
+        timeliness,
+        coverage,
+        detail,
     }
 }
 
@@ -175,6 +216,56 @@ async fn does_not_fallback_when_selected_provider_fails() {
 
     assert!(matches!(&error, Error::ProviderUnavailable { provider, .. } if provider == "exa"));
     assert!(!error.retryable());
+}
+
+#[test]
+fn resolve_intent_rejects_provider_redirects() {
+    let tavily_calls = Arc::new(AtomicUsize::new(0));
+    let mut service = SearchService::new();
+    service.register(RedirectingProvider);
+    service.register(CountingProvider {
+        name: "tavily",
+        calls: tavily_calls.clone(),
+    });
+
+    let error = service
+        .resolve_intent(
+            "exa",
+            SearchRequest::new("exa", "moeresearch", 1),
+            &search_intent(
+                SourceFocus::General,
+                Timeliness::Any,
+                Coverage::Balanced,
+                Detail::Standard,
+            ),
+            &search_policy(&["exa", "tavily"]).intent_constraints(),
+        )
+        .expect_err("resolver must not redirect a selected provider");
+
+    assert!(matches!(error, Error::InvalidInput { .. }));
+    assert_eq!(tavily_calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn resolve_intent_rejects_mismatched_base_provider() {
+    let mut service = SearchService::new();
+    service.register(StaticProvider("exa"));
+
+    let error = service
+        .resolve_intent(
+            "exa",
+            SearchRequest::new("tavily", "moeresearch", 1),
+            &search_intent(
+                SourceFocus::General,
+                Timeliness::Any,
+                Coverage::Balanced,
+                Detail::Standard,
+            ),
+            &search_policy(&["exa"]).intent_constraints(),
+        )
+        .expect_err("base provider must match the selected provider");
+
+    assert!(matches!(error, Error::InvalidInput { .. }));
 }
 
 #[tokio::test]
@@ -358,6 +449,358 @@ async fn search_policy_rejects_category_conflict() {
 
     assert!(matches!(
         policy.apply_to(request),
+        Err(Error::InvalidInput { .. })
+    ));
+}
+
+#[test]
+fn intent_constraints_reject_conflicts_before_provider_dispatch() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut service = SearchService::new();
+    service.register(CountingProvider {
+        name: "exa",
+        calls: calls.clone(),
+    });
+
+    let mut category_policy = search_policy(&["exa"]);
+    category_policy.category = Some(SearchCategory::Academic);
+    assert!(matches!(
+        service.resolve_intent(
+            "exa",
+            SearchRequest::new("exa", "moeresearch", 1),
+            &search_intent(
+                SourceFocus::News,
+                Timeliness::Any,
+                Coverage::Balanced,
+                Detail::Standard,
+            ),
+            &category_policy.intent_constraints(),
+        ),
+        Err(Error::ToolPolicyDenied { .. })
+    ));
+
+    let mut coverage_policy = search_policy(&["exa"]);
+    coverage_policy.depth = Some(SearchDepth::Balanced);
+    assert!(matches!(
+        service.resolve_intent(
+            "exa",
+            SearchRequest::new("exa", "moeresearch", 1),
+            &search_intent(
+                SourceFocus::General,
+                Timeliness::Any,
+                Coverage::Broad,
+                Detail::Standard,
+            ),
+            &coverage_policy.intent_constraints(),
+        ),
+        Err(Error::ToolPolicyDenied { .. })
+    ));
+
+    let mut detail_policy = search_policy(&["exa"]);
+    detail_policy.content_level = Some(SearchContentLevel::Standard);
+    assert!(matches!(
+        service.resolve_intent(
+            "exa",
+            SearchRequest::new("exa", "moeresearch", 1),
+            &search_intent(
+                SourceFocus::General,
+                Timeliness::Any,
+                Coverage::Balanced,
+                Detail::Detailed,
+            ),
+            &detail_policy.intent_constraints(),
+        ),
+        Err(Error::ToolPolicyDenied { .. })
+    ));
+
+    let mut timeliness_policy = search_policy(&["exa"]);
+    timeliness_policy.recency = Some(SearchRecency::Recent);
+    assert!(matches!(
+        service.resolve_intent(
+            "exa",
+            SearchRequest::new("exa", "moeresearch", 1),
+            &search_intent(
+                SourceFocus::General,
+                Timeliness::Live,
+                Coverage::Balanced,
+                Detail::Standard,
+            ),
+            &timeliness_policy.intent_constraints(),
+        ),
+        Err(Error::ToolPolicyDenied { .. })
+    ));
+
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn provider_resolvers_report_actual_intent_enforcement() {
+    let exa = ExaSearchProvider::new(
+        Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+            status: 200,
+            headers: vec![],
+            body: json!({ "results": [] }),
+        }])),
+        "https://api.exa.ai".to_owned(),
+        "key".to_owned(),
+        None,
+    );
+    let exa_resolved = exa
+        .resolve_intent(
+            SearchRequest::new("exa", "moeresearch", 1),
+            &search_intent(
+                SourceFocus::Academic,
+                Timeliness::Fresh,
+                Coverage::Broad,
+                Detail::Detailed,
+            ),
+            &search_policy(&["exa"]).intent_constraints(),
+        )
+        .expect("resolve Exa intent");
+    assert_eq!(
+        exa_resolved.request.category,
+        Some(SearchCategory::Academic)
+    );
+    assert_eq!(exa_resolved.request.recency, Some(SearchRecency::Fresh));
+    assert_eq!(exa_resolved.request.depth, Some(SearchDepth::HighRecall));
+    assert_eq!(
+        exa_resolved.request.content_level,
+        Some(SearchContentLevel::Detailed)
+    );
+    assert_eq!(
+        exa_resolved.resolution[0].enforcement,
+        IntentEnforcement::Enforced
+    );
+    assert_eq!(
+        exa_resolved.resolution[1].enforcement,
+        IntentEnforcement::Enforced
+    );
+    assert_eq!(
+        exa_resolved.resolution[2].enforcement,
+        IntentEnforcement::BestEffort
+    );
+    assert_eq!(
+        exa_resolved.resolution[3].enforcement,
+        IntentEnforcement::Enforced
+    );
+
+    let tavily = tavily_provider(Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }])));
+    let tavily_resolved = tavily
+        .resolve_intent(
+            SearchRequest::new("tavily", "moeresearch", 1),
+            &search_intent(
+                SourceFocus::Academic,
+                Timeliness::Stable,
+                Coverage::Broad,
+                Detail::Compact,
+            ),
+            &search_policy(&["tavily"]).intent_constraints(),
+        )
+        .expect("resolve Tavily intent");
+    assert_eq!(
+        tavily_resolved.resolution[0].enforcement,
+        IntentEnforcement::Unsupported
+    );
+    assert_eq!(
+        tavily_resolved.resolution[1].enforcement,
+        IntentEnforcement::Unsupported
+    );
+    assert_eq!(
+        tavily_resolved.resolution[2].enforcement,
+        IntentEnforcement::Enforced
+    );
+    assert_eq!(
+        tavily_resolved.resolution[3].enforcement,
+        IntentEnforcement::BestEffort
+    );
+
+    let grok = grok_provider(mock_completed_sse(json!({ "output": [] })));
+    let grok_resolved = grok
+        .resolve_intent(
+            SearchRequest::new("grok", "moeresearch", 1),
+            &search_intent(
+                SourceFocus::News,
+                Timeliness::Live,
+                Coverage::Focused,
+                Detail::Detailed,
+            ),
+            &search_policy(&["grok"]).intent_constraints(),
+        )
+        .expect("resolve Grok intent");
+    assert!(
+        grok_resolved
+            .resolution
+            .iter()
+            .all(|dimension| dimension.enforcement == IntentEnforcement::BestEffort)
+    );
+}
+
+#[test]
+fn policy_constrained_neutral_intent_is_not_reported_as_enforced() {
+    let intent = search_intent(
+        SourceFocus::General,
+        Timeliness::Any,
+        Coverage::Balanced,
+        Detail::Standard,
+    );
+
+    let exa = ExaSearchProvider::new(
+        Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+            status: 200,
+            headers: vec![],
+            body: json!({ "results": [] }),
+        }])),
+        "https://api.exa.ai".to_owned(),
+        "key".to_owned(),
+        None,
+    );
+    let mut exa_policy = search_policy(&["exa"]);
+    exa_policy.category = Some(SearchCategory::Academic);
+    exa_policy.recency = Some(SearchRecency::Recent);
+    let exa_resolved = exa
+        .resolve_intent(
+            SearchRequest::new("exa", "moeresearch", 1),
+            &intent,
+            &exa_policy.intent_constraints(),
+        )
+        .expect("resolve policy-constrained Exa intent");
+    assert_eq!(
+        exa_resolved.request.category,
+        Some(SearchCategory::Academic)
+    );
+    assert_eq!(exa_resolved.request.recency, Some(SearchRecency::Recent));
+    assert_eq!(
+        exa_resolved.resolution[0].enforcement,
+        IntentEnforcement::BestEffort
+    );
+    assert_eq!(
+        exa_resolved.resolution[0].reason_key,
+        "policy_source_focus_applied"
+    );
+    assert_eq!(
+        exa_resolved.resolution[1].enforcement,
+        IntentEnforcement::BestEffort
+    );
+    assert_eq!(
+        exa_resolved.resolution[1].reason_key,
+        "policy_timeliness_applied"
+    );
+
+    let tavily = tavily_provider(Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+        status: 200,
+        headers: vec![],
+        body: json!({ "results": [] }),
+    }])));
+    let mut tavily_policy = search_policy(&["tavily"]);
+    tavily_policy.category = Some(SearchCategory::News);
+    tavily_policy.recency = Some(SearchRecency::Recent);
+    let tavily_resolved = tavily
+        .resolve_intent(
+            SearchRequest::new("tavily", "moeresearch", 1),
+            &intent,
+            &tavily_policy.intent_constraints(),
+        )
+        .expect("resolve policy-constrained Tavily intent");
+    assert_eq!(
+        tavily_resolved.resolution[0].enforcement,
+        IntentEnforcement::BestEffort
+    );
+    assert_eq!(
+        tavily_resolved.resolution[0].reason_key,
+        "policy_source_focus_applied"
+    );
+    assert_eq!(
+        tavily_resolved.resolution[1].enforcement,
+        IntentEnforcement::BestEffort
+    );
+    assert_eq!(
+        tavily_resolved.resolution[1].reason_key,
+        "policy_timeliness_applied"
+    );
+
+    let grok = grok_provider(mock_completed_sse(json!({ "output": [] })));
+    let mut grok_policy = search_policy(&["grok"]);
+    grok_policy.category = Some(SearchCategory::News);
+    grok_policy.recency = Some(SearchRecency::Recent);
+    let grok_resolved = grok
+        .resolve_intent(
+            SearchRequest::new("grok", "moeresearch", 1),
+            &intent,
+            &grok_policy.intent_constraints(),
+        )
+        .expect("resolve policy-constrained Grok intent");
+    assert_eq!(
+        grok_resolved.resolution[0].enforcement,
+        IntentEnforcement::BestEffort
+    );
+    assert_eq!(
+        grok_resolved.resolution[0].reason_key,
+        "policy_source_focus_applied"
+    );
+    assert_eq!(
+        grok_resolved.resolution[1].enforcement,
+        IntentEnforcement::BestEffort
+    );
+    assert_eq!(
+        grok_resolved.resolution[1].reason_key,
+        "policy_timeliness_applied"
+    );
+
+    let mut freshness_policy = search_policy(&["exa"]);
+    freshness_policy.freshness = Some(Freshness {
+        since: Some("2026-01-01".to_owned()),
+        until: None,
+    });
+    let freshness_resolved = exa
+        .resolve_intent(
+            SearchRequest::new("exa", "moeresearch", 1),
+            &intent,
+            &freshness_policy.intent_constraints(),
+        )
+        .expect("resolve freshness-constrained Exa intent");
+    assert_eq!(
+        freshness_resolved.resolution[1].enforcement,
+        IntentEnforcement::BestEffort
+    );
+    assert_eq!(
+        freshness_resolved.resolution[1].reason_key,
+        "policy_timeliness_applied"
+    );
+}
+
+#[test]
+fn exa_resolver_rejects_incompatible_policy_combinations_before_dispatch() {
+    let exa = ExaSearchProvider::new(
+        Arc::new(MockNetworkClient::new([JsonNetworkResponse {
+            status: 200,
+            headers: vec![],
+            body: json!({ "results": [] }),
+        }])),
+        "https://api.exa.ai".to_owned(),
+        "key".to_owned(),
+        None,
+    );
+    let mut policy = search_policy(&["exa"]);
+    policy.freshness = Some(Freshness {
+        since: Some("2026-01-01".to_owned()),
+        until: None,
+    });
+
+    assert!(matches!(
+        exa.resolve_intent(
+            SearchRequest::new("exa", "moeresearch", 1),
+            &search_intent(
+                SourceFocus::Organizations,
+                Timeliness::Any,
+                Coverage::Balanced,
+                Detail::Standard,
+            ),
+            &policy.intent_constraints(),
+        ),
         Err(Error::InvalidInput { .. })
     ));
 }

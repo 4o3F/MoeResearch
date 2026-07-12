@@ -61,12 +61,14 @@ v0.2 request 形态：
 2. normalizer 将 request limits 与 operator config limits 取更严格值，生成 `EffectiveResearchPlan` / `EffectiveAspectPlan`。
 3. `AgentRuntime` 只消费 effective aspect plan；`instructions` 作为 system prompt，`AspectPromptInput` 作为 user prompt。
 4. `AspectPromptInput` 只包含 aspect intent、context、可用工具和 evidence/output 要求，不包含 limits、provider allowlist、selected provider 或 execution policy。
-5. 模型如返回 tool call，`ToolPolicyGuard` 校验 tool 名称、允许列表和 args。
-6. `AgentBudgetGuard` 与 `ResearchBudgetGuard` 在 provider dispatch 前消费运行时预算。
-7. 搜索结果被转成 candidate evidence。
-8. 模型最终必须输出 `AspectResearchResult` JSON。
-9. `OutputValidator` 检查报告字段、finding/evidence 引用、证据来源未被篡改。
-10. Deep research 汇总 aspect reports、evidence index、open questions、coverage/confidence/budget usage。
+5. 模型如返回 tool call，`ToolPolicyGuard` 只接受 `query`、optional `max_results` 和 required semantic `intent`。
+6. 已选 `SearchProvider` 将 intent 与 `SearchPolicy::intent_constraints()` 解析成一个实际 `SearchRequest`；hard policy 冲突在 dispatch 前拒绝，绝不 fallback 或聚合。
+7. `AgentBudgetGuard` 与 `ResearchBudgetGuard` 在实际 provider dispatch 前消费运行时预算。
+8. 搜索结果被转成 host-owned candidate evidence，并将 `intent_resolution` 返回给模型。
+9. 模型最终只输出同一 `AspectResearchResult` 的 projection：`aspect_report` + ID-only `selected_evidence`。
+10. `OutputValidator` rehydrate host evidence，检查报告字段、finding/evidence 引用、selected IDs，并推导 `supports_findings`。
+11. 失败会生成 host-owned `FailureDiagnostic`：稳定 `stage`，以及可选的一基 `model_turn` / `search_turn`；aspect identity 继续由外层 `aspect_id` 承载。
+12. Deep research 汇总 aspect reports、evidence index、open questions、coverage/confidence/budget usage。
 
 重要约束：
 
@@ -93,8 +95,8 @@ v0.2 request 形态：
 - 多 aspect 并发、partial result、fail_fast。
 - agent/global budget、timeout、token usage。
 - provider allowlist 与显式 provider。
-- search tool args 与 policy 限制。
-- output validator、evidence provenance、防篡改。
+- semantic search tool args、intent resolution 与 policy 限制。
+- output validator、ID-only evidence selection、host rehydration 与 provenance 防篡改。
 - schema roundtrip 与 public contract。
 
 建议验证：
@@ -111,7 +113,7 @@ cargo test -p moe-research-tests schema
 - 为什么 request limits 和 config limits 都存在？配置是 operator 硬上限，请求只能进一步收紧。
 - 为什么 runtime 仍叫 `AgentBudgetGuard` / `ResearchBudgetGuard`？这是运行时消耗记账语义；LLM-visible request schema 使用 `limits`。
 - 为什么 partial result 有时返回 Ok？当 `allow_partial_results = true` 且已有有价值结果时，deep research 返回 `DeepResearchResult` 并记录 failed aspects。
-- 为什么要 byte-equal evidence provenance？防止模型把搜索工具返回的来源、URL、snippet 等 provenance 字段改写后仍被当作可信证据。
+- 为什么模型只选择 evidence ID？候选 provenance 由 host rehydrate，模型无法改写来源、URL、snippet、source type 或 evidence-level confidence；`supports_findings` 由 finding references 自动推导。
 - 为什么不把 prompt 文件 IO 放在 Rust core？Layer 1 Skill 负责 prompt 选择、替换和版本固定，Rust core 只接收 inline `instructions`。
 
 ## 相关文件清单

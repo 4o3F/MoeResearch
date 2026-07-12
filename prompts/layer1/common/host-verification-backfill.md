@@ -10,7 +10,7 @@ Bounded Skill-layer WebSearch/WebFetch/browser/manual verification after MoeRese
 - Do not insert host-found sources into `evidence_index`.
 - Do not create fake `Evidence.id` values for host sources.
 - Do not claim Rust/MoeResearch fetched or verified host-only sources.
-- Host verification can change claim confidence, action, and report wording; it cannot mutate frozen MoeResearch provenance.
+- Host verification can change claim confidence, action, and report wording; it cannot mutate host-owned MoeResearch provenance.
 
 ## Mandatory triggers
 
