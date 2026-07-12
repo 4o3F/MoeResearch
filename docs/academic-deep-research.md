@@ -25,7 +25,7 @@ The research skills asset installs Academic DeepResearch prompts under `prompts/
 
 ## Model Retrieval Contract
 
-Academic personas use the shared model-only `search` protocol: `query`, optional `max_results`, and a required semantic `intent` with `source_focus`, `timeliness`, `coverage`, and `detail`. Rust applies the fixed academic `policy.search.category` and resolves each intent against the one selected provider. Read returned `intent_resolution` (`enforced`, `best_effort`, or `unsupported`) before judging source coverage. The model final JSON selects candidate evidence IDs only; the host rehydrates provenance and evidence metadata.
+Academic personas use the shared model-only `search` protocol: `query`, optional `max_results`, and a required semantic `intent` with `source_focus`, `timeliness`, `coverage`, and `detail`. Layer 1 appends the common contract plus a Run Binding that permits only `general` and `academic` for `source_focus` when `policy.search.category = "academic"`; this is the same projection used by every profile with a fixed category. Rust resolves each intent against one selected provider and rejects incompatible focuses before dispatch. Read returned `intent_resolution` (`enforced`, `best_effort`, or `unsupported`) before judging source coverage. The model final JSON selects candidate evidence IDs only and copies aspect identity literally; the host rehydrates provenance and evidence metadata.
 
 ## Request Example
 

@@ -4,7 +4,7 @@
 
 ## Two personas (each supplies one persona portion of `instructions`)
 
-Same two persona prompts as competitive (MoeResearch has no persona concept; persona = prompt). Layer 1 appends `prompts/layer1/common/model-search-tool-contract.md` after the selected persona. Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both:
+Same two persona prompts as competitive (MoeResearch has no persona concept; persona = prompt). For every search-enabled aspect, Layer 1 assembles the selected persona, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding. Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both:
 
 | key | file | angle | owns (in this profile) | TM weighting |
 |---|---|---|---|---|
@@ -56,9 +56,15 @@ One MoeResearch aspect = one persona, 所以 profile §5 标段5 "Strategist + E
 
 ## Invariants
 
-1. 每 aspect → exactly one persona prompt followed by `prompts/layer1/common/model-search-tool-contract.md`, inline (non-empty, < 64 KiB).
+1. 每 search-enabled aspect → exactly one persona prompt, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding, inline (non-empty, < 64 KiB).
 2. Aspects MECE across the 6 段 — 不重叠.
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `capability_domain` 写在 `context.summary` (aspect agents 读 it).
 5. Evidence source type 与 evidence-level confidence 在 candidate selection 后由 host 拥有；4-tier credibility 是 Skill 后处理，绝非模型输出字段。
 6. EA-heavy invariant: 6 aspects 中 4 个（段1-4）由 EA 拥有; 2 个（段5-6）由 Strategist 拥有. 若某课题 EA-load 不平衡（如能力域已知不需找 jobs）, 先合段（如段1 折叠进段2）, 不要切给 Strategist.
+
+## Run Binding handoff
+
+For every search-enabled aspect, persona selection is followed by the complete inline assembly order: selected persona Markdown, then `prompts/layer1/common/model-search-tool-contract.md`, then the request-specific Run Binding. The binding is derived from that aspect and `policy.search` according to `moe.run_binding.v1`; it carries only semantic `allowed_*` intent choices, safe defaults, literal aspect ID/name anchors, and evidence-closure hints. It must not expose provider routing, budgets, domains, raw policy tool fields, or credentials.
+
+This three-part order is mandatory for every search-enabled aspect. The fixed-category rule is profile-neutral: fixed `academic` permits `general` or `academic`; an unset category permits the full source-focus vocabulary.

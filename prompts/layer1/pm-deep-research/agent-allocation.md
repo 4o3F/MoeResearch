@@ -4,7 +4,7 @@
 
 ## Two personas (each supplies one persona portion of `instructions`)
 
-MoeResearch has no persona concept; a persona is realised as the selected inline prompt within `task.aspects[].instructions`. Layer 1 appends `prompts/layer1/common/model-search-tool-contract.md` after that prompt. There are exactly two persona prompts, both carrying the cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability):
+MoeResearch has no persona concept; a persona is realised as the selected inline prompt within `task.aspects[].instructions`. For every search-enabled aspect, Layer 1 assembles the selected persona prompt, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding. There are exactly two persona prompts, both carrying the cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability):
 
 | key | file | angle | owns dims | TM |
 |---|---|---|---|---|
@@ -51,8 +51,14 @@ Each aspect carries its own `limits { max_turns, max_tool_calls, max_search_call
 
 ## Invariants
 
-1. Each aspect → exactly one persona prompt followed by `prompts/layer1/common/model-search-tool-contract.md`, passed inline (non-empty, < 64 KiB).
+1. Each search-enabled aspect → exactly one persona prompt, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding, passed inline (non-empty, < 64 KiB).
 2. Aspects are MECE across the spine — no dimension covered twice.
 3. `success_criteria` carries the dimension's evidence standard so the engine enforces our evidence bar.
 4. `decision_intent` lives in `context.summary` (the aspect agents read it there).
 5. Evidence source type and evidence-level confidence are host-owned after candidate selection. The 4-tier credibility labels are Skill post-processing, never model-output fields.
+
+## Run Binding handoff
+
+For every search-enabled aspect, persona selection is followed by the complete inline assembly order: selected persona Markdown, then `prompts/layer1/common/model-search-tool-contract.md`, then the request-specific Run Binding. The binding is derived from that aspect and `policy.search` according to `moe.run_binding.v1`; it carries only semantic `allowed_*` intent choices, safe defaults, literal aspect ID/name anchors, and evidence-closure hints. It must not expose provider routing, budgets, domains, raw policy tool fields, or credentials.
+
+This three-part order is mandatory for every search-enabled aspect. The fixed-category rule is profile-neutral: fixed `academic` permits `general` or `academic`; an unset category permits the full source-focus vocabulary.

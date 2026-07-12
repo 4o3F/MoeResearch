@@ -307,6 +307,14 @@ fn tool_response(name: &str) -> ModelResponse {
     )
 }
 
+fn tool_response_with_id(name: &str, id: &str) -> ModelResponse {
+    let mut response = tool_response(name);
+    let tool_call = response.tool_calls.first_mut().expect("tool call");
+    tool_call.id = id.to_owned();
+    response.output_items = vec![ModelInputItem::tool_call(tool_call.clone())];
+    response
+}
+
 fn tool_response_with_arguments(name: &str, arguments: serde_json::Value) -> ModelResponse {
     let tool_call = ModelToolCall {
         id: "call-1".to_owned(),
@@ -1163,6 +1171,100 @@ async fn rejects_selected_evidence_not_seen_in_tool_output() {
     .expect_err("unknown evidence rejected");
 
     assert!(matches!(error.error, Error::SchemaValidationFailed { .. }));
+}
+
+#[tokio::test]
+async fn accepts_closed_evidence_selection_across_search_turns() {
+    let final_json = serde_json::to_string(&json!({
+        "aspect_report": {
+            "aspect_id": "aspect-1",
+            "aspect_name": "Aspect",
+            "question": "What is true?",
+            "scope": ["scope"],
+            "findings": [{
+                "id": "finding-1",
+                "claim": "A supported claim",
+                "finding_type": "fact",
+                "importance": "high",
+                "confidence": "medium",
+                "evidence_refs": ["ev-1-1", "ev-2-2"],
+                "contradicted_by": []
+            }],
+            "assumptions": [],
+            "risks": [],
+            "counterarguments": [],
+            "open_questions": [],
+            "confidence": "medium",
+            "limitations": []
+        },
+        "selected_evidence": ["ev-1-1", "ev-2-2"]
+    }))
+    .expect("serialize final output");
+    let (model_service, search_service, _model_calls, search_calls) = services(vec![
+        tool_response("search"),
+        tool_response_with_id("search", "call-2"),
+        final_response(final_json),
+    ]);
+
+    let output = aspect_research(
+        aspect_request(),
+        &model_service,
+        &search_service,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect("closed multi-turn evidence must validate");
+
+    assert_eq!(search_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(output.result.selected_evidence, vec!["ev-1-1", "ev-2-2"]);
+    assert_eq!(output.result.evidence.len(), 2);
+}
+
+#[tokio::test]
+async fn rejects_unselected_evidence_reference_across_search_turns() {
+    let final_json = serde_json::to_string(&json!({
+        "aspect_report": {
+            "aspect_id": "aspect-1",
+            "aspect_name": "Aspect",
+            "question": "What is true?",
+            "scope": ["scope"],
+            "findings": [{
+                "id": "finding-1",
+                "claim": "A supported claim",
+                "finding_type": "fact",
+                "importance": "high",
+                "confidence": "medium",
+                "evidence_refs": ["ev-1-1", "ev-2-2"],
+                "contradicted_by": []
+            }],
+            "assumptions": [],
+            "risks": [],
+            "counterarguments": [],
+            "open_questions": [],
+            "confidence": "medium",
+            "limitations": []
+        },
+        "selected_evidence": ["ev-1-1"]
+    }))
+    .expect("serialize final output");
+    let (model_service, search_service, _model_calls, search_calls) = services(vec![
+        tool_response("search"),
+        tool_response_with_id("search", "call-2"),
+        final_response(final_json),
+    ]);
+
+    let error = aspect_research(
+        aspect_request(),
+        &model_service,
+        &search_service,
+        &unlimited_budget_config(),
+    )
+    .await
+    .expect_err("unselected evidence reference must fail");
+
+    assert!(matches!(error.error, Error::SchemaValidationFailed { .. }));
+    assert!(error.error.to_string().contains("unknown_evidence_ref"));
+    assert_eq!(search_calls.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]

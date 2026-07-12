@@ -43,7 +43,7 @@ Return only JSON:
 }
 ```
 
-`intent` is the logical model-tool intent, not a public MCP request or policy field. It must include all four dimensions.
+`intent` is the logical model-tool intent, not a public MCP request or policy field. It must include all four dimensions. When a Run Binding is present in the aspect instructions, every planned value must come from its `allowed_source_focus`, `allowed_timeliness`, `allowed_coverage`, and `allowed_detail` arrays. The enum lists in this prompt are vocabulary, not permission to override host policy.
 
 ## Planning rules
 
@@ -55,10 +55,11 @@ Return only JSON:
    - language and region can shape query wording;
    - fixed category, freshness, and domain filters remain host policy constraints;
    - never try to bypass excluded domains or a policy restriction.
-5. Do not emit `category`, `depth`, `content_level`, `recency`, provider names, or provider-native fields. The runtime resolves the semantic intent against the selected provider and policy.
-6. Avoid duplicate or near-duplicate queries in `known_queries`.
-7. Prefer queries that can find primary sources, official docs, standards, filings, product pages, reputable analysis, or firsthand user feedback.
-8. After execution, inspect `intent_resolution`. If a needed dimension is `best_effort` or `unsupported`, adapt the next query or record the resulting limitation rather than assuming equivalent provider behavior.
+5. Do not emit `category`, `depth`, `content_level`, `recency`, provider names, or provider-native fields. The runtime resolves semantic intent against the selected provider and policy.
+6. If a fixed category conflicts with a desired source class, express the topical need in `query` while keeping `source_focus` inside the Run Binding allowlist.
+7. Avoid duplicate or near-duplicate queries in `known_queries`.
+8. Prefer queries that can find primary sources, official docs, standards, filings, product pages, reputable analysis, or firsthand user feedback.
+9. After execution, inspect `intent_resolution`. If a needed dimension is `best_effort` or `unsupported`, adapt the next query or record the resulting limitation rather than assuming equivalent provider behavior.
 
 ## Safety rules
 

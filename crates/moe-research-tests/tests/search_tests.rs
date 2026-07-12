@@ -534,6 +534,45 @@ fn intent_constraints_reject_conflicts_before_provider_dispatch() {
 }
 
 #[test]
+fn intent_constraints_accept_compatible_source_focuses() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut service = SearchService::new();
+    service.register(CountingProvider {
+        name: "exa",
+        calls: calls.clone(),
+    });
+
+    let mut academic_policy = search_policy(&["exa"]);
+    academic_policy.category = Some(SearchCategory::Academic);
+    for focus in [SourceFocus::General, SourceFocus::Academic] {
+        let resolved = service
+            .resolve_intent(
+                "exa",
+                SearchRequest::new("exa", "moeresearch", 1),
+                &search_intent(focus, Timeliness::Any, Coverage::Balanced, Detail::Standard),
+                &academic_policy.intent_constraints(),
+            )
+            .expect("compatible academic source focus must resolve");
+        assert_eq!(resolved.request.category, Some(SearchCategory::Academic));
+    }
+
+    let open_policy = search_policy(&["exa"]);
+    for focus in [SourceFocus::News, SourceFocus::Code] {
+        let resolved = service
+            .resolve_intent(
+                "exa",
+                SearchRequest::new("exa", "moeresearch", 1),
+                &search_intent(focus, Timeliness::Any, Coverage::Balanced, Detail::Standard),
+                &open_policy.intent_constraints(),
+            )
+            .expect("open category must accept all source focuses");
+        assert_eq!(resolved.request.category, focus.as_category());
+    }
+
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
 fn provider_resolvers_report_actual_intent_enforcement() {
     let exa = ExaSearchProvider::new(
         Arc::new(MockNetworkClient::new([JsonNetworkResponse {

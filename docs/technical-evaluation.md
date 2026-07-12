@@ -25,7 +25,7 @@ The research skills asset installs Technical Evaluation prompts under `prompts/l
 
 ## Model Retrieval Contract
 
-Technical personas use the shared model-only `search` protocol: `query`, optional `max_results`, and a required semantic `intent` with `source_focus`, `timeliness`, `coverage`, and `detail`. Rust resolves intent against exactly one selected provider and `policy.search`, then reports actual per-dimension `intent_resolution` as `enforced`, `best_effort`, or `unsupported`. The model final JSON selects candidate evidence IDs only; the host rehydrates provenance and evidence metadata.
+Technical personas use the shared model-only `search` protocol: `query`, optional `max_results`, and a required semantic `intent` with `source_focus`, `timeliness`, `coverage`, and `detail`. Layer 1 assembles instructions as persona + common model-search contract + Run Binding for search-enabled aspects. Default technical category is open, but the same profile-neutral binding projection applies if a category or another semantic intent ceiling is fixed later. Rust resolves intent against exactly one selected provider and `policy.search`, then reports actual per-dimension `intent_resolution` as `enforced`, `best_effort`, or `unsupported`. The model final JSON selects candidate evidence IDs only and copies aspect identity literally; the host rehydrates provenance and evidence metadata.
 
 ## Request Example
 

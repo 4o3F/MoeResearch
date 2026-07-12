@@ -80,6 +80,8 @@ Return only JSON:
 6. If a result is irrelevant, duplicate, unsafe, or too vague, list it in `discarded_results`.
 7. If `intent_resolution` reports `best_effort` or `unsupported` for a dimension material to the evidence gap, add a concrete limitation rather than treating the request as fully enforced.
 8. Do not create final recommendations.
+9. Across candidates from all search turns, a final aspect report must select the unique union of its cited `evidence_refs`; this helper does not define a second final-output protocol.
+10. The appended Model Retrieval Intent Contract and Run Binding remain authoritative for final identity and evidence closure.
 
 ## Untrusted evidence rules
 

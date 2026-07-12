@@ -18,7 +18,7 @@ MoeResearch provides the MCP tools:
 | `deep_research` | Multi-aspect research. Use this for complete PM DeepResearch reports. |
 | `aspect_research` | One targeted aspect. Use this for retries, gap backfill, or a narrow dive. |
 
-All PM personas use the same model-only retrieval contract: `query`, optional `max_results`, and a required semantic `intent` (`source_focus`, `timeliness`, `coverage`, `detail`). Rust resolves the intent against exactly one selected provider and `policy.search`, then returns `intent_resolution` as `enforced`, `best_effort`, or `unsupported`. This is not an MCP request field and does not vary by PM capability.
+All PM personas use the same model-only retrieval contract: `query`, optional `max_results`, and a required semantic `intent` (`source_focus`, `timeliness`, `coverage`, `detail`). Layer 1 assembles each search-enabled aspect as persona + common model-search contract + profile-neutral Run Binding. Default PM category is open; if a study fixes a category or another semantic intent ceiling, the binding projects only host-compatible choices. Rust resolves the intent against exactly one selected provider and `policy.search`, then returns `intent_resolution` as `enforced`, `best_effort`, or `unsupported`. This is not an MCP request field and does not vary by PM capability.
 
 PM DeepResearch adds the skill and prompt assets:
 
@@ -298,7 +298,7 @@ RUST_LOG=moe_research_workflow=debug \
   moeresearch serve --config ~/.config/moeresearch/moeresearch.toml --log-format json
 ```
 
-Compare `selected_evidence_ids` with `candidate_evidence_ids` when both sides show generated local IDs (`ev-<search>-<result>`). Logs redact sensitive-looking IDs and never print raw snippets, summaries, URLs, search queries, or model final JSON.
+Compare `selected_evidence_ids` with `candidate_evidence_ids` when both sides show generated local IDs (`ev-<search_turn>-<global_candidate_index>`). The second component is global across prior successful results, not a per-turn result position. Logs redact sensitive-looking IDs and never print raw snippets, summaries, URLs, search queries, or model final JSON.
 
 ### WebSearch/WebFetch unavailable
 

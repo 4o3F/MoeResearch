@@ -20,7 +20,7 @@ MoeResearch has one Rust MCP backend and one Markdown asset installer. The asset
 
 Optional Generic Layer-2 helpers (not required when `aspect-agent.md` is inlined): `prompts/layer2/search-planner.md`, `prompts/layer2/evidence-extractor.md`.
 
-Layer 1 appends `prompts/layer1/common/model-search-tool-contract.md` after each selected Layer 2 persona inside `AspectRequest.instructions`. The asset documents the shared model-only retrieval protocol; it does not add fields to public MCP request schema 0.2.
+For every search-enabled aspect, Layer 1 assembles `AspectRequest.instructions` as selected Layer 2 persona, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding (`moe.run_binding.v1`). The contract defines the shared model-only retrieval protocol; the binding projects only safe semantic `allowed_*` intent values plus literal aspect identity and evidence-closure hints. Neither adds fields to public MCP request schema 0.2.
 
 ## Model Retrieval Intent Contract
 
@@ -41,7 +41,7 @@ All profiles use the same logical `search` call:
 
 `intent` is required for model tool calls only. It is not a `DeepResearchRequest`, `AspectResearchRequest`, or `policy.search` field. Rust resolves it against exactly one selected provider and host policy, then returns `intent_resolution` for each dimension as `enforced`, `best_effort`, or `unsupported`. Profiles must not replace this protocol with raw `category`, `depth`, `content_level`, `recency`, or provider-native arguments.
 
-Model final JSON selects candidate evidence by ID (`selected_evidence: ["ev-1-1"]`) and must not return `evidence` objects. The host rehydrates immutable provenance and derives `supports_findings`; Skill-side post-processing consumes the returned host evidence without mutating it.
+Candidate IDs are host-generated as `ev-<search_turn>-<global_candidate_index>`; the second component is global across prior successful results, not a per-turn result position. The model must copy literal `results[].id` values, then set `selected_evidence` to the unique union of all `finding.evidence_refs`; it must not reconstruct IDs or return `evidence` objects. The host rehydrates immutable provenance and derives `supports_findings`; Skill-side post-processing consumes the returned host evidence without mutating it.
 
 ## Installation
 
@@ -49,7 +49,7 @@ Model final JSON selects candidate evidence by ID (`selected_evidence: ["ev-1-1"
 moeresearch assets install research-skills --config /path/to/moeresearch.toml
 ```
 
-Remote asset installation uses the complete MoeResearch configuration, including the optional network proxy. Omit `--config` only when a valid `moeresearch.toml` is available in the current working directory. The content is the full MoeResearch research skill asset set. Re-run this command after upgrading MoeResearch to install the matching common model-search tool contract.
+Remote asset installation uses the complete MoeResearch configuration, including the optional network proxy. Omit `--config` only when a valid `moeresearch.toml` is available in the current working directory. The content is the full MoeResearch research skill asset set. Re-run this command after upgrading MoeResearch so installed skills receive the matching common model-search tool contract and Run Binding guidance; stale assets may omit the binding.
 
 ## Claude Code Layout
 

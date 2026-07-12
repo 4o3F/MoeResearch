@@ -4,7 +4,7 @@
 
 ## Two personas (each supplies one persona portion of `instructions`)
 
-Same two persona prompts as competitive / product-capability / innovation-direction (MoeResearch has no persona concept; persona = prompt). Layer 1 appends `prompts/layer1/common/model-search-tool-contract.md` after the selected persona. Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both; **TM-11 is the open-questions aspect's hard gate** under product-requirements:
+Same two persona prompts as competitive / product-capability / innovation-direction (MoeResearch has no persona concept; persona = prompt). For every search-enabled aspect, Layer 1 assembles the selected persona, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding. Cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability) apply to both; **TM-11 is the open-questions aspect's hard gate** under product-requirements:
 
 | key | file | angle | owns (in this profile) | TM weighting |
 |---|---|---|---|---|
@@ -105,7 +105,7 @@ This overlay does not add a new persona or aspect. It tightens success criteria 
 
 ## Invariants
 
-1. 每 aspect → exactly one persona prompt followed by `prompts/layer1/common/model-search-tool-contract.md`, inline (non-empty, < 64 KiB).
+1. 每 search-enabled aspect → exactly one persona prompt, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding, inline (non-empty, < 64 KiB).
 2. Aspects MECE across the 8 段 — 不重叠. **例外**：段3 = 4 个 cagan single-class micro-aspect（value/usability/feasibility/business），共属段3、在段3 内部按风险类别 MECE 分区；跨段仍不重叠。
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `subject` + audience 写在 `context.summary` (aspect agents 读 it).
@@ -114,3 +114,9 @@ This overlay does not add a new persona or aspect. It tightens success criteria 
 7. **段3 / 段4 / 段5 / 段6 / 段8 是 hard floor aspects** — 缺对应 hard gate (4-risks 全 / ≥3 候选 / 非目标 / 三套指标 / TM-11) → 整段 0 分, 拒绝软化. 4 profile 中 hard-gate density 最高 (5 hard gates), by design.
 8. 段1 PR-FAQ 不可包含实现细节 (技术架构 / 模块名 / DB schema 等) — strategist 在 success_criteria 中显式禁止.
 9. 段4 OST 候选可借段3 4-risks viability evidence ids 做快评，减少独立 search 消耗。
+
+## Run Binding handoff
+
+For every search-enabled aspect, persona selection is followed by the complete inline assembly order: selected persona Markdown, then `prompts/layer1/common/model-search-tool-contract.md`, then the request-specific Run Binding. The binding is derived from that aspect and `policy.search` according to `moe.run_binding.v1`; it carries only semantic `allowed_*` intent choices, safe defaults, literal aspect ID/name anchors, and evidence-closure hints. It must not expose provider routing, budgets, domains, raw policy tool fields, or credentials.
+
+This three-part order is mandatory for every search-enabled aspect. The fixed-category rule is profile-neutral: fixed `academic` permits `general` or `academic`; an unset category permits the full source-focus vocabulary.

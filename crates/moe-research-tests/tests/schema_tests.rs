@@ -677,9 +677,28 @@ fn model_search_prompt_contract_uses_semantic_intent_and_id_only_evidence() {
         "unsupported",
         "selected_evidence",
         "Do not return `evidence` objects",
+        "Run Binding",
+        "moe.run_binding.v1",
+        "allowed_source_focus",
+        "allowed_timeliness",
+        "allowed_coverage",
+        "allowed_detail",
+        "safe_default_intent",
+        "required_aspect_id",
+        "required_aspect_name",
+        "ev-<search_turn>-<global_candidate_index>",
+        "results[].id",
+        "do not reconstruct IDs",
+        "unique union of every `finding.evidence_refs`",
+        "character-for-character",
     ] {
         assert!(contract.contains(marker), "contract missing {marker}");
     }
+    assert!(
+        contract.contains("Do not include `allowed_providers`")
+            && contract.contains("provider-native DTOs"),
+        "Run Binding must keep provider routing and provider-native fields out of model guidance"
+    );
 
     let personas = [
         (
@@ -716,7 +735,114 @@ fn model_search_prompt_contract_uses_semantic_intent_and_id_only_evidence() {
             !persona.contains("byte-equal"),
             "{name} persona must not require model provenance copying"
         );
+        assert!(
+            persona.contains("Run Binding"),
+            "{name} persona must defer semantic intent and closure rules to Run Binding"
+        );
     }
+}
+
+#[test]
+fn layer1_search_assembly_paths_require_run_binding() {
+    let skills = [
+        ("generic", include_str!("../../../skills/deep-research.md")),
+        (
+            "academic",
+            include_str!("../../../skills/academic-deep-research.md"),
+        ),
+        ("pm", include_str!("../../../skills/pm-deep-research.md")),
+        (
+            "technical",
+            include_str!("../../../skills/technical-evaluation.md"),
+        ),
+    ];
+    for (name, skill) in skills {
+        assert!(
+            skill.contains("Run Binding")
+                && skill.contains("request-specific")
+                && skill.contains("moe.run_binding.v1")
+                && skill.contains("model-search-tool-contract"),
+            "{name} skill must require persona + contract + request-specific Run Binding assembly"
+        );
+    }
+
+    let decompositions = [
+        include_str!("../../../prompts/layer1/task-decomposition.md"),
+        include_str!("../../../prompts/layer1/academic-deep-research/task-decomposition.md"),
+        include_str!("../../../prompts/layer1/technical-evaluation/task-decomposition.md"),
+        include_str!("../../../prompts/layer1/pm-deep-research/task-decomposition.md"),
+        include_str!(
+            "../../../prompts/layer1/pm-deep-research/task-decomposition-product-capability.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/pm-deep-research/task-decomposition-innovation-direction.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md"
+        ),
+    ];
+    for (index, prompt) in decompositions.iter().enumerate() {
+        assert!(
+            prompt.contains("## Run Binding assembly"),
+            "task decomposition [{index}] must require Run Binding assembly"
+        );
+        assert!(
+            prompt.contains("then a request-specific Run Binding"),
+            "task decomposition [{index}] must use the three-part instructions order"
+        );
+        for stale in [
+            "followed by the common model-search tool contract",
+            "persona prompt followed by `prompts/layer1/common/model-search-tool-contract.md`",
+            "inline content of exactly one persona file followed by",
+        ] {
+            assert!(
+                !prompt.contains(stale),
+                "task decomposition [{index}] retains stale two-part assembly wording: {stale}"
+            );
+        }
+    }
+
+    let allocations = [
+        include_str!("../../../prompts/layer1/academic-deep-research/agent-allocation.md"),
+        include_str!("../../../prompts/layer1/technical-evaluation/agent-allocation.md"),
+        include_str!("../../../prompts/layer1/pm-deep-research/agent-allocation.md"),
+        include_str!(
+            "../../../prompts/layer1/pm-deep-research/agent-allocation-product-capability.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/pm-deep-research/agent-allocation-innovation-direction.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/pm-deep-research/agent-allocation-product-requirements.md"
+        ),
+    ];
+    for (index, prompt) in allocations.iter().enumerate() {
+        assert!(
+            prompt.contains("## Run Binding handoff"),
+            "agent allocation [{index}] must require Run Binding handoff"
+        );
+        assert!(
+            prompt.contains("then a request-specific Run Binding"),
+            "agent allocation [{index}] must use the three-part instructions order"
+        );
+        for stale in [
+            "persona prompt followed by `prompts/layer1/common/model-search-tool-contract.md`",
+            "exactly one persona prompt followed by",
+        ] {
+            assert!(
+                !prompt.contains(stale),
+                "agent allocation [{index}] retains stale two-part assembly wording: {stale}"
+            );
+        }
+    }
+
+    let academic =
+        include_str!("../../../prompts/layer1/academic-deep-research/task-decomposition.md");
+    assert!(
+        academic.contains("category = \"academic\"")
+            && academic.contains("`general` and `academic`"),
+        "academic assembly must retain the fixed academic category and compatible focuses"
+    );
 }
 
 #[test]

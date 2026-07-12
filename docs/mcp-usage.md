@@ -242,7 +242,7 @@ The model-facing `search` tool is internal to each aspect-agent loop; it is **no
 }
 ```
 
-`intent` is required and all four dimensions are required. `max_results` is optional and must be positive. The runtime resolves this logical intent against exactly one already selected provider and `policy.search`; a model cannot send `category`, `depth`, `content_level`, `recency`, provider names, or provider-native fields.
+`intent` is required and all four dimensions are required. `max_results` is optional and must be positive. The runtime resolves this logical intent against exactly one already selected provider and `policy.search`; a model cannot send `category`, `depth`, `content_level`, `recency`, provider names, or provider-native fields. Layer 1 should append a Run Binding so the model chooses only policy-compatible semantic values; host enforcement remains fail-closed when a non-`general` `source_focus` conflicts with a fixed category.
 
 Every successful search result returns `intent_resolution.dimensions`, whose per-dimension `enforcement` is `enforced`, `best_effort`, or `unsupported`. Layer 2 prompts must use this actual status when deciding whether to narrow a claim, retry a focused query, or disclose a limitation. A hard policy conflict is rejected before provider dispatch; MoeResearch never falls back to another provider or aggregates providers for one search.
 

@@ -237,6 +237,19 @@ async fn public_workflow_rejects_wrong_aspect_id() {
 }
 
 #[tokio::test]
+async fn public_workflow_rejects_paraphrased_aspect_name() {
+    let mut report = report();
+    report.aspect_name = "Market overview".to_owned();
+
+    let err = run_result(result(report), output_policy())
+        .await
+        .expect_err("paraphrased aspect name must fail");
+
+    assert!(matches!(err.error, Error::SchemaValidationFailed { .. }));
+    assert!(err.error.to_string().contains("aspect_name_mismatch"));
+}
+
+#[tokio::test]
 async fn public_workflow_rejects_too_many_findings() {
     let mut report = report();
     report.findings = vec![finding("finding-1"), finding("finding-2")];

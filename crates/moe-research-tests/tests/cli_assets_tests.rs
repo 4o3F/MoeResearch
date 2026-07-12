@@ -24,6 +24,7 @@ const GENERIC_LAYER2_ASPECT: &str = "prompts/layer2/aspect-agent.md";
 const GENERIC_LAYER2_SEARCH_PLANNER: &str = "prompts/layer2/search-planner.md";
 const GENERIC_LAYER2_EVIDENCE_EXTRACTOR: &str = "prompts/layer2/evidence-extractor.md";
 const COMMON_PATH: &str = "prompts/layer1/common/evidence-postprocess.md";
+const MODEL_SEARCH_CONTRACT_PATH: &str = "prompts/layer1/common/model-search-tool-contract.md";
 const PM_LAYER1_PATH: &str = "prompts/layer1/pm-deep-research/task-decomposition.md";
 const PM_LAYER2_PATH: &str = "prompts/layer2/pm-deep-research/persona-strategist.md";
 const ACADEMIC_LAYER1_PATH: &str = "prompts/layer1/academic-deep-research/task-decomposition.md";
@@ -44,6 +45,7 @@ const EXPECTED_FILES: &[&str] = &[
     GENERIC_LAYER2_SEARCH_PLANNER,
     GENERIC_LAYER2_EVIDENCE_EXTRACTOR,
     COMMON_PATH,
+    MODEL_SEARCH_CONTRACT_PATH,
     PM_LAYER1_PATH,
     PM_LAYER2_PATH,
     ACADEMIC_LAYER1_PATH,
@@ -277,6 +279,16 @@ fn assets_install_default_claude_code_layout_rewrites_skill_prompt_paths() {
         skill_root
             .join("prompts/layer1/common/evidence-postprocess.md")
             .is_file()
+    );
+    let contract =
+        fs::read_to_string(skill_root.join("prompts/layer1/common/model-search-tool-contract.md"))
+            .expect("read installed model search contract");
+    assert!(
+        contract.contains("Run Binding")
+            && contract.contains("moe.run_binding.v1")
+            && contract.contains("allowed_source_focus")
+            && contract.contains("selected_evidence_rule"),
+        "installed common contract must retain Run Binding projection and closure guidance"
     );
     assert!(
         skill_root
@@ -748,6 +760,9 @@ fn fixture_content(path: &str) -> Vec<u8> {
         PM_SKILL_PATH => b"pm research reference skill".to_vec(),
         ACADEMIC_SKILL_PATH => b"academic research reference skill".to_vec(),
         TECHNICAL_SKILL_PATH => b"technical evaluation reference skill".to_vec(),
+        MODEL_SEARCH_CONTRACT_PATH => {
+            include_bytes!("../../../prompts/layer1/common/model-search-tool-contract.md").to_vec()
+        }
         _ => format!("fixture prompt for {path}").into_bytes(),
     }
 }

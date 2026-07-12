@@ -264,7 +264,7 @@ RUST_LOG=moe_research_net=trace \
   moeresearch serve --config moeresearch.toml --log-format json
 ```
 
-When an aspect fails with `schema_validation_failed`, inspect stderr for `output_validation_failed` and `output_validation_issues`. These events include complete validation issue metadata plus selected and candidate evidence id lists when ids match the generated `ev-<search>-<result>` format. Non-generated or sensitive-looking ids are redacted; logs do not include raw model output, search snippets, summaries, URLs, or search queries.
+When an aspect fails with `schema_validation_failed`, inspect stderr for `output_validation_failed` and `output_validation_issues`. These events include complete validation issue metadata plus selected and candidate evidence id lists when IDs match the generated `ev-<search_turn>-<global_candidate_index>` format. The second component is global across prior successful results, not a per-turn result position. Non-generated or sensitive-looking IDs are redacted; logs do not include raw model output, search snippets, summaries, URLs, or search queries.
 
 ## 8. Troubleshooting
 
