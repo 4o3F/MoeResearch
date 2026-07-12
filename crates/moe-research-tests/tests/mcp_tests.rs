@@ -12,13 +12,13 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use moe_research_error::{Error, Result};
 use moe_research_mcp::MoeResearchMcpServer;
-use moe_research_mcp::{ToolEnvelope, ToolErrorCode, ToolStatus};
+use moe_research_mcp::{ToolEnvelope, ToolError, ToolErrorCode, ToolStatus};
 use moe_research_model::ModelProvider;
 use moe_research_model::ModelService;
-use moe_research_model::{ModelRequest, ModelResponse};
-use moe_research_workflow::AspectResearchResult;
+use moe_research_model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
 use moe_research_workflow::Limit;
 use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
+use moe_research_workflow::{AspectResearchResult, FailureStage, TokenUsage};
 use rmcp::ServerHandler;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::schemars::schema_for;
@@ -26,7 +26,7 @@ use serde_json::json;
 use support::research::{
     Services, aspect_field, aspect_request, deep_request, final_response,
     first_evidence_from_tool_output, medium_result_json, services, services_with_delay,
-    static_search_service, tool_response, unlimited_budget_config,
+    services_with_token_usage, static_search_service, tool_response, unlimited_budget_config,
 };
 
 struct SequenceModelProvider {
@@ -58,11 +58,13 @@ impl ModelProvider for SequenceModelProvider {
                 &aspect_name,
                 first_evidence_from_tool_output(&request.input),
             ));
-        } else if response.content.as_deref() == Some("__MUTATED_RESULT_FROM_TOOL_OUTPUT__") {
+        } else if response.content.as_deref()
+            == Some("__UNKNOWN_SELECTED_EVIDENCE_FROM_TOOL_OUTPUT__")
+        {
             let aspect_id = aspect_field(&request.input, "Aspect ID");
             let aspect_name = aspect_field(&request.input, "Aspect name");
             let mut evidence = first_evidence_from_tool_output(&request.input);
-            evidence.summary.push_str(" mutated by model");
+            evidence.id = "ev-not-returned-by-search".to_owned();
             response.content = Some(medium_result_json(&aspect_id, &aspect_name, evidence));
         } else if response.content.as_deref() == Some("__TRANSIENT_PROVIDER_UNAVAILABLE__") {
             return Err(Error::ProviderUnavailable {
@@ -182,6 +184,29 @@ fn tool_envelope_schema_omits_trace_payloads() {
     assert!(schema_json.contains("failed_aspects"));
 }
 
+#[test]
+fn tool_error_schema_exposes_structured_failure_diagnostic() {
+    let schema = serde_json::to_value(schema_for!(ToolError)).expect("schema json");
+    let properties = schema
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("tool error properties");
+    assert!(properties.contains_key("diagnostic"));
+
+    let diagnostic = schema
+        .pointer("/$defs/FailureDiagnostic/properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("failure diagnostic schema");
+    assert!(diagnostic.contains_key("stage"));
+    assert!(diagnostic.contains_key("model_turn"));
+    assert!(diagnostic.contains_key("search_turn"));
+    assert!(
+        !serde_json::to_string(&schema)
+            .expect("schema text")
+            .contains("tool_call_id")
+    );
+}
+
 #[tokio::test]
 async fn aspect_research_success_returns_ok_envelope() {
     let services = services(&[]);
@@ -214,6 +239,9 @@ async fn aspect_research_invalid_input_returns_failed_envelope() {
     assert!(envelope.data.is_none());
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::InvalidInput);
+    assert_eq!(error.diagnostic.stage, FailureStage::RequestValidation);
+    assert_eq!(error.diagnostic.model_turn, None);
+    assert_eq!(error.diagnostic.search_turn, None);
     assert!(!error.retryable);
     assert!(error.failed_aspects.is_empty());
 }
@@ -275,10 +303,10 @@ async fn aspect_research_partial_failure_disabled_returns_failed_envelope() {
 }
 
 #[tokio::test]
-async fn aspect_research_schema_failure_after_evidence_returns_partial_with_frozen_evidence() {
+async fn aspect_research_unknown_selected_evidence_returns_partial_with_frozen_evidence() {
     let services = sequence_services(vec![
         tool_response(),
-        final_response("__MUTATED_RESULT_FROM_TOOL_OUTPUT__".to_owned()),
+        final_response("__UNKNOWN_SELECTED_EVIDENCE_FROM_TOOL_OUTPUT__".to_owned()),
     ]);
 
     let envelope = mcp_server(services)
@@ -301,18 +329,18 @@ async fn aspect_research_schema_failure_after_evidence_returns_partial_with_froz
     assert_eq!(error.code, ToolErrorCode::SchemaValidationFailed);
     assert_eq!(error.aspect_id.as_deref(), Some("aspect-1"));
     assert!(!error.retryable);
-    assert!(error.message.contains("mutated_evidence_provenance"));
-    assert!(error.message.contains("evidence[0]"));
-    assert!(error.message.contains("summary"));
+    assert!(error.message.contains("unknown_selected_evidence"));
+    assert!(error.message.contains("selected_evidence[0]"));
+    assert!(error.message.contains("not present in search tool output"));
 }
 
 #[tokio::test]
-async fn aspect_research_schema_failure_after_evidence_fails_when_partials_disabled() {
+async fn aspect_research_unknown_selected_evidence_fails_when_partials_disabled() {
     let mut request = aspect_request();
     request.policy.execution.allow_partial_results = false;
     let services = sequence_services(vec![
         tool_response(),
-        final_response("__MUTATED_RESULT_FROM_TOOL_OUTPUT__".to_owned()),
+        final_response("__UNKNOWN_SELECTED_EVIDENCE_FROM_TOOL_OUTPUT__".to_owned()),
     ]);
 
     let envelope = mcp_server(services)
@@ -353,6 +381,9 @@ async fn aspect_research_transient_provider_unavailable_partial_marks_tool_error
     assert_eq!(error.code, ToolErrorCode::ProviderUnavailable);
     assert_eq!(error.message, "provider unavailable");
     assert_eq!(error.aspect_id.as_deref(), Some("aspect-1"));
+    assert_eq!(error.diagnostic.stage, FailureStage::ModelTurn);
+    assert_eq!(error.diagnostic.model_turn, Some(2));
+    assert_eq!(error.diagnostic.search_turn, None);
     assert!(error.retryable);
     assert!(error.failed_aspects.is_empty());
 }
@@ -401,7 +432,46 @@ async fn aspect_research_config_research_budget_failure_returns_tool_error() {
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::BudgetExceeded);
     assert_eq!(error.aspect_id.as_deref(), Some("aspect-1"));
+    assert_eq!(error.diagnostic.stage, FailureStage::ResearchBudget);
+    assert_eq!(error.diagnostic.model_turn, Some(1));
+    assert_eq!(error.diagnostic.search_turn, Some(1));
     assert!(error.failed_aspects.is_empty());
+    assert_eq!(search_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn aspect_research_token_budget_failure_returns_research_budget_diagnostic() {
+    let services = services_with_token_usage(
+        &[],
+        Some(TokenUsage {
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: Some(200),
+        }),
+    );
+    let model_calls = services.model_calls.clone();
+    let search_calls = services.search_calls.clone();
+    let budget_config = BudgetConfig {
+        research: ResearchLimits {
+            max_tokens: Limit::limited(100),
+            ..ResearchLimits::unlimited()
+        },
+        per_agent: AgentLimits::unlimited(),
+    };
+
+    let envelope = mcp_server_with_budget(services, budget_config)
+        .aspect_research(Parameters(aspect_request()))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    assert!(envelope.data.is_none());
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::BudgetExceeded);
+    assert_eq!(error.diagnostic.stage, FailureStage::ResearchBudget);
+    assert_eq!(error.diagnostic.model_turn, Some(1));
+    assert_eq!(error.diagnostic.search_turn, None);
+    assert_eq!(model_calls.load(Ordering::SeqCst), 1);
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
 }
 
@@ -539,6 +609,7 @@ async fn deep_research_all_agent_budget_failures_include_failed_aspects() {
     assert!(envelope.data.is_none());
     let error = envelope.error.expect("tool error");
     assert_eq!(error.code, ToolErrorCode::PartialResult);
+    assert_eq!(error.diagnostic.stage, FailureStage::ResultAggregation);
     assert_eq!(error.failed_aspects.len(), 2);
     assert!(
         error
@@ -548,6 +619,11 @@ async fn deep_research_all_agent_budget_failures_include_failed_aspects() {
     );
     assert!(error.failed_aspects.iter().all(|failure| {
         failure.message.contains("budget exceeded") && failure.message.contains("max_search_calls")
+    }));
+    assert!(error.failed_aspects.iter().all(|failure| {
+        failure.diagnostic.stage == FailureStage::SearchBudget
+            && failure.diagnostic.model_turn == Some(1)
+            && failure.diagnostic.search_turn == Some(1)
     }));
     assert_eq!(model_calls.load(Ordering::SeqCst), 2);
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
@@ -605,8 +681,8 @@ fn error_retryability_mapping_is_stable() {
 #[test]
 fn schema_validation_failed_preserves_message_but_json_stays_generic() {
     let validation_message = concat!(
-        "final output failed validation: mutated_evidence_provenance ",
-        "at evidence[0].snippet (mismatched fields: snippet, summary)"
+        "final output failed validation: unknown_selected_evidence ",
+        "at selected_evidence[0] (selected evidence was not present in search tool output)"
     );
     let validation_error = Error::SchemaValidationFailed {
         message: validation_message.to_owned(),
@@ -641,7 +717,7 @@ async fn aspect_research_schema_failure_envelope_preserves_validator_message() {
             "confidence": "medium",
             "limitations": []
         },
-        "evidence": []
+        "selected_evidence": []
     })
     .to_string();
 
@@ -660,6 +736,58 @@ async fn aspect_research_schema_failure_envelope_preserves_validator_message() {
             .message
             .contains("report aspect_id does not match requested aspect")
     );
+}
+
+#[tokio::test]
+async fn aspect_research_envelope_surfaces_safe_intent_policy_diagnostic() {
+    let mut request = aspect_request();
+    request.policy.search.depth = Some(moe_research_workflow::SearchDepth::Balanced);
+    let tool_call = ModelToolCall {
+        id: "call-1".to_owned(),
+        name: "search".to_owned(),
+        arguments: json!({
+            "query": "must-not-appear-in-the-envelope",
+            "intent": {
+                "source_focus": "general",
+                "timeliness": "any",
+                "coverage": "broad",
+                "detail": "standard"
+            }
+        }),
+    };
+    let response = ModelResponse {
+        provider: "model".to_owned(),
+        model: None,
+        response_id: None,
+        content: None,
+        tool_calls: vec![tool_call.clone()],
+        output_items: vec![ModelInputItem::tool_call(tool_call)],
+        usage: None,
+    };
+
+    let envelope = mcp_server(sequence_services(vec![response]))
+        .aspect_research(Parameters(request))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Failed);
+    let error = envelope.error.expect("tool error");
+    assert_eq!(error.code, ToolErrorCode::ToolPolicyDenied);
+    assert_eq!(
+        error.message,
+        "search intent conflicts with policy [branch=intent_policy key=coverage]"
+    );
+    assert!(!error.message.contains("must-not-appear-in-the-envelope"));
+}
+
+#[test]
+fn non_public_tool_policy_message_remains_redacted() {
+    let error = Error::ToolPolicyDenied {
+        message: "untrusted-input".to_owned(),
+        public: false,
+    };
+
+    assert_eq!(error.public_message(), "tool policy denied request");
 }
 
 /// `ToolErrorCode::as_str` MUST emit the same snake_case string that serde
@@ -798,6 +926,12 @@ async fn tool_envelope_aspect_partial_serializes_data_and_error() {
     assert_eq!(object["data"]["aspect_report"]["findings"], json!([]));
     assert_eq!(object["error"]["code"], json!("budget_exceeded"));
     assert_eq!(object["error"]["aspect_id"], json!("aspect-1"));
+    assert_eq!(
+        object["error"]["diagnostic"]["stage"],
+        json!("search_budget")
+    );
+    assert_eq!(object["error"]["diagnostic"]["model_turn"], json!(2));
+    assert_eq!(object["error"]["diagnostic"]["search_turn"], json!(2));
 }
 
 /// Failed envelopes MUST serialize `run_id: null` and `data: null` so clients
@@ -817,6 +951,12 @@ async fn tool_envelope_failed_serializes_null_run_id_and_null_data() {
     assert!(object["run_id"].is_null(), "run_id must serialize as null");
     assert!(object["data"].is_null(), "data must serialize as null");
     assert!(object["error"].is_object(), "error must be populated");
+    assert_eq!(
+        object["error"]["diagnostic"]["stage"],
+        json!("request_validation")
+    );
+    assert!(object["error"]["diagnostic"].get("model_turn").is_none());
+    assert!(object["error"]["diagnostic"].get("search_turn").is_none());
     assert_eq!(object["error"]["failed_aspects"], json!([]));
 }
 

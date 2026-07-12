@@ -1,5 +1,7 @@
 use crate::budget::BudgetConfig;
-use crate::report::{AgentBudgetUsage, AspectResearchResult, TokenUsage};
+use crate::report::{
+    AgentBudgetUsage, AspectResearchResult, FailureDiagnostic, FailureStage, TokenUsage,
+};
 use crate::research::{
     AspectResearchRequest, SUPPORTED_SCHEMA_VERSIONS, WorkflowValidationContext,
     effective_research_limits,
@@ -35,6 +37,7 @@ impl AspectResearchOutput {
 #[derive(Debug)]
 pub struct AspectResearchFailure {
     pub error: Error,
+    pub diagnostic: FailureDiagnostic,
     pub partial_output: Option<AspectResearchOutput>,
 }
 
@@ -42,6 +45,7 @@ impl AspectResearchFailure {
     fn top_level(error: Error) -> Box<Self> {
         Box::new(Self {
             error,
+            diagnostic: FailureDiagnostic::new(FailureStage::RequestValidation, None, None),
             partial_output: None,
         })
     }
@@ -49,6 +53,7 @@ impl AspectResearchFailure {
     fn from_runtime(failure: AgentRuntimeFailure) -> Box<Self> {
         Box::new(Self {
             error: failure.error,
+            diagnostic: failure.diagnostic,
             partial_output: failure
                 .partial_output
                 .map(AspectResearchOutput::from_runtime),

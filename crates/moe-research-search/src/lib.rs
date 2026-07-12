@@ -10,6 +10,8 @@ pub use provider::{
 };
 pub use service::SearchService;
 pub use types::{
-    Freshness, SearchCategory, SearchContentLevel, SearchDepth, SearchRecency, SearchRequest,
-    SearchResponse, SearchResult,
+    Coverage, Detail, Freshness, IntentDimension, IntentDimensionResolution, IntentEnforcement,
+    PreparedSearchIntent, ResolvedSearchIntent, SearchCategory, SearchContentLevel, SearchDepth,
+    SearchIntent, SearchIntentConstraints, SearchRecency, SearchRequest, SearchResponse,
+    SearchResult, SourceFocus, Timeliness,
 };

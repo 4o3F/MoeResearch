@@ -94,7 +94,11 @@ pub enum Error {
     BudgetExceeded { message: String },
 
     #[snafu(display("tool policy denied: {message}"))]
-    ToolPolicyDenied { message: String },
+    ToolPolicyDenied {
+        message: String,
+        /// Whether `message` is a curated diagnostic safe for public transports.
+        public: bool,
+    },
 
     #[snafu(display("unsupported schema version: {version}"))]
     UnsupportedSchemaVersion { version: String },
@@ -170,6 +174,10 @@ impl Error {
             }
             Self::HttpStatus { status, .. } => format!("provider returned HTTP status {status}"),
             Self::BudgetExceeded { message } => message.clone(),
+            Self::ToolPolicyDenied {
+                message,
+                public: true,
+            } => message.clone(),
             Self::ToolPolicyDenied { .. } => "tool policy denied request".to_owned(),
             Self::UnsupportedSchemaVersion { .. } => "unsupported schema version".to_owned(),
             Self::SchemaValidationFailed { message } => message.clone(),

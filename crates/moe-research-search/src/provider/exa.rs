@@ -9,8 +9,10 @@ use moe_research_net::NetworkClient;
 use moe_research_net::provider_http::bearer_json_post;
 
 use crate::{
-    SearchCategory, SearchContentLevel, SearchDepth, SearchProvider, SearchRecency, SearchRequest,
-    SearchResponse, SearchResult,
+    Coverage, Detail, IntentDimension, IntentDimensionResolution, IntentEnforcement,
+    ResolvedSearchIntent, SearchCategory, SearchContentLevel, SearchDepth, SearchIntent,
+    SearchIntentConstraints, SearchProvider, SearchRecency, SearchRequest, SearchResponse,
+    SearchResult,
 };
 
 pub struct ExaSearchProvider {
@@ -40,6 +42,64 @@ impl ExaSearchProvider {
 impl SearchProvider for ExaSearchProvider {
     fn name(&self) -> &'static str {
         "exa"
+    }
+
+    fn resolve_intent(
+        &self,
+        base: SearchRequest,
+        intent: &SearchIntent,
+        constraints: &SearchIntentConstraints,
+    ) -> Result<ResolvedSearchIntent> {
+        let request = constraints.prepare(base, intent)?.request;
+        let source_resolution = if constraints.policy_constrains_source_focus(intent) {
+            (IntentEnforcement::BestEffort, "policy_source_focus_applied")
+        } else {
+            (IntentEnforcement::Enforced, "exa_category_mapped")
+        };
+        let timeliness_resolution = if constraints.policy_constrains_timeliness(intent) {
+            (IntentEnforcement::BestEffort, "policy_timeliness_applied")
+        } else {
+            (IntentEnforcement::Enforced, "exa_recency_mapped")
+        };
+
+        let resolution = vec![
+            IntentDimensionResolution::new(
+                IntentDimension::SourceFocus,
+                intent.source_focus.as_str(),
+                source_resolution.0,
+                source_resolution.1,
+            ),
+            IntentDimensionResolution::new(
+                IntentDimension::Timeliness,
+                intent.timeliness.as_str(),
+                timeliness_resolution.0,
+                timeliness_resolution.1,
+            ),
+            IntentDimensionResolution::new(
+                IntentDimension::Coverage,
+                intent.coverage.as_str(),
+                match intent.coverage {
+                    Coverage::Focused => IntentEnforcement::Enforced,
+                    Coverage::Balanced | Coverage::Broad => IntentEnforcement::BestEffort,
+                },
+                "exa_search_type_mapped",
+            ),
+            IntentDimensionResolution::new(
+                IntentDimension::Detail,
+                intent.detail.as_str(),
+                match intent.detail {
+                    Detail::Detailed => IntentEnforcement::Enforced,
+                    Detail::Compact | Detail::Standard => IntentEnforcement::BestEffort,
+                },
+                "exa_contents_mapped",
+            ),
+        ];
+
+        validate_exa_category_conflicts(&request)?;
+        Ok(ResolvedSearchIntent {
+            request,
+            resolution,
+        })
     }
 
     async fn search(&self, request: SearchRequest) -> Result<SearchResponse> {

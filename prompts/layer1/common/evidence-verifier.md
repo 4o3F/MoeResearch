@@ -1,10 +1,10 @@
 # Layer 1 Common Module: Evidence Verifier
 
-Claim-level verifier for rows already extracted into the Claim Ledger. It complements `evidence-postprocess.md`; it does not rewrite frozen provenance and does not require Rust/MoeResearch schema changes.
+Claim-level verifier for rows already extracted into the Claim Ledger. It complements `evidence-postprocess.md`; it does not rewrite host-owned provenance and does not require Rust/MoeResearch schema changes.
 
 ## Inputs
 
-- Frozen MoeResearch `evidence_index` rows.
+- Host-rehydrated MoeResearch `evidence_index` rows.
 - Claim Ledger rows.
 - Source-audit base rows from `evidence-postprocess.md`.
 - Host verification rows (`HV-*`) from `host-verification-backfill.md`.
@@ -29,7 +29,7 @@ When `host-verification-backfill.md` returns `HV-*` rows:
 - Link them to Claim Ledger rows using `claim_id`.
 - Keep `host_verification_refs` and `source_origin` on the ledger row.
 - Do not add `HV-*` to `evidence_refs`.
-- Do not change frozen MoeResearch evidence fields.
+- Do not change host-owned MoeResearch evidence fields.
 - If host verification contradicts MoeResearch evidence, keep both origins visible and downgrade or move the claim unless the stronger source clearly resolves the conflict.
 - If WebFetch was unavailable for a claim requiring original wording, mark the claim `partial` or `not_checked`; do not treat a WebSearch snippet as full support.
 

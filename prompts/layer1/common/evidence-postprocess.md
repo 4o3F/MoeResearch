@@ -8,13 +8,13 @@ Classify and assemble evidence. Never alter MoeResearch provenance.
 
 ## Immutable provenance
 
-The following `Evidence` fields are byte-equal frozen:
+The following host-owned `Evidence` fields are immutable after MoeResearch returns:
 
 ```text
 id, source_title, url, provider, query, snippet, summary, published_at, retrieved_at
 ```
 
-Never mutate `DeepResearchResult`, `AspectResearchResult`, or any `Evidence` object. Emit separate Skill-layer sidecar structures keyed by `evidence_id`, such as `tier`, `display_label`, `source_audit_base`, and `cite_eval`. These sidecars must not be sent back into MCP request/response schema objects. You must never rewrite, translate, shorten, normalize, repair, merge, or replace frozen provenance fields.
+Never mutate `DeepResearchResult`, `AspectResearchResult`, or any `Evidence` object. Emit separate Skill-layer sidecar structures keyed by `evidence_id`, such as `tier`, `display_label`, `source_audit_base`, and `cite_eval`. These sidecars must not be sent back into MCP request/response schema objects. The runtime has already rehydrated provenance from host candidates; never rewrite, translate, shorten, normalize, repair, merge, or replace it.
 
 Visual or artifact metadata (`media_type` / `observed_feature` / `related_claim`) may come from a citing `Finding.claim` annotation block, never from a rewritten `Evidence.summary`.
 

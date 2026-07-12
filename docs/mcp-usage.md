@@ -107,7 +107,7 @@ Zero is invalid for runnable limits and max result counts.
   "scope": ["vendors", "segments", "adoption"],
   "boundaries": ["exclude unrelated adjacent markets"],
   "success_criteria": ["identify major vendor groups", "cite evidence"],
-  "instructions": "# Aspect Agent\n\nReturn JSON matching AspectResearchResult.",
+  "instructions": "# Aspect Agent\n\nReturn only aspect_report plus ID-only selected_evidence; do not return evidence objects.",
   "tools": ["search"],
   "model_provider": "openai",
   "search_provider": "grok",
@@ -225,7 +225,28 @@ Policy rules:
 - `policy.execution` contains only `allow_partial_results` and `fail_fast`. Request deadlines belong in `limits.total_timeout_ms` and `task.limits.timeout_ms`.
 - Unknown fields in request and policy objects are rejected.
 
-### 5.5 `ResearchContext`
+### 5.5 Model logical `search` tool
+
+The model-facing `search` tool is internal to each aspect-agent loop; it is **not** a third MCP tool and `intent` is not a field in `AspectResearchRequest`, `DeepResearchRequest`, or `ResearchPolicy`.
+
+```json
+{
+  "query": "string",
+  "max_results": 5,
+  "intent": {
+    "source_focus": "general | organizations | people | academic | news | personal_sites | financial_filings | code",
+    "timeliness": "any | stable | recent | fresh | live",
+    "coverage": "focused | balanced | broad",
+    "detail": "compact | standard | detailed"
+  }
+}
+```
+
+`intent` is required and all four dimensions are required. `max_results` is optional and must be positive. The runtime resolves this logical intent against exactly one already selected provider and `policy.search`; a model cannot send `category`, `depth`, `content_level`, `recency`, provider names, or provider-native fields.
+
+Every successful search result returns `intent_resolution.dimensions`, whose per-dimension `enforcement` is `enforced`, `best_effort`, or `unsupported`. Layer 2 prompts must use this actual status when deciding whether to narrow a claim, retry a focused query, or disclose a limitation. A hard policy conflict is rejected before provider dispatch; MoeResearch never falls back to another provider or aggregates providers for one search.
+
+### 5.6 `ResearchContext`
 
 ```json
 {
@@ -256,7 +277,7 @@ Use `aspect_research` when the client already has one concrete aspect to run.
     "scope": ["Responses API", "SSE"],
     "boundaries": ["Do not inspect unrelated APIs"],
     "success_criteria": ["Use search", "Return evidence-backed findings"],
-    "instructions": "# Aspect Agent\n\nUse search once, then return JSON matching AspectResearchResult.",
+    "instructions": "# Aspect Agent\n\nUse search once, then return only aspect_report plus ID-only selected_evidence; do not return evidence objects.",
     "tools": ["search"],
     "model_provider": "openai",
     "search_provider": "grok",
@@ -302,7 +323,7 @@ Use `deep_research` for a multi-aspect plan.
         "scope": ["tokio", "async-std", "smol", "embassy"],
         "boundaries": ["exclude std-only abstractions"],
         "success_criteria": ["list 3-5 runtimes with primary use cases"],
-        "instructions": "# Aspect Agent\n\nAnswer with evidence-backed findings.",
+        "instructions": "# Aspect Agent\n\nReturn evidence-backed findings in aspect_report plus ID-only selected_evidence; do not return evidence objects.",
         "tools": ["search"],
         "model_provider": "openai",
         "search_provider": "grok",
@@ -393,7 +414,8 @@ Raw MCP: unwrap `tools/call` result per §4.2, then the same envelope.
 ```text
 AspectResearchResult
   aspect_report: AspectReport
-  evidence: Evidence[]
+  selected_evidence: string[]
+  evidence: Evidence[]                 # host-rehydrated candidate evidence
 
 DeepResearchResult
   run_id: string
@@ -409,13 +431,13 @@ DeepResearchResult
 
 Runtime usage objects are result-only. They are not accepted in request schemas.
 
-### Unknown-field policy (request vs result)
+### Model final-output and unknown-field policy
 
 - **Requests / policies (`schema_version` 0.2):** `deny_unknown_fields`. Extra keys are rejected as `invalid_input` / schema parse failures at the MCP boundary.
-- **Model final JSON (`AspectResearchResult` and nested report types):** unknown fields are **dropped**. Missing required known fields fail parse → `schema_validation_failed`. Semantic checks (evidence provenance, finding refs, output policy) run after successful deserialize.
-- Rationale: models may emit non-schema commentary keys; failing closed on extras increases false partials without improving evidence integrity.
+- **Model final JSON:** the runtime uses a strict projection of the existing `AspectResearchResult`. It must contain `aspect_report` and ID-only `selected_evidence`; it must not contain `evidence` objects or evidence provenance fields. The top-level result rejects unknown fields, and missing required fields or failed semantic validation return `schema_validation_failed`.
+- **Host result:** after validation, the same `AspectResearchResult` carries `selected_evidence` plus host-rehydrated `evidence`. The host copies candidate provenance, derives `supports_findings` from `finding.evidence_refs`, and owns evidence `source_type` and evidence-level `confidence`.
 
-`Evidence.source_type` values are exactly:
+`Evidence.source_type` values in host results are exactly:
 
 ```text
 official | documentation | news | blog | forum | repository | unknown
@@ -427,10 +449,15 @@ When `status` is `failed`, or when single-aspect `aspect_research` returns parti
 
 ```json
 {
-  "code": "schema_validation_failed",
-  "message": "Public-safe diagnostic message.",
+  "code": "network_failed",
+  "message": "network request failed",
+  "diagnostic": {
+    "stage": "search_dispatch",
+    "model_turn": 2,
+    "search_turn": 2
+  },
   "aspect_id": "market-map",
-  "retryable": false,
+  "retryable": true,
   "failed_aspects": []
 }
 ```
@@ -451,7 +478,29 @@ partial_result
 internal
 ```
 
-Public error messages must not contain secrets, Authorization headers, provider raw response bodies, provider raw request bodies, or host file paths.
+`aspect_id` identifies the affected aspect when one exists. `diagnostic` is
+host-owned structured execution context:
+
+- `stage` identifies the failed boundary (`request_validation`, `model_turn`,
+  `tool_validation`, `search_intent_resolution`, `search_policy`,
+  `search_budget`, `search_dispatch`, `output_validation`, `research_budget`,
+  or `result_aggregation`).
+- `model_turn` and `search_turn` are optional one-based logical operation
+  ordinals within the aspect. They are omitted when the failure occurs before
+  that operation begins.
+- `search_budget` identifies the current aspect's local tool/search limit;
+  `research_budget` identifies the shared research-level guard, including the
+  operator research cap used by standalone `aspect_research`.
+- Each deep-research `AspectFailure` carries the same `aspect_id` plus
+  `diagnostic` shape: use `data.failed_aspects[]` for a partial result and
+  `error.failed_aspects[]` for a failed result. The top-level
+  `error.diagnostic` identifies the terminal deep-research boundary and does
+  not replace the per-aspect diagnostic.
+
+The diagnostic intentionally excludes provider names, model tool-call IDs,
+queries, URLs, request/response bodies, credentials, and host paths. Public
+error messages must not contain secrets, Authorization headers, provider raw
+response bodies, provider raw request bodies, or host file paths.
 
 ## 11. Common validation failures
 
@@ -482,6 +531,7 @@ Client-side checks:
 - Use `tools: ["search"]` only when the aspect may search.
 - Use `tools: []` when the aspect must not search.
 - If search is allowed, provide a non-null `search_provider`.
+- Search-tool argument and intent-policy denials may include a curated safe `[branch=… key=…]` diagnostic. It never echoes the query, provider payload, or secret.
 
 ### `budget_exceeded`
 
@@ -505,12 +555,13 @@ Client-side checks:
 
 The final structured result failed validation. If evidence was already collected and partial results are allowed, `aspect_research` may return `status=partial` with frozen evidence and this error metadata; `deep_research` partials carry failed aspect metadata in `data.failed_aspects` and keep top-level `error: null`.
 
-- Extra unknown keys in model final JSON are ignored; missing required result fields or failed semantic validation are not.
+- The model final JSON must contain only `aspect_report` and `selected_evidence`; do not return `evidence` objects, provenance fields, or unknown keys.
 
 Client-side checks:
 
-- `instructions` should explicitly ask for JSON matching the expected result schema.
-- Findings should cite evidence ids in `evidence_refs` when evidence is required.
+- `instructions` should explicitly ask for the model projection of `AspectResearchResult`: `aspect_report` plus ID-only `selected_evidence`.
+- Each finding should cite selected evidence IDs in `evidence_refs` when evidence is required.
+- `selected_evidence` IDs must be unique candidates returned by search; the host derives evidence provenance and `supports_findings`.
 - `policy.output.max_findings_per_aspect` should be large enough for the requested output.
 
 ## 12. Minimal stdio smoke test

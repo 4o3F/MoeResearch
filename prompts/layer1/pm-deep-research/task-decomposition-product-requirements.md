@@ -117,6 +117,7 @@ Policies:
 - `policy.evidence.require_evidence_for_findings = true` always. `min_evidence_per_finding`: standard = 1, deep / deep_evidence_pack = 2, quick = 1.
 - `policy.model.allowed_providers` / `policy.search.allowed_providers`: user allowlists, not fallback order. Each aspect selects exactly one `model_provider` and one `search_provider`.
 - Use semantic-discovery providers for entity-discovery-heavy risk/metric aspects when available; use synthesis providers for JTBD/OST/requirements/open-question aspects when available. Single provider means use it for every aspect.
+- The appended common contract supplies semantic `intent` for every model search call. `intent` is not a public request or `policy.search` field; raw policy controls remain host-owned.
 - `policy.output.language` = the request language.
 
 ## Output schema
@@ -166,7 +167,7 @@ MoeResearch `schema_version` is `0.2`. Timeouts belong only in `limits.total_tim
 4. Each aspect's `instructions` is one persona file's inline content followed by `prompts/layer1/common/model-search-tool-contract.md`; never a path.
 5. Provider names are logical config names, not vendor DTOs; do not emit provider-native request fields.
 6. Domain filters only via `policy.search.include_domains` / `exclude_domains`.
-7. `Evidence.source_type` uses MoeResearch's 7-value set (`official | documentation | news | blog | forum | repository | unknown`).
+7. Evidence source type and evidence-level confidence are host-owned after candidate selection; report post-processing may consume returned values but model prompts must not emit them.
 
 ## MCP request wrapper
 

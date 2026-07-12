@@ -18,9 +18,9 @@ pub use policy::{
 };
 pub use report::{
     AgentBudgetUsage, AspectFailure, AspectReport, AspectResearchResult, Confidence,
-    ConfidenceSummary, CoverageSummary, DeepResearchResult, Evidence, Finding, FindingType,
-    Importance, OpenQuestion, ResearchBudgetUsage, SourceType, TokenUsage, ValidationIssue,
-    ValidationStatus, provenance_mismatch_fields,
+    ConfidenceSummary, CoverageSummary, DeepResearchResult, Evidence, FailureDiagnostic,
+    FailureStage, Finding, FindingType, Importance, OpenQuestion, ResearchBudgetUsage, SourceType,
+    TokenUsage, ValidationIssue, ValidationStatus, provenance_mismatch_fields,
 };
 pub use research::{
     AspectRequest, AspectResearchRequest, DeepResearchRequest, ResearchContext, ResearchPolicy,

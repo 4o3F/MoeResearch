@@ -56,7 +56,7 @@ Envelope 字段：
 本模块的主要公共模型：
 
 - `ToolEnvelope<T>`：所有工具响应统一外壳。
-- `ToolError`：公共错误 payload。
+- `ToolError`：公共错误 payload；包含 canonical `aspect_id` 与 host-owned `diagnostic`（stage、可选 model/search 一基 turn 序号）。
 - `ToolStatus`：`Ok`、`Partial`、`Failed`。
 - `ToolErrorCode`：与 `moe-research-error::ErrorCode` 一一映射。
 

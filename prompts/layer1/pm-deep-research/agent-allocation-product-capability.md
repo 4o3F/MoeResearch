@@ -60,5 +60,5 @@ One MoeResearch aspect = one persona, 所以 profile §5 标段5 "Strategist + E
 2. Aspects MECE across the 6 段 — 不重叠.
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `capability_domain` 写在 `context.summary` (aspect agents 读 it).
-5. Downstream `Evidence.source_type` 用 MoeResearch 7-value 集; 4-tier credibility 是 Skill 后处理, never an engine enum.
+5. Evidence source type 与 evidence-level confidence 在 candidate selection 后由 host 拥有；4-tier credibility 是 Skill 后处理，绝非模型输出字段。
 6. EA-heavy invariant: 6 aspects 中 4 个（段1-4）由 EA 拥有; 2 个（段5-6）由 Strategist 拥有. 若某课题 EA-load 不平衡（如能力域已知不需找 jobs）, 先合段（如段1 折叠进段2）, 不要切给 Strategist.

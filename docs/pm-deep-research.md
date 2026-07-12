@@ -18,6 +18,8 @@ MoeResearch provides the MCP tools:
 | `deep_research` | Multi-aspect research. Use this for complete PM DeepResearch reports. |
 | `aspect_research` | One targeted aspect. Use this for retries, gap backfill, or a narrow dive. |
 
+All PM personas use the same model-only retrieval contract: `query`, optional `max_results`, and a required semantic `intent` (`source_focus`, `timeliness`, `coverage`, `detail`). Rust resolves the intent against exactly one selected provider and `policy.search`, then returns `intent_resolution` as `enforced`, `best_effort`, or `unsupported`. This is not an MCP request field and does not vary by PM capability.
+
 PM DeepResearch adds the skill and prompt assets:
 
 | Asset | Public repository path |
@@ -26,7 +28,7 @@ PM DeepResearch adds the skill and prompt assets:
 | Layer 1 orchestration prompts | `prompts/layer1/pm-deep-research/` |
 | Layer 2 persona prompts | `prompts/layer2/pm-deep-research/` |
 
-Rust/MoeResearch owns provider calls, search, budgets, agent loops, schema validation, and byte-equal evidence provenance. The skill layer owns product methodology, report assembly, host-side fact verification, and writing quality.
+Rust/MoeResearch owns provider calls, search, budgets, agent loops, schema validation, and host-owned evidence rehydration. The skill layer owns product methodology, report assembly, host-side fact verification, and writing quality.
 
 ## Release Asset Installation
 
@@ -258,7 +260,7 @@ If WebSearch/WebFetch is unavailable, the report must disclose the limitation, l
 
 `status=partial` is still useful. Completed aspects and preserved evidence should be kept. Failed aspects should be treated as gaps and, when worthwhile, retried once with `aspect_research` using prior sources.
 
-Inspect `retryable` before retrying the same request. For `deep_research` partials, read `data.failed_aspects[*].retryable`; for `aspect_research` partial or failed envelopes, read `error.retryable`. Retry transient provider-side failures when useful, but fix configuration, environment, or policy failures before retrying. Do not rewrite returned MoeResearch evidence: preserve ids exactly as returned, and keep provenance fields (`source_title`, `url`, `provider`, `query`, `snippet`, `summary`, `published_at`, `retrieved_at`) byte-equal to search-tool output.
+Inspect `retryable` before retrying the same request. For `deep_research` partials, read `data.failed_aspects[*].retryable`; for `aspect_research` partial or failed envelopes, read `error.retryable`. Retry transient provider-side failures when useful, but fix configuration, environment, or policy failures before retrying. Do not mutate returned MoeResearch evidence: preserve IDs and host-rehydrated provenance exactly as returned, and keep any report annotations in separate Skill-layer sidecars.
 
 The final report must disclose failed aspects in open questions or Annex A. It must not silently synthesize unsupported recommendations from missing aspects.
 
@@ -283,9 +285,11 @@ Confirm that the MCP client launches the same `moeresearch` binary and passes th
 
 Reduce concurrency or depth. Use a smaller PM DeepResearch tier (`quick` or `standard`), or retry later. Do not remove evidence requirements to bypass rate limits.
 
-### `schema_validation_failed: mutated_evidence_provenance`
+### `schema_validation_failed: invalid evidence selection`
 
-The aspect agent changed a frozen evidence provenance field. The frozen fields copied from MoeResearch search results (`source_title`, `url`, `provider`, `query`, `snippet`, `summary`, `published_at`, `retrieved_at`) must be byte-equal; preserve returned evidence ids exactly because `deep_research` may namespace them by aspect. When partial results are allowed, MoeResearch may still return preserved evidence with no findings; keep that evidence and treat the failed aspect as a gap. This failure may not be retryable as the same request; if useful, retry with a changed request such as a smaller evidence set or stricter prompt. Avoid copying all search results into the final answer.
+The model final JSON must contain only `aspect_report` and `selected_evidence`, where `selected_evidence` is an ID-only array of candidates returned by the search tool. The host rehydrates `evidence` and derives `supports_findings`; the model must not return `evidence` objects, provenance fields, `source_type`, or evidence-level confidence.
+
+Common failures are an unknown or duplicate selected ID, a finding that refers to an unselected ID, or an unexpected `evidence` field. Align the inline Layer 2 persona and the installed `model-search-tool-contract.md`, then retry only if the prior error is prompt/schema-related. When partial results are allowed, MoeResearch may still return preserved host evidence with no findings; keep it and treat the failed aspect as a gap.
 
 For operator debugging, run the server with workflow debug logs and inspect stderr for `output_validation_failed` plus `output_validation_issues`:
 
@@ -294,7 +298,7 @@ RUST_LOG=moe_research_workflow=debug \
   moeresearch serve --config ~/.config/moeresearch/moeresearch.toml --log-format json
 ```
 
-Compare `selected_evidence_ids` with `candidate_evidence_ids` when both sides show generated local ids (`ev-<search>-<result>`). If selected ids are redacted, assume the model emitted non-generated or sensitive-looking ids and rerun with stricter instructions to preserve MoeResearch evidence ids exactly. For provenance mutation, inspect the issue message for mismatched field names; normal logs still do not print raw snippets, summaries, URLs, search queries, or model final JSON.
+Compare `selected_evidence_ids` with `candidate_evidence_ids` when both sides show generated local IDs (`ev-<search>-<result>`). Logs redact sensitive-looking IDs and never print raw snippets, summaries, URLs, search queries, or model final JSON.
 
 ### WebSearch/WebFetch unavailable
 

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::error_log_safe::error_message_for_log;
 use crate::report::{
     AspectFailure, AspectReport, AspectResearchResult, Confidence, ConfidenceSummary, Evidence,
-    OpenQuestion, ResearchBudgetUsage,
+    FailureDiagnostic, OpenQuestion, ResearchBudgetUsage,
 };
 use crate::research::EffectiveResearchPlan;
 use crate::runtime::{AgentRuntimeFailure, AgentRuntimeOutput};
@@ -40,7 +40,8 @@ pub(super) fn record_aspect_result(
     match result {
         Ok(result) => record_aspect_success(run, result),
         Err(mut failure) => {
-            let aspect_error = aspect_failure(aspect_id, &failure.error);
+            let aspect_error =
+                aspect_failure(aspect_id, &failure.error, failure.diagnostic.clone());
             let partial_evidence_count = failure
                 .partial_output
                 .as_ref()
@@ -127,12 +128,17 @@ pub(super) fn order_failures_by_request(
 /// `error_code` is the `snake_case` transport-neutral `ErrorCode` identifier
 /// rather than `Debug` output, so external clients can dispatch on a stable
 /// string. `message` is the same redacted summary used in the public envelope.
-pub(super) fn aspect_failure(aspect_id: &str, error: &Error) -> AspectFailure {
+pub(super) fn aspect_failure(
+    aspect_id: &str,
+    error: &Error,
+    diagnostic: FailureDiagnostic,
+) -> AspectFailure {
     AspectFailure {
         aspect_id: aspect_id.to_owned(),
         error_code: error.code().as_str().to_owned(),
         message: error.public_message(),
         retryable: error.retryable(),
+        diagnostic,
     }
 }
 

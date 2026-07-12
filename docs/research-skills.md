@@ -20,7 +20,28 @@ MoeResearch has one Rust MCP backend and one Markdown asset installer. The asset
 
 Optional Generic Layer-2 helpers (not required when `aspect-agent.md` is inlined): `prompts/layer2/search-planner.md`, `prompts/layer2/evidence-extractor.md`.
 
-Layer 1 appends `prompts/layer1/common/model-search-tool-contract.md` after each selected Layer 2 persona inside `AspectRequest.instructions`. This is prompt guidance only and does not change public MCP schema 0.2.
+Layer 1 appends `prompts/layer1/common/model-search-tool-contract.md` after each selected Layer 2 persona inside `AspectRequest.instructions`. The asset documents the shared model-only retrieval protocol; it does not add fields to public MCP request schema 0.2.
+
+## Model Retrieval Intent Contract
+
+All profiles use the same logical `search` call:
+
+```json
+{
+  "query": "string",
+  "max_results": 5,
+  "intent": {
+    "source_focus": "general | organizations | people | academic | news | personal_sites | financial_filings | code",
+    "timeliness": "any | stable | recent | fresh | live",
+    "coverage": "focused | balanced | broad",
+    "detail": "compact | standard | detailed"
+  }
+}
+```
+
+`intent` is required for model tool calls only. It is not a `DeepResearchRequest`, `AspectResearchRequest`, or `policy.search` field. Rust resolves it against exactly one selected provider and host policy, then returns `intent_resolution` for each dimension as `enforced`, `best_effort`, or `unsupported`. Profiles must not replace this protocol with raw `category`, `depth`, `content_level`, `recency`, or provider-native arguments.
+
+Model final JSON selects candidate evidence by ID (`selected_evidence: ["ev-1-1"]`) and must not return `evidence` objects. The host rehydrates immutable provenance and derives `supports_findings`; Skill-side post-processing consumes the returned host evidence without mutating it.
 
 ## Installation
 
@@ -72,7 +93,7 @@ This preserves sibling `skills/` and `prompts/` directories.
 
 ## Evidence and Verification Model
 
-- MoeResearch evidence IDs and provenance are immutable.
+- MoeResearch evidence IDs and host-rehydrated provenance are immutable after the runtime returns them.
 - Host WebSearch/WebFetch verification uses separate `HV-*` rows.
 - Manual/browser/local inspection stays separate from MoeResearch evidence.
 - Unsupported load-bearing claims should be narrowed, downgraded, moved to open questions, or abstained.

@@ -111,7 +111,7 @@ Per-aspect `limits`:
 - `policy.evidence.require_evidence_for_findings = true` **always**. `min_evidence_per_finding`: standard = 1, deep / deep_evidence_pack = 2, quick = 1.
 - `policy.model.allowed_providers` / `policy.search.allowed_providers`: the user's configured providers (an **allowlist**, not a fallback order). Each aspect sets exactly one `model_provider` and one `search_provider` from these lists.
 - Search-provider guidance: entity-discovery-heavy aspects (`job-and-competitive-set`, `positioning-whitespace`) favour a semantic-discovery provider (e.g. `exa`); synthesis aspects default to the configured synthesis provider (e.g. `grok`). If only one provider is configured, use it everywhere.
-- **Search tuning**: set `policy.search.recency = "fresh"` and `policy.search.max_results_per_query = 5`. These are **global** and act as ceiling + default + model prompt-hint. Do **not** set `depth=high_recall`, `content_level=detailed`, or a global `category` for mixed aspects unless the user explicitly constrains the whole study.
+- **Search policy**: set `policy.search.recency = "fresh"` and `policy.search.max_results_per_query = 5`. These are global host constraints and defaults, not model prompt hints. The appended common contract supplies the same semantic `intent` protocol for every persona. Do not set a global `depth`, `content_level`, or `category` for mixed aspects unless the user explicitly constrains the whole study.
 - `policy.output.language` = the request language.
 
 ## Output schema

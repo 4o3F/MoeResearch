@@ -31,9 +31,15 @@ impl<'a> OutputValidator<'a> {
         content: &str,
         candidate_evidence: &[Evidence],
     ) -> Result<(AspectResearchResult, ValidationStatus)> {
-        // Soft deserialize: unknown model keys are dropped (see report module docs).
-        // Missing required fields and later semantic validation still fail closed.
-        let result = match serde_json::from_str::<AspectResearchResult>(content) {
+        let model_supplied_evidence = serde_json::from_str::<serde_json::Value>(content)
+            .ok()
+            .and_then(|value| {
+                value
+                    .as_object()
+                    .map(|object| object.contains_key("evidence"))
+            })
+            .unwrap_or(false);
+        let mut result = match serde_json::from_str::<AspectResearchResult>(content) {
             Ok(result) => result,
             Err(error) => {
                 tracing::warn!(
@@ -51,16 +57,30 @@ impl<'a> OutputValidator<'a> {
                     "final output JSON parsing failed"
                 );
                 return Err(Error::SchemaValidationFailed {
-                    message: "final output must be valid AspectResearchResult JSON".to_owned(),
+                    message: "final output must be valid aspect research result JSON".to_owned(),
                 });
             }
         };
 
-        let mut issues = self.validate_report(&result.aspect_report, &result.evidence);
+        let mut issues = Vec::new();
+        if model_supplied_evidence {
+            issues.push(issue(
+                "unexpected_model_evidence",
+                "model output must select evidence IDs instead of returning evidence objects",
+                "evidence",
+            ));
+        }
+        let (evidence, hydration_issues) = rehydrate_selected_evidence(
+            &result.selected_evidence,
+            candidate_evidence,
+            &result.aspect_report,
+        );
+        result.evidence = evidence;
+        issues.extend(hydration_issues);
+        issues.extend(self.validate_report(&result.aspect_report, &result.evidence));
         issues.extend(validate_selected_evidence(
             &result.aspect_report,
             &result.evidence,
-            candidate_evidence,
         ));
 
         if issues.is_empty() {
@@ -98,12 +118,6 @@ impl<'a> OutputValidator<'a> {
             "aspect output validation issue details"
         );
 
-        // Surface the first issue's code, the path it occurred at, and the
-        // human-readable message. Including the path means a
-        // `mutated_evidence_provenance` failure now reports exactly which
-        // evidence index and which field diverged, so an operator can
-        // immediately compare the model output to the search tool output
-        // without grepping through the entire wire trace.
         let first = &issues[0];
         let path_suffix = first
             .path
@@ -249,17 +263,61 @@ impl<'a> OutputValidator<'a> {
     }
 }
 
-fn validate_selected_evidence(
-    report: &AspectReport,
-    selected: &[Evidence],
+fn rehydrate_selected_evidence(
+    selected: &[String],
     candidates: &[Evidence],
-) -> Vec<ValidationIssue> {
-    let mut issues = Vec::new();
+    report: &AspectReport,
+) -> (Vec<Evidence>, Vec<ValidationIssue>) {
     let candidates_by_id = candidates
         .iter()
         .map(|evidence| (evidence.id.as_str(), evidence))
         .collect::<HashMap<_, _>>();
     let mut selected_ids = HashSet::new();
+    let mut hydrated = Vec::with_capacity(selected.len());
+    let mut issues = Vec::new();
+
+    for (index, selected_id) in selected.iter().enumerate() {
+        if !selected_ids.insert(selected_id.as_str()) {
+            issues.push(issue(
+                "duplicate_evidence_id",
+                "selected evidence id must be unique",
+                format!("selected_evidence[{index}]"),
+            ));
+            continue;
+        }
+
+        let Some(candidate) = candidates_by_id.get(selected_id.as_str()) else {
+            issues.push(issue(
+                "unknown_selected_evidence",
+                "selected evidence was not present in search tool output",
+                format!("selected_evidence[{index}]"),
+            ));
+            continue;
+        };
+
+        let mut evidence = (*candidate).clone();
+        evidence.supports_findings = report
+            .findings
+            .iter()
+            .filter(|finding| {
+                finding
+                    .evidence_refs
+                    .iter()
+                    .any(|evidence_ref| evidence_ref == selected_id)
+            })
+            .map(|finding| finding.id.clone())
+            .collect();
+        hydrated.push(evidence);
+    }
+
+    (hydrated, issues)
+}
+
+fn validate_selected_evidence(
+    report: &AspectReport,
+    selected: &[Evidence],
+) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
     let finding_ids = report
         .findings
         .iter()
@@ -277,38 +335,6 @@ fn validate_selected_evidence(
     }
 
     for (index, evidence) in selected.iter().enumerate() {
-        if !selected_ids.insert(evidence.id.as_str()) {
-            issues.push(issue(
-                "duplicate_evidence_id",
-                "selected evidence id must be unique",
-                format!("evidence[{index}].id"),
-            ));
-        }
-
-        let Some(candidate) = candidates_by_id.get(evidence.id.as_str()) else {
-            issues.push(issue(
-                "unknown_selected_evidence",
-                "selected evidence was not present in search tool output",
-                format!("evidence[{index}].id"),
-            ));
-            continue;
-        };
-
-        let mismatches = provenance_mismatch_fields(evidence, candidate);
-        if !mismatches.is_empty() {
-            // Name every field that diverged so log readers see the full
-            // diff in one event instead of having to retry to find the
-            // next mismatch.
-            let fields = mismatches.join(", ");
-            issues.push(issue(
-                "mutated_evidence_provenance",
-                &format!(
-                    "selected evidence provenance must match search tool output; mismatched fields: {fields}"
-                ),
-                format!("evidence[{index}].{}", mismatches[0]),
-            ));
-        }
-
         for finding_id in &evidence.supports_findings {
             if !finding_ids.contains(finding_id.as_str()) {
                 issues.push(issue(
@@ -349,15 +375,8 @@ fn validate_selected_evidence(
     issues
 }
 
-/// Compares a selected evidence object against its search-tool candidate
-/// and returns the names of every provenance field that diverges, in
-/// declaration order.
-///
-/// Returning a list (instead of a bool) lets the validator surface every
-/// divergence in a single error message — so the operator sees, e.g.,
-/// `mismatched fields: summary, snippet` rather than having to fix one
-/// field, re-run, and rediscover the next one. The order matches the
-/// schema declaration so a stable diff appears in logs.
+/// Compares two host-owned evidence values and returns the provenance fields
+/// that differ. It is retained for host-side diagnostics and pure tests.
 #[must_use]
 pub fn provenance_mismatch_fields(selected: &Evidence, candidate: &Evidence) -> Vec<&'static str> {
     let mut fields = Vec::new();

@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 use moe_research_error::{Error, Result};
 
-use crate::{SearchProvider, SearchRequest, SearchResponse};
+use crate::{
+    ResolvedSearchIntent, SearchIntent, SearchIntentConstraints, SearchProvider, SearchRequest,
+    SearchResponse,
+};
 
 #[derive(Default)]
 pub struct SearchService {
@@ -26,6 +29,42 @@ impl SearchService {
     #[must_use]
     pub fn provider_names(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
+    }
+
+    /// Resolves intent for exactly one already-selected provider.
+    ///
+    /// This performs no provider fallback or aggregation. The caller still
+    /// applies its policy guard to the resolved request before dispatch.
+    pub fn resolve_intent(
+        &self,
+        provider: &str,
+        base: SearchRequest,
+        intent: &SearchIntent,
+        constraints: &SearchIntentConstraints,
+    ) -> Result<ResolvedSearchIntent> {
+        if base.provider != provider {
+            return Err(Error::InvalidInput {
+                message: "search intent base request provider must match selected provider"
+                    .to_owned(),
+            });
+        }
+        let resolver = self
+            .providers
+            .get(provider)
+            .ok_or_else(|| Error::ProviderUnavailable {
+                provider: provider.to_owned(),
+                message: "search provider is not configured".to_owned(),
+                retryable: false,
+            })?;
+        let resolved = resolver.resolve_intent(base, intent, constraints)?;
+
+        if resolved.request.provider != provider {
+            return Err(Error::InvalidInput {
+                message: "resolved search request provider must match selected provider".to_owned(),
+            });
+        }
+
+        Ok(resolved)
     }
 
     pub async fn search(&self, request: SearchRequest) -> Result<SearchResponse> {

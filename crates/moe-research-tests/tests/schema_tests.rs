@@ -376,6 +376,7 @@ fn aspect_research_result_schema_excludes_runtime_metadata() {
     let properties = schema["properties"].as_object().expect("properties");
 
     assert!(properties.contains_key("aspect_report"));
+    assert!(properties.contains_key("selected_evidence"));
     assert!(properties.contains_key("evidence"));
     assert!(!properties.contains_key("provider_usage"));
     assert!(!properties.contains_key("budget_usage"));
@@ -419,6 +420,7 @@ fn aspect_research_result_roundtrips_json() {
             confidence: Confidence::Medium,
             limitations: vec![],
         },
+        selected_evidence: vec!["ev-1-1".to_owned()],
         evidence: vec![Evidence {
             id: "ev-1-1".to_owned(),
             source_title: "Source".to_owned(),
@@ -662,6 +664,62 @@ fn research_profile_task_decomposition_prompts_keep_schema_boundary() {
 }
 
 #[test]
+fn model_search_prompt_contract_uses_semantic_intent_and_id_only_evidence() {
+    let contract = include_str!("../../../prompts/layer1/common/model-search-tool-contract.md");
+    for marker in [
+        "\"intent\"",
+        "source_focus",
+        "timeliness",
+        "coverage",
+        "detail",
+        "enforced",
+        "best_effort",
+        "unsupported",
+        "selected_evidence",
+        "Do not return `evidence` objects",
+    ] {
+        assert!(contract.contains(marker), "contract missing {marker}");
+    }
+
+    let personas = [
+        (
+            "generic",
+            include_str!("../../../prompts/layer2/aspect-agent.md"),
+        ),
+        (
+            "pm",
+            include_str!("../../../prompts/layer2/pm-deep-research/persona-strategist.md"),
+        ),
+        (
+            "academic",
+            include_str!(
+                "../../../prompts/layer2/academic-deep-research/persona-literature-reviewer.md"
+            ),
+        ),
+        (
+            "technical",
+            include_str!(
+                "../../../prompts/layer2/technical-evaluation/persona-architecture-analyst.md"
+            ),
+        ),
+    ];
+    for (name, persona) in personas {
+        assert!(
+            persona.contains("selected_evidence"),
+            "{name} persona must select evidence IDs"
+        );
+        assert!(
+            persona.contains("intent_resolution"),
+            "{name} persona must account for actual retrieval execution"
+        );
+        assert!(
+            !persona.contains("byte-equal"),
+            "{name} persona must not require model provenance copying"
+        );
+    }
+}
+
+#[test]
 fn layer1_task_decomposition_prompts_do_not_emit_removed_request_fields() {
     let prompts = [
         (
@@ -786,7 +844,7 @@ fn assert_direct_tool_payload(value: &Value) {
 }
 
 #[test]
-fn aspect_research_result_drops_unknown_fields_on_deserialize() {
+fn aspect_research_result_rejects_unknown_fields_on_deserialize() {
     let json = r#"{
         "aspect_report": {
             "aspect_id": "a1",
@@ -799,27 +857,16 @@ fn aspect_research_result_drops_unknown_fields_on_deserialize() {
             "counterarguments": [],
             "open_questions": [],
             "confidence": "medium",
-            "limitations": [],
-            "model_extra_key": "must-be-dropped"
+            "limitations": []
         },
+        "selected_evidence": [],
         "evidence": [],
         "future_extension": {"nested": true}
     }"#;
 
-    let decoded: AspectResearchResult =
-        serde_json::from_str(json).expect("soft deserialize must accept unknown fields");
-    assert_eq!(decoded.aspect_report.aspect_id, "a1");
-    assert!(decoded.evidence.is_empty());
-
-    // Round-trip must not re-emit unknown keys.
-    let reencoded = serde_json::to_value(&decoded).expect("serialize");
-    assert!(reencoded.get("future_extension").is_none());
-    assert!(
-        reencoded
-            .get("aspect_report")
-            .and_then(|v| v.get("model_extra_key"))
-            .is_none()
-    );
+    let error = serde_json::from_str::<AspectResearchResult>(json)
+        .expect_err("result DTO must reject unknown fields");
+    assert!(error.to_string().contains("future_extension"));
 }
 
 #[test]

@@ -12,11 +12,11 @@ description: PM DeepResearch profile over the MoeResearch MCP core. Covers compe
 - **MoeResearch MCP server** registered in the session, exposing the tools `deep_research` + `aspect_research` (client-specific tool names may vary, for example `mcp__moeresearch__deep_research`). Provider keys / base URLs / operator limits live behind MoeResearch config, never in this skill.
 - **If those tools are absent or a call fails hard** (`provider_unavailable` / `network_failed` / process down) → **fail-fast**: surface the error to the user. There is no host-only fallback for MoeResearch execution.
 - Host-native WebSearch/WebFetch may be used only after MoeResearch execution as bounded Skill-layer verification/backfill. It never replaces MoeResearch aspect research and never becomes MoeResearch evidence.
-- Request resource controls use `limits`: top-level `limits.total_timeout_ms` for the whole run and per-aspect `task.aspects[].limits.timeout_ms` / `task.limits.timeout_ms` for aspect execution. `supports_findings` must be bidirectionally consistent with each finding's `evidence_refs` or the aspect is rejected.
+- Request resource controls use `limits`: top-level `limits.total_timeout_ms` for the whole run and per-aspect `task.aspects[].limits.timeout_ms` / `task.limits.timeout_ms` for aspect execution. Models select evidence IDs; the host derives `supports_findings` from each finding's `evidence_refs` during evidence rehydration.
 
 ## Purpose
 
-Use this skill for **product manager's deep research** across 4 capabilities. It is the Layer 1 Orchestration Layer: it infers the decision intent, **routes capability** (Step 3 below), decomposes the chosen profile's skeleton into aspects, assembles persona prompts, calls the MoeResearch MCP execution tools, post-processes evidence (tiering + visual evidence + source-audit base), runs gap detection + quality-floor self-verification, and writes the final report (13-section narrative report or 8-section PR-FAQ template per profile). Rust/MoeResearch owns MCP execution, provider calls, agent loops, runtime limit accounting, schema validation, and byte-equal evidence provenance.
+Use this skill for **product manager's deep research** across 4 capabilities. It is the Layer 1 Orchestration Layer: it infers the decision intent, **routes capability** (Step 3 below), decomposes the chosen profile's skeleton into aspects, assembles persona prompts, calls the MoeResearch MCP execution tools, post-processes evidence (tiering + visual evidence + source-audit base), runs gap detection + quality-floor self-verification, and writes the final report (13-section narrative report or 8-section PR-FAQ template per profile). Rust/MoeResearch owns MCP execution, provider calls, agent loops, runtime limit accounting, schema validation, and host-owned evidence rehydration.
 
 **4 capabilities**:
 
@@ -198,7 +198,7 @@ Retry skeleton uses the same per-aspect **deep** tier row from `../prompts/layer
 Response contract:
 
 - After a direct MCP tool call, read the stable MoeResearch payload from `result.structuredContent`.
-- Treat `schema_validation_failed` as a Layer 1 request/prompt bug. Common causes include mutated evidence provenance, unsupported `source_type`, mismatched `supports_findings` versus finding `evidence_refs`, or per-aspect `limits.timeout_ms` exceeding top-level `limits.total_timeout_ms`.
+- Treat `schema_validation_failed` as a Layer 1 request/prompt bug. Common causes include an unexpected model `evidence` field, an unknown or duplicate `selected_evidence` ID, a finding reference that is not selected, unsupported finding enums, or per-aspect `limits.timeout_ms` exceeding top-level `limits.total_timeout_ms`.
 
 ### Product-requirements module order
 
@@ -223,7 +223,7 @@ These are Skill-layer synthesis modules, not MoeResearch aspects and not Rust sc
 - `../prompts/layer1/pm-deep-research/task-decomposition-product-capability.md` · `agent-allocation-product-capability.md` · `final-report-product-capability.md` — product-capability variant.
 - `../prompts/layer1/pm-deep-research/task-decomposition-innovation-direction.md` · `agent-allocation-innovation-direction.md` · `final-report-innovation-direction.md` — innovation-direction variant.
 - `../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md` · `agent-allocation-product-requirements.md` · `final-report-product-requirements.md` — product-requirements variant (8-section PR-FAQ template).
-- `../prompts/layer1/common/model-search-tool-contract.md` — appended after every selected Layer 2 persona; instructs model search calls to use `query` and optional `max_results`.
+- `../prompts/layer1/common/model-search-tool-contract.md` — appended after every selected Layer 2 persona; defines the model-only `query` + optional `max_results` + required semantic `intent` search protocol and host-owned evidence selection rules.
 - `../prompts/layer1/common/evidence-postprocess.md` — shared evidence step (4-tier mapping / visual-evidence assembly / CiteEval). Domain-neutral only.
 - `../prompts/layer1/common/claim-ledger.md` — shared claim audit module. Domain-neutral only.
 - `../prompts/layer1/common/host-verification-backfill.md` — shared bounded host WebSearch/WebFetch verification/backfill contract; keeps host sources separate from MoeResearch evidence.

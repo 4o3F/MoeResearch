@@ -59,6 +59,7 @@
 - 大多数错误的 `public_message()` 是稳定、脱敏的泛化文本。
 - `BudgetExceeded` 允许返回预算耗尽细节。
 - `SchemaValidationFailed` 允许返回 validator curated diagnostic。
+- `ToolPolicyDenied` 仅在构造时显式标记为 public-safe 时返回其 curated diagnostic；其他情况使用固定泛化消息。
 - `HttpStatus` 只公开 HTTP status，不公开 body。
 
 ## 测试与质量

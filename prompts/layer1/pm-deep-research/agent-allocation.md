@@ -55,4 +55,4 @@ Each aspect carries its own `limits { max_turns, max_tool_calls, max_search_call
 2. Aspects are MECE across the spine — no dimension covered twice.
 3. `success_criteria` carries the dimension's evidence standard so the engine enforces our evidence bar.
 4. `decision_intent` lives in `context.summary` (the aspect agents read it there).
-5. Downstream `Evidence.source_type` uses only the 7 legal MoeResearch values; the 4-tier credibility labels are Skill post-processing, never an engine enum.
+5. Evidence source type and evidence-level confidence are host-owned after candidate selection. The 4-tier credibility labels are Skill post-processing, never model-output fields.
