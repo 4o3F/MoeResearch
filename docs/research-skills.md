@@ -20,6 +20,8 @@ MoeResearch has one Rust MCP backend and one Markdown asset installer. The asset
 
 Academic and Technical final-report routes also load their profile `evidence-modules-overlay.md` and `final-report-guidance.md`, then emit a `typst-project-v1` source project. PM and Generic retain Markdown delivery until separately migrated.
 
+The Rust backend exposes `get_runtime_capabilities`, `aspect_research`, and `deep_research`. Before request assembly, Layer 1 calls the read-only capabilities tool once per job for live provider names and operator ceilings; this snapshot remains Layer-1-only and must never enter personas, `instructions`, free-text `context`, or Run Binding.
+
 Optional Generic Layer-2 helpers (not required when `aspect-agent.md` is inlined): `prompts/layer2/search-planner.md`, `prompts/layer2/evidence-extractor.md`.
 
 For every search-enabled aspect, Layer 1 assembles `AspectRequest.instructions` as selected Layer 2 persona, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding (`moe.run_binding.v1`). The contract defines the shared model-only retrieval protocol; the binding projects only safe semantic `allowed_*` intent values plus literal aspect identity and evidence-closure hints. Neither adds fields to public MCP request schema 0.2.

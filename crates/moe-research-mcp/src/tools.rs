@@ -3,7 +3,8 @@ use rmcp::{Json, handler::server::wrapper::Parameters, tool, tool_router};
 use moe_research_error::{Error, ErrorCode};
 use moe_research_workflow::{
     AspectFailure, AspectResearchOutput, AspectResearchRequest, AspectResearchResult,
-    DeepResearchRequest, DeepResearchResult, FailureDiagnostic,
+    DeepResearchRequest, DeepResearchResult, FailureDiagnostic, FailureStage, RuntimeCapabilities,
+    RuntimeCapabilitiesRequest,
 };
 
 use crate::envelope::{ToolEnvelope, ToolError, ToolErrorCode, ToolStatus};
@@ -149,6 +150,64 @@ impl MoeResearchMcpServer {
             },
         )
     }
+
+    #[tool(
+        description = "Return a read-only snapshot of this MCP server's live runtime capabilities. Input is the RuntimeCapabilitiesRequest object directly, with top-level fields schema_version and request_id only. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.2\". Success data contains registered model_providers and search_providers from the live ModelService/SearchService registries; stable order is not preference or fallback. operator_limits is the server BudgetConfig ceiling. Empty provider arrays are successful. run_id is always null and status is never partial. No secrets, endpoints, config paths, probes, prompts, policies, usage, or traces are exposed."
+    )]
+    pub async fn get_runtime_capabilities(
+        &self,
+        Parameters(request): Parameters<RuntimeCapabilitiesRequest>,
+    ) -> Json<ToolEnvelope<RuntimeCapabilities>> {
+        let schema_version = request.schema_version.clone();
+        let request_id = request.request_id.clone();
+        tracing::info!(
+            request_id = %request_id,
+            tool = "get_runtime_capabilities",
+            "MCP tool started"
+        );
+
+        Json(match request.validate() {
+            Ok(()) => {
+                let data = RuntimeCapabilities {
+                    model_providers: self.model_service.provider_names(),
+                    search_providers: self.search_service.provider_names(),
+                    operator_limits: self.budget_config.clone(),
+                };
+                tracing::info!(
+                    request_id = %request_id,
+                    tool = "get_runtime_capabilities",
+                    model_provider_count = data.model_providers.len(),
+                    search_provider_count = data.search_providers.len(),
+                    status = "ok",
+                    "MCP tool completed"
+                );
+                capabilities_success_envelope(schema_version, request_id, data)
+            }
+            Err(error) => {
+                tracing::warn!(
+                    request_id = %request_id,
+                    tool = "get_runtime_capabilities",
+                    error_code = error.code().as_str(),
+                    error_detail = %error.public_message(),
+                    retryable = error.retryable(),
+                    status = "failed",
+                    "MCP tool failed"
+                );
+                failed_envelope(
+                    schema_version,
+                    request_id,
+                    None,
+                    &error,
+                    FailureDiagnostic {
+                        stage: FailureStage::RequestValidation,
+                        model_turn: None,
+                        search_turn: None,
+                    },
+                    Vec::new(),
+                )
+            }
+        })
+    }
 }
 
 fn aspect_success_envelope(
@@ -162,6 +221,21 @@ fn aspect_success_envelope(
         run_id: None,
         status: ToolStatus::Ok,
         data: Some(output.result),
+        error: None,
+    }
+}
+
+fn capabilities_success_envelope(
+    schema_version: String,
+    request_id: String,
+    data: RuntimeCapabilities,
+) -> ToolEnvelope<RuntimeCapabilities> {
+    ToolEnvelope {
+        schema_version,
+        request_id,
+        run_id: None,
+        status: ToolStatus::Ok,
+        data: Some(data),
         error: None,
     }
 }

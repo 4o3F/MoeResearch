@@ -32,6 +32,7 @@ MCP tools：
 
 | Tool | 请求 | 响应 |
 | --- | --- | --- |
+| `get_runtime_capabilities` | `RuntimeCapabilitiesRequest` | `ToolEnvelope<RuntimeCapabilities>` |
 | `aspect_research` | `AspectResearchRequest` | `ToolEnvelope<AspectResearchResult>` |
 | `deep_research` | `DeepResearchRequest` | `ToolEnvelope<DeepResearchResult>` |
 
@@ -71,7 +72,8 @@ Envelope 字段：
 
 覆盖点：
 
-- 公开工具只包含 `aspect_research`、`deep_research`。
+- 公开工具包含只读 `get_runtime_capabilities`、`aspect_research`、`deep_research`；内部 `search` 不公开。
+- 能力快照返回 live provider 名称与 operator limits、空列表成功且永不 partial。
 - 成功、失败、partial envelope 行为。
 - error code 映射和 retryable 逻辑。
 - schema 不泄漏 trace/runtime metadata。

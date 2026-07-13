@@ -1,8 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::super::budget::AgentLimits;
-use super::super::budget::ResearchLimits;
+use super::super::budget::{AgentLimits, BudgetConfig, ResearchLimits};
 use super::super::policy::{
     EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
 };
@@ -114,4 +113,21 @@ pub struct DeepResearchRequest {
     pub limits: ResearchLimits,
     pub policy: ResearchPolicy,
     pub context: ResearchContext,
+}
+
+/// Read-only request identity for `get_runtime_capabilities`.
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeCapabilitiesRequest {
+    pub schema_version: String,
+    pub request_id: String,
+}
+
+/// Live provider names and operator limit ceilings exposed by the MCP server.
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeCapabilities {
+    pub model_providers: Vec<String>,
+    pub search_providers: Vec<String>,
+    pub operator_limits: BudgetConfig,
 }

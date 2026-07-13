@@ -218,7 +218,7 @@ config; inspect serve stderr for `effective_limits_applied` when debugging unexp
 moeresearch check --config moeresearch.toml --show-providers --no-mcp
 ```
 
-This prints enabled model and search provider **names** only (no API keys). Layer 1 skills should use these names in `model_provider` / `search_provider` and allowlists.
+This prints enabled model and search provider **names** only (no API keys). For request assembly against a connected MCP server, prefer `get_runtime_capabilities` with schema `0.2`: it returns live registered provider keys and operator limit ceilings for that process. CLI output remains the offline/operator/old-server fallback. Skills may only tighten tiers against ceilings; runtime stricter-wins merging remains authoritative. Neither path exposes secrets, endpoints, proxy settings, or health probes.
 
 ## 7. Logging
 

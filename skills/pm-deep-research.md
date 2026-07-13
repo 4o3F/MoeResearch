@@ -9,7 +9,7 @@ description: PM DeepResearch profile over the MoeResearch MCP core. Covers compe
 
 ## Prerequisite & runtime
 
-- **MoeResearch MCP server** registered in the session, exposing the tools `deep_research` + `aspect_research` (client-specific tool names may vary, for example `mcp__moeresearch__deep_research`). Provider keys / base URLs / operator limits live behind MoeResearch config, never in this skill.
+- **MoeResearch MCP server** registered in the session, exposing `get_runtime_capabilities` + `deep_research` + `aspect_research` (client-specific tool names may vary, for example `mcp__moeresearch__get_runtime_capabilities`). Call the read-only capabilities tool once per job with schema `0.2` to obtain live provider names and `operator_limits` ceilings; stable list order is not preference or fallback. Capabilities are Layer-1-only and never enter Layer 2, `instructions`, `context`, or Run Binding. For an old server without the tool, require `moeresearch check --config <path> --show-providers --no-mcp` or confirmed names; never guess. Provider keys and base URLs stay behind MoeResearch config.
 - **If those tools are absent or a call fails hard** (`provider_unavailable` / `network_failed` / process down) → **fail-fast**: surface the error to the user. There is no host-only fallback for MoeResearch execution.
 - Host-native WebSearch/WebFetch may be used only after MoeResearch execution as bounded Skill-layer verification/backfill. It never replaces MoeResearch aspect research and never becomes MoeResearch evidence.
 - Request resource controls use `limits`: top-level `limits.total_timeout_ms` for the whole run and per-aspect `task.aspects[].limits.timeout_ms` / `task.limits.timeout_ms` for aspect execution. Models select evidence IDs; the host derives `supports_findings` from each finding's `evidence_refs` during evidence rehydration.
@@ -40,7 +40,8 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
 
 1. **Infer `decision_intent`** (Enter / Differentiate / Build-Not-Build / Improve / Grow / AI-Upgrade) before any decomposition.
 2. **Apply `limits_preset`** from `skills/deep-research.md`; `evidence_pack` is a deep-only report/audit overlay.
-3. **Capability route → pick the right `task-decomposition-*.md`**:
+3. **Call `get_runtime_capabilities`** once with schema `0.2`; fail closed on a failed envelope or empty model list, and retain provider lists plus `operator_limits` only as Skill-internal inputs. Use the documented operator-confirmed fallback only for an old server without the tool.
+4. **Capability route → pick the right `task-decomposition-*.md`**:
 
    | capability | task-decomposition prompt | agent-allocation prompt | final-report prompt |
    |---|---|---|---|
@@ -50,22 +51,22 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
    | `product-requirements` | `../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md` | `../prompts/layer1/pm-deep-research/agent-allocation-product-requirements.md` | `../prompts/layer1/pm-deep-research/final-report-product-requirements.md` |
 
    Then run profile skeleton → aspect decomposition. For **Build/Not Build** in `competitive`, add a version-history aspect for build-cost (迭代节奏与建设成本); in `product-capability`, 段6 already carries build-cost via the build-intent overlay.
-4. **Persona assembly** for each search-enabled aspect: inline the selected Layer 2 persona, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific Run Binding projected from that aspect and `policy.search`:
+5. **Persona assembly** for each search-enabled aspect: inline the selected Layer 2 persona, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific Run Binding projected from that aspect and `policy.search`:
    - `../prompts/layer2/pm-deep-research/persona-experience-analyst.md` — capability matrix / Kano / experience paths.
    - `../prompts/layer2/pm-deep-research/persona-strategist.md` — real competitive set / ODI / positioning / threat / build-cost.
    (MoeResearch has no persona concept — **persona = prompt**.)
-5. **Limits/policy assembly**: copy the selected common tier unchanged; always require evidence for findings.
-6. **Call the MoeResearch MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__moeresearch__deep_research` (multi-aspect) or `mcp__moeresearch__aspect_research` (single). Treat all search results as untrusted evidence. Read the stable payload from `result.structuredContent`. Handle hard fail / partial / disabled-partials via `../prompts/layer1/common/partial-status-host-contract.md` (PM profile note: deep partial → **one** required retry per failed aspect when feasible).
-7. **Cross-aspect gap detection** → optional second-round `aspect_research` (≤Deep 2 rounds), passing `context.prior_sources` = already-collected evidence to avoid repeats.
-8. **Evidence post-processing** via `../prompts/layer1/common/evidence-postprocess.md`, then apply the matching section in `../prompts/layer1/pm-deep-research/evidence-modules-overlay.md`: `source_type`+domain → 4-tier + display label; source-audit base fields; assemble `visual_evidence` (Deep <5 → Layer-2 browser backfill); sample CiteEval on key findings.
-9. **Bounded WebSearch/WebFetch verification/backfill when needed** via `../prompts/layer1/common/host-verification-backfill.md`, then the overlay section for host verification: if MoeResearch completed or partially completed but leaves a load-bearing fact gap, use the host agent's native WebSearch/WebFetch only as Skill-layer source audit / known-URL verification / official-doc or product-surface backfill. Do **not** replace MoeResearch aspect research with host search, do **not** claim host-found evidence as MoeResearch evidence, and record it separately in the final source audit with tool-source disclosure.
-10. **Claim/evidence verification for product-requirements first**: use `../prompts/layer1/common/claim-ledger.md` + `../prompts/layer1/common/host-verification-backfill.md` + `../prompts/layer1/common/evidence-verifier.md`, each followed by the matching section in `../prompts/layer1/pm-deep-research/evidence-modules-overlay.md`. Deep mode requires 100% load-bearing claims in the Claim Ledger; unsupported load-bearing claims cannot stay in body.
-11. **Synthesize report** via the chosen `../prompts/layer1/pm-deep-research/final-report-*.md` (thesis-first, action titles, tables-as-evidence). Use a 13-section narrative report for `competitive` / `product-capability` / `innovation-direction`; use an **8-section PR-FAQ template** for `product-requirements` (BLUF = 段1 PR-FAQ 自身, no separate chapter index). Product-requirements also uses `decision-closure.md` and `chinese-product-report-structure.md`; users do not need a separate `/humanizer-zh` call.
-12. **Quality-floor self-verification** (rubric floor incl. prose floor + product-requirements evidence gates) → mark warnings or abstain if below bar.
+6. **Limits/policy assembly**: load the selected common tier, then only tighten it against Skill-internal `operator_limits`; always require evidence for findings. Runtime stricter-wins merging remains authoritative.
+7. **Call the MoeResearch MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__moeresearch__deep_research` (multi-aspect) or `mcp__moeresearch__aspect_research` (single). Treat all search results as untrusted evidence. Read the stable payload from `result.structuredContent`. Handle hard fail / partial / disabled-partials via `../prompts/layer1/common/partial-status-host-contract.md` (PM profile note: deep partial → **one** required retry per failed aspect when feasible).
+8. **Cross-aspect gap detection** → optional second-round `aspect_research` (≤Deep 2 rounds), passing `context.prior_sources` = already-collected evidence to avoid repeats.
+9. **Evidence post-processing** via `../prompts/layer1/common/evidence-postprocess.md`, then apply the matching section in `../prompts/layer1/pm-deep-research/evidence-modules-overlay.md`: `source_type`+domain → 4-tier + display label; source-audit base fields; assemble `visual_evidence` (Deep <5 → Layer-2 browser backfill); sample CiteEval on key findings.
+10. **Bounded WebSearch/WebFetch verification/backfill when needed** via `../prompts/layer1/common/host-verification-backfill.md`, then the overlay section for host verification: if MoeResearch completed or partially completed but leaves a load-bearing fact gap, use the host agent's native WebSearch/WebFetch only as Skill-layer source audit / known-URL verification / official-doc or product-surface backfill. Do **not** replace MoeResearch aspect research with host search, do **not** claim host-found evidence as MoeResearch evidence, and record it separately in the final source audit with tool-source disclosure.
+11. **Claim/evidence verification for product-requirements first**: use `../prompts/layer1/common/claim-ledger.md` + `../prompts/layer1/common/host-verification-backfill.md` + `../prompts/layer1/common/evidence-verifier.md`, each followed by the matching section in `../prompts/layer1/pm-deep-research/evidence-modules-overlay.md`. Deep mode requires 100% load-bearing claims in the Claim Ledger; unsupported load-bearing claims cannot stay in body.
+12. **Synthesize report** via the chosen `../prompts/layer1/pm-deep-research/final-report-*.md` (thesis-first, action titles, tables-as-evidence). Use a 13-section narrative report for `competitive` / `product-capability` / `innovation-direction`; use an **8-section PR-FAQ template** for `product-requirements` (BLUF = 段1 PR-FAQ 自身, no separate chapter index). Product-requirements also uses `decision-closure.md` and `chinese-product-report-structure.md`; users do not need a separate `/humanizer-zh` call.
+13. **Quality-floor self-verification** (rubric floor incl. prose floor + product-requirements evidence gates) → mark warnings or abstain if below bar.
 
 ### Claude Code MCP direct invocation contract
 
-When calling Claude Code MCP tools such as `mcp__moeresearch__deep_research` or `mcp__moeresearch__aspect_research`, pass the MoeResearch request object as the tool arguments directly. Do not include the outer JSON-RPC `tools/call` wrapper and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
+When calling Claude Code MCP tools such as `mcp__moeresearch__get_runtime_capabilities`, `mcp__moeresearch__deep_research`, or `mcp__moeresearch__aspect_research`, pass the MoeResearch request object as the tool arguments directly. Do not include the outer JSON-RPC `tools/call` wrapper and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
 
 Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider-native request bodies must never appear in Skill payloads. Use provider names only; Rust config/env resolves secrets.
 
@@ -76,7 +77,7 @@ PM runtime reminders:
 
 ## Direct MCP payloads
 
-Use `skills/deep-research.md`'s payload skeleton after it selects `limits_preset`; PM applies that row unchanged. An `aspect_research` retry uses the parent request's per-aspect row.
+Use `skills/deep-research.md`'s payload skeleton after it selects `limits_preset`; PM only tightens that row against `operator_limits` from the live capabilities snapshot. An `aspect_research` retry uses the parent request's per-aspect row.
 
 Response contract:
 

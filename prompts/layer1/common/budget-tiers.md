@@ -2,7 +2,7 @@
 
 Canonical Layer-1 budget tiers for MoeResearch request assembly. `skills/deep-research.md` selects `limits_preset`; profiles only apply it.
 
-Operator config still applies stricter-merge at the Rust core: a finite operator ceiling wins over a more generous request; `-1` does not override a finite peer.
+Operator config still applies stricter-merge at the Rust core: a finite operator ceiling wins over a more generous request; `-1` does not override a finite peer. Layer 1 first loads the selected tier, then only tightens each dimension against `operator_limits` from `get_runtime_capabilities`: an unlimited operator value leaves the tier unchanged; a finite operator value takes the minimum when the tier is finite and replaces an unlimited tier value. Re-check finite `max_concurrent_agents <= max_agents` and aspect `timeout_ms <= total_timeout_ms`. If ceilings make success criteria impossible, reduce scope honestly or stop; never silently drop criteria. Runtime merging remains authoritative, and capabilities data must not enter Run Binding.
 
 ## Tiers
 
@@ -16,7 +16,7 @@ PM `evidence_pack` is a deep-only report/evidence-audit overlay; it never change
 
 ## Rules
 
-1. Copy the selected row's top-level limits, per-aspect limits, and evidence minimum together; always require evidence for findings.
+1. Load the selected row's top-level limits, per-aspect limits, and evidence minimum together, then only tighten limits against `operator_limits`; always require evidence for findings.
 2. Keep finite per-aspect `timeout_ms` ≤ `total_timeout_ms` and `max_concurrent_agents` ≤ `max_agents`.
 3. Aspect-only retries use the selected per-aspect row. Do not put these values in the Run Binding.
 

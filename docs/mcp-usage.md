@@ -42,9 +42,10 @@ Expected tool names from `tools/list`:
 ```text
 aspect_research
 deep_research
+get_runtime_capabilities
 ```
 
-Both tools use MoeResearch request schema version `0.2`:
+All three tools use MoeResearch request schema version `0.2`:
 
 ```json
 "schema_version": "0.2"
@@ -304,6 +305,57 @@ Use `aspect_research` when the client already has one concrete aspect to run.
 }
 ```
 
+## 6A. `get_runtime_capabilities`
+
+Use `get_runtime_capabilities` once per top-level Layer 1 research job to obtain a read-only snapshot from the connected server before assembling a research request.
+
+Pass this direct payload:
+
+```json
+{
+  "schema_version": "0.2",
+  "request_id": "capabilities-1"
+}
+```
+
+A successful `ToolEnvelope` has `run_id: null`, `status: "ok"`, `error: null`, and `data` containing exactly `model_providers`, `search_providers`, and `operator_limits`. Provider arrays are live registry keys in stable lexical order; their order is not preference or fallback. Empty arrays are successful snapshots. `operator_limits` is the server `BudgetConfig` ceiling using the existing `-1` / `null` unlimited wire format. The tool never returns `partial`.
+
+```json
+{
+  "schema_version": "0.2",
+  "request_id": "capabilities-1",
+  "run_id": null,
+  "status": "ok",
+  "data": {
+    "model_providers": ["openai"],
+    "search_providers": ["exa", "grok"],
+    "operator_limits": {
+      "research": {
+        "max_agents": 4,
+        "max_concurrent_agents": 2,
+        "max_total_model_calls": 40,
+        "max_total_search_calls": 28,
+        "total_timeout_ms": 600000,
+        "max_tokens": -1
+      },
+      "per_agent": {
+        "max_turns": 10,
+        "max_tool_calls": 12,
+        "max_search_calls": 8,
+        "timeout_ms": 600000
+      }
+    }
+  },
+  "error": null
+}
+```
+
+Validation failures return `status: "failed"`, `data: null`, `run_id: null`, and an existing `invalid_input` or `unsupported_schema_version` error with `diagnostic.stage = "request_validation"`.
+
+It does not expose API keys, API-key environment names or values, URLs, model IDs, provider-specific configuration, proxy/network/retry settings, TOML, host paths, health/probe data, prompts, policy templates, usage, traces, or provider ranking/default/fallback information. Unknown fields are rejected; no capabilities-specific schema-version or version-negotiation fields exist.
+
+Layer 1 may use this snapshot only to select one registered provider per aspect and only tighten selected budget tiers. Do not inject the snapshot, provider arrays, or operator limits into Layer 2 personas, `instructions`, free-text `context`, or Run Binding.
+
 ## 7. `deep_research`
 
 Use `deep_research` for a multi-aspect plan.
@@ -384,7 +436,7 @@ Envelope fields:
 | --- | --- | --- |
 | `schema_version` | string | Echoes the request schema version. |
 | `request_id` | string | Echoes the client request id. |
-| `run_id` | string or null | Present for successful or partial `deep_research`; null for `aspect_research`. |
+| `run_id` | string or null | Present for successful or partial `deep_research`; null for `aspect_research` and `get_runtime_capabilities`. |
 | `status` | `ok`, `partial`, or `failed` | Tool-level outcome. |
 | `data` | object or null | Tool result when status is `ok` or `partial`. |
 | `error` | `ToolError` or null | Public-safe error when status is `failed`; also present for `aspect_research` partial failures. |
@@ -519,9 +571,7 @@ Client-side checks:
 - `task.model_provider` or `task.aspects[].model_provider` is included in `policy.model.allowed_providers`.
 - If search is enabled, `task.search_provider` or `task.aspects[].search_provider` is included in `policy.search.allowed_providers`.
 - Provider names match the MCP server environment you are calling.
-- Discover enabled providers on the host with:
-  `moeresearch check --config <path> --show-providers --no-mcp`
-  Provider names in requests must match these enabled config keys (e.g. `openai`, `grok`, `exa`, `tavily`).
+- Prefer `get_runtime_capabilities` on the same MCP server for live registered provider names. For an old server without the tool, discover config-enabled names with `moeresearch check --config <path> --show-providers --no-mcp`; without confirmed names, stop rather than guessing.
 - Inspect `retryable`: retry transient provider-side failures, but fix configuration, environment, or policy failures before retrying.
 
 ### `tool_policy_denied`

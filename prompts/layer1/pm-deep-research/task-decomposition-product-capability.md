@@ -23,6 +23,7 @@ Rust core never reads prompt files at runtime. For every search-enabled aspect, 
   "capability_domain": "string | null",
   "available_model_providers": ["string"],
   "available_search_providers": ["string"],
+  "operator_limits": "BudgetConfig ceilings from get_runtime_capabilities; Skill-internal only",
   "limits_preset": "quick | standard | deep",
   "evidence_pack": "boolean",
   "available_aspect_agent_prompts": {
@@ -31,6 +32,8 @@ Rust core never reads prompt files at runtime. For every search-enabled aspect, 
   }
 }
 ```
+
+`available_*_providers` must be runtime-confirmed by `get_runtime_capabilities` (or the operator-confirmed old-server fallback). `operator_limits` is Layer-1-only and must not enter Layer 2, `instructions`, free-text `context`, or Run Binding.
 
 `target_product` is required. `capability_domain` may be omitted; infer it from `user_request` and record the inferred boundary plus excluded-with-reason in `context.summary`.
 
@@ -82,7 +85,7 @@ For each aspect, set:
 
 ## Step 4 — Limits + policies
 
-Copy `limits` and `policy.evidence` from `common/budget-tiers.md` for the supplied `limits_preset`; `evidence_pack` never changes them.
+Load `limits` and `policy.evidence` from `common/budget-tiers.md`, then only tighten every limit dimension against Skill-internal `operator_limits`; re-check finite concurrency and timeout invariants. `evidence_pack` never changes limits, and runtime merging remains authoritative.
 
 Policies:
 
@@ -153,6 +156,6 @@ For every aspect whose `tools` includes `search`, the complete `instructions` va
 <request-specific Run Binding>
 ```
 
-This three-part order is mandatory for every search-enabled aspect. Derive the Run Binding from this aspect and `policy.search` using `moe.run_binding.v1` from the common contract. It must project only compatible semantic `allowed_*` intent values, `safe_default_intent`, `required_aspect_id`, `required_aspect_name`, and evidence-closure hints. JSON-escape identity strings; do not put providers, budgets, domains, language, region, raw policy tool fields, or credentials into the binding.
+This three-part order is mandatory for every search-enabled aspect. Derive the Run Binding from this aspect and `policy.search` using `moe.run_binding.v1` from the common contract. It must project only compatible semantic `allowed_*` intent values, `safe_default_intent`, `required_aspect_id`, `required_aspect_name`, and evidence-closure hints. JSON-escape identity strings; do not put providers, budgets, runtime capabilities, `operator_limits`, host check output, domains, language, region, raw policy tool fields, or credentials into the binding. Capabilities are Layer-1-only and must not reach Layer 2, `instructions`, or free-text `context`.
 
 When `policy.search.category` is `academic`, the binding allows only `general` and `academic` for `source_focus`. When category is null, it allows the full source-focus vocabulary. Apply the same rank-compatible projection to coverage, detail, and timeliness. Do not replace a fixed category simply to avoid a model policy conflict.

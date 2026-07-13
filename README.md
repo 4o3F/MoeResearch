@@ -123,17 +123,18 @@ Before creating a release tag:
 
 ## MCP Tools
 
-The server exposes two MCP tools:
+The server exposes three MCP tools:
 
 | Tool | Purpose |
 | --- | --- |
+| `get_runtime_capabilities` | Read-only live provider names and operator limit ceilings for Layer 1 request assembly. |
 | `aspect_research` | Runs one research aspect and returns an `AspectResearchResult`. |
 | `deep_research` | Runs multiple research aspects and returns a `DeepResearchResult`. |
 
 Supported MCP request `schema_version`:
 
 ```text
-0.1
+0.2
 ```
 
 See [`docs/mcp-usage.md`](docs/mcp-usage.md) for the full MCP client interface, including JSON-RPC lifecycle messages, request payloads, response envelopes, and error formats.

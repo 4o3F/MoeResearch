@@ -16,9 +16,12 @@ use moe_research_mcp::{ToolEnvelope, ToolError, ToolErrorCode, ToolStatus};
 use moe_research_model::ModelProvider;
 use moe_research_model::ModelService;
 use moe_research_model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
+use moe_research_search::{SearchProvider, SearchRequest, SearchResponse, SearchService};
 use moe_research_workflow::Limit;
 use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
-use moe_research_workflow::{AspectResearchResult, FailureStage, TokenUsage};
+use moe_research_workflow::{
+    AspectResearchResult, FailureStage, RuntimeCapabilitiesRequest, TokenUsage,
+};
 use rmcp::ServerHandler;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::schemars::schema_for;
@@ -96,6 +99,51 @@ fn sequence_services(responses: Vec<ModelResponse>) -> Services {
     }
 }
 
+struct NamedModelProvider {
+    name: &'static str,
+    calls: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl ModelProvider for NamedModelProvider {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    async fn complete(&self, _request: ModelRequest) -> Result<ModelResponse> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err(Error::Internal {
+            message: "capabilities must not invoke model providers".to_owned(),
+        })
+    }
+}
+
+struct NamedSearchProvider {
+    name: &'static str,
+    calls: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl SearchProvider for NamedSearchProvider {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    async fn search(&self, _request: SearchRequest) -> Result<SearchResponse> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err(Error::Internal {
+            message: "capabilities must not invoke search providers".to_owned(),
+        })
+    }
+}
+
+fn capabilities_request(schema_version: &str, request_id: &str) -> RuntimeCapabilitiesRequest {
+    RuntimeCapabilitiesRequest {
+        schema_version: schema_version.to_owned(),
+        request_id: request_id.to_owned(),
+    }
+}
+
 fn mcp_server(services: Services) -> MoeResearchMcpServer {
     MoeResearchMcpServer::new(services.model, services.search, unlimited_budget_config())
 }
@@ -110,6 +158,7 @@ fn public_tool_lookup_exposes_m6_contract_tools() {
 
     assert!(server.get_tool("aspect_research").is_some());
     assert!(server.get_tool("deep_research").is_some());
+    assert!(server.get_tool("get_runtime_capabilities").is_some());
     assert!(server.get_tool("serve_stdio").is_none());
     assert!(server.get_tool("search").is_none());
 }
@@ -142,6 +191,52 @@ fn public_tool_descriptions_explain_direct_payload_shape() {
     assert!(deep_description.contains("task.aspects"));
     assert!(deep_description.contains("limits"));
     assert!(deep_description.contains("policy"));
+
+    let capabilities = server
+        .get_tool("get_runtime_capabilities")
+        .expect("runtime capabilities tool");
+    let description = capabilities.description.as_deref().unwrap_or("");
+    for required in [
+        "RuntimeCapabilitiesRequest",
+        "schema_version",
+        "request_id",
+        "0.2",
+        "read-only",
+        "model_providers",
+        "search_providers",
+        "operator_limits",
+        "never partial",
+    ] {
+        assert!(description.contains(required), "missing {required}");
+    }
+}
+
+#[test]
+fn runtime_capabilities_tool_schema_is_identity_only() {
+    let server = mcp_server(services(&[]));
+    let tool = server
+        .get_tool("get_runtime_capabilities")
+        .expect("runtime capabilities tool");
+    let schema = serde_json::Value::Object(tool.input_schema.as_ref().clone());
+    let properties = schema
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("input properties");
+    assert_eq!(properties.len(), 2);
+    assert!(properties.contains_key("schema_version"));
+    assert!(properties.contains_key("request_id"));
+    let schema_text = schema.to_string();
+    for forbidden in [
+        "api_key",
+        "base_url",
+        "capabilities_schema_version",
+        "fallback",
+    ] {
+        assert!(
+            !schema_text.contains(forbidden),
+            "input schema leaked {forbidden}"
+        );
+    }
 }
 
 #[test]
@@ -205,6 +300,124 @@ fn tool_error_schema_exposes_structured_failure_diagnostic() {
             .expect("schema text")
             .contains("tool_call_id")
     );
+}
+
+#[tokio::test]
+async fn runtime_capabilities_returns_live_sorted_provider_names_and_limits() {
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let search_calls = Arc::new(AtomicUsize::new(0));
+    let mut model = ModelService::new();
+    model.register(NamedModelProvider {
+        name: "zeta",
+        calls: model_calls.clone(),
+    });
+    model.register(NamedModelProvider {
+        name: "alpha",
+        calls: model_calls.clone(),
+    });
+    let mut search = SearchService::new();
+    search.register(NamedSearchProvider {
+        name: "zeta-search",
+        calls: search_calls.clone(),
+    });
+    search.register(NamedSearchProvider {
+        name: "alpha-search",
+        calls: search_calls.clone(),
+    });
+    let budget_config = BudgetConfig {
+        research: ResearchLimits {
+            max_agents: Limit::limited(4),
+            max_concurrent_agents: Limit::limited(2),
+            max_total_model_calls: Limit::limited(40),
+            max_total_search_calls: Limit::limited(28),
+            total_timeout_ms: Limit::limited(600_000),
+            max_tokens: Limit::unlimited(),
+        },
+        per_agent: AgentLimits {
+            max_turns: Limit::limited(10),
+            max_tool_calls: Limit::limited(12),
+            max_search_calls: Limit::limited(8),
+            timeout_ms: Limit::limited(600_000),
+        },
+    };
+
+    let envelope = MoeResearchMcpServer::new(model, search, budget_config.clone())
+        .get_runtime_capabilities(Parameters(capabilities_request("0.2", "capabilities-1")))
+        .await
+        .0;
+
+    assert_eq!(envelope.schema_version, "0.2");
+    assert_eq!(envelope.request_id, "capabilities-1");
+    assert_eq!(envelope.run_id, None);
+    assert_eq!(envelope.status, ToolStatus::Ok);
+    assert_ne!(envelope.status, ToolStatus::Partial);
+    assert!(envelope.error.is_none());
+    let data = envelope.data.expect("capabilities data");
+    assert_eq!(data.model_providers, ["alpha", "zeta"]);
+    assert_eq!(data.search_providers, ["alpha-search", "zeta-search"]);
+    assert_eq!(data.operator_limits, budget_config);
+    assert_eq!(model_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(search_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn runtime_capabilities_empty_registries_are_successful() {
+    let envelope = MoeResearchMcpServer::new(
+        ModelService::new(),
+        SearchService::new(),
+        unlimited_budget_config(),
+    )
+    .get_runtime_capabilities(Parameters(capabilities_request(
+        "0.2",
+        "capabilities-empty",
+    )))
+    .await
+    .0;
+
+    assert_eq!(envelope.status, ToolStatus::Ok);
+    assert_ne!(envelope.status, ToolStatus::Partial);
+    assert!(envelope.run_id.is_none());
+    assert!(envelope.error.is_none());
+    let data = envelope.data.expect("capabilities data");
+    assert!(data.model_providers.is_empty());
+    assert!(data.search_providers.is_empty());
+    assert_eq!(data.operator_limits, unlimited_budget_config());
+}
+
+#[tokio::test]
+async fn runtime_capabilities_validation_failures_use_request_diagnostics() {
+    for (schema_version, request_id, code) in [
+        (
+            "v999",
+            "capabilities-1",
+            ToolErrorCode::UnsupportedSchemaVersion,
+        ),
+        (
+            "0.1",
+            "capabilities-1",
+            ToolErrorCode::UnsupportedSchemaVersion,
+        ),
+        ("   ", "capabilities-1", ToolErrorCode::InvalidInput),
+        ("", "capabilities-1", ToolErrorCode::InvalidInput),
+        ("0.2", "", ToolErrorCode::InvalidInput),
+    ] {
+        let envelope = mcp_server(services(&[]))
+            .get_runtime_capabilities(Parameters(capabilities_request(schema_version, request_id)))
+            .await
+            .0;
+        assert_eq!(envelope.schema_version, schema_version);
+        assert_eq!(envelope.request_id, request_id);
+        assert_eq!(envelope.status, ToolStatus::Failed);
+        assert_ne!(envelope.status, ToolStatus::Partial);
+        assert!(envelope.run_id.is_none());
+        assert!(envelope.data.is_none());
+        let error = envelope.error.expect("validation error");
+        assert_eq!(error.code, code);
+        assert_eq!(error.diagnostic.stage, FailureStage::RequestValidation);
+        assert!(!error.retryable);
+        assert!(error.aspect_id.is_none());
+        assert!(error.failed_aspects.is_empty());
+    }
 }
 
 #[tokio::test]

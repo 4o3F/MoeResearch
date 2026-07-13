@@ -17,12 +17,15 @@ Rust core never reads prompt files at runtime. For every search-enabled aspect, 
   "language": "string",
   "available_model_providers": ["string"],
   "available_search_providers": ["string"],
+  "operator_limits": "BudgetConfig ceilings from get_runtime_capabilities; Skill-internal only",
   "limits_preset": "quick | standard | deep",
   "available_aspect_agent_prompts": {
     "default": "<inline Markdown content of prompts/layer2/aspect-agent.md>"
   }
 }
 ```
+
+`available_model_providers` and `available_search_providers` must be runtime-confirmed by `get_runtime_capabilities` (or the operator-confirmed old-server fallback). `operator_limits` is not a `DeepResearchRequest` field and is only for Layer 1 to tighten the selected tier.
 
 ## Output schema
 
@@ -109,7 +112,7 @@ Return only JSON matching this `DeepResearchRequest` shape; do not wrap it in Ma
 
 ## Limits
 
-Copy the supplied `limits_preset` from `common/budget-tiers.md` unchanged.
+Load the supplied `limits_preset` from `common/budget-tiers.md`, then only tighten every dimension against Skill-internal `operator_limits`. Re-validate finite concurrency and timeout invariants; runtime stricter-wins merging remains authoritative.
 
 ## MCP request wrapper
 
@@ -142,6 +145,6 @@ For every aspect whose `tools` includes `search`, the complete `instructions` va
 <request-specific Run Binding>
 ```
 
-This three-part order is mandatory for every search-enabled aspect. Derive the Run Binding from this aspect and `policy.search` using `moe.run_binding.v1` from the common contract. It must project only compatible semantic `allowed_*` intent values, `safe_default_intent`, `required_aspect_id`, `required_aspect_name`, and evidence-closure hints. JSON-escape identity strings; do not put providers, budgets, domains, language, region, raw policy tool fields, or credentials into the binding.
+This three-part order is mandatory for every search-enabled aspect. Derive the Run Binding from this aspect and `policy.search` using `moe.run_binding.v1` from the common contract. It must project only compatible semantic `allowed_*` intent values, `safe_default_intent`, `required_aspect_id`, `required_aspect_name`, and evidence-closure hints. JSON-escape identity strings; do not put providers, budgets, runtime capabilities, `operator_limits`, host check output, domains, language, region, raw policy tool fields, or credentials into the binding. Runtime-confirmed provider lists and ceilings are Layer-1-only and must not enter Layer 2, `instructions`, or free-text `context`.
 
 When `policy.search.category` is `academic`, the binding allows only `general` and `academic` for `source_focus`. When category is null, it allows the full source-focus vocabulary. Apply the same rank-compatible projection to coverage, detail, and timeliness. Do not replace a fixed category simply to avoid a model policy conflict.

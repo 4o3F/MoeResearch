@@ -8,7 +8,7 @@ use super::super::policy::{ModelPolicy, SearchPolicy, ToolName};
 use super::prompt::ASPECT_PROMPT_MAX_BYTES;
 use super::request::{
     AspectRequest, AspectResearchRequest, DeepResearchRequest, ResearchContext, ResearchPolicy,
-    ResearchTask,
+    ResearchTask, RuntimeCapabilitiesRequest, SUPPORTED_SCHEMA_VERSIONS,
 };
 
 /// Internal deep-research plan after request/config normalization.
@@ -40,6 +40,19 @@ pub(crate) struct WorkflowValidationContext<'a> {
     pub budget_config: &'a BudgetConfig,
     pub supported_schema_versions: &'a [&'a str],
     pub supported_tool_name: &'a str,
+}
+
+impl RuntimeCapabilitiesRequest {
+    /// Validates the capabilities request against the shared public schema version.
+    ///
+    /// # Errors
+    /// Returns `InvalidInput` for empty identity fields and
+    /// `UnsupportedSchemaVersion` for unsupported schema versions.
+    pub fn validate(&self) -> Result<()> {
+        ensure_non_empty("schema_version", &self.schema_version)?;
+        ensure_non_empty("request_id", &self.request_id)?;
+        ensure_schema_version_supported(&self.schema_version, SUPPORTED_SCHEMA_VERSIONS)
+    }
 }
 
 impl AspectResearchRequest {

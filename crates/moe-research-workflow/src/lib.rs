@@ -24,7 +24,7 @@ pub use report::{
 };
 pub use research::{
     AspectRequest, AspectResearchRequest, DeepResearchRequest, ResearchContext, ResearchPolicy,
-    ResearchTask, effective_research_limits,
+    ResearchTask, RuntimeCapabilities, RuntimeCapabilitiesRequest, effective_research_limits,
 };
 pub use workflow::{
     AspectResearchFailure, AspectResearchOutput, DeepResearchFailure, aspect_research,

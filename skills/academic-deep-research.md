@@ -44,13 +44,14 @@ All Academic routes load `evidence-modules-overlay.md`, `../common/typst-report-
 ## Workflow
 
 1. Classify the capability and obtain `limits_preset` from `skills/deep-research.md`; do not re-infer it.
-2. Read `../prompts/layer1/academic-deep-research/task-decomposition.md` and produce a `DeepResearchRequest`.
-3. Use `../prompts/layer1/academic-deep-research/agent-allocation.md` to assign Layer 2 personas.
-4. For each search-enabled aspect, assemble `AspectRequest.instructions` as selected persona Markdown, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific `moe.run_binding.v1` Run Binding projected from that aspect and `policy.search`.
-5. Call `deep_research` for multi-aspect research, or `aspect_research` for a single focused retry.
-6. Apply `evidence-postprocess.md`, this profile's `evidence-modules-overlay.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, and `report-annex.md` in that order.
-7. Read `../prompts/layer1/common/typst-report-contract.md`, `final-report-guidance.md`, then the unique capability template from the routing table. Synthesize a `typst-project-v1` report; only materialize it in a caller-specified directory and never overwrite without explicit approval.
-8. Do not compile Typst automatically. A caller may explicitly compile the generated project outside MoeResearch with a project-root-bounded argv invocation.
+2. Call `get_runtime_capabilities` once with schema `0.2`, fail closed on a failed envelope or empty model list, and keep the snapshot Layer-1-only. On an old server, require the documented operator-confirmed fallback rather than guessing.
+3. Pass the runtime-confirmed provider lists and Skill-internal `operator_limits` into `../prompts/layer1/academic-deep-research/task-decomposition.md`, then produce a `DeepResearchRequest` with only-tightened limits.
+4. Use `../prompts/layer1/academic-deep-research/agent-allocation.md` to assign Layer 2 personas.
+5. For each search-enabled aspect, assemble `AspectRequest.instructions` as selected persona Markdown, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific `moe.run_binding.v1` Run Binding projected from that aspect and `policy.search`.
+6. Call `deep_research` for multi-aspect research, or `aspect_research` for a single focused retry.
+7. Apply `evidence-postprocess.md`, this profile's `evidence-modules-overlay.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, and `report-annex.md` in that order.
+8. Read `../prompts/layer1/common/typst-report-contract.md`, `final-report-guidance.md`, then the unique capability template from the routing table. Synthesize a `typst-project-v1` report; only materialize it in a caller-specified directory and never overwrite without explicit approval.
+9. Do not compile Typst automatically. A caller may explicitly compile the generated project outside MoeResearch with a project-root-bounded argv invocation.
 
 ## Policy boundaries
 
@@ -69,8 +70,9 @@ Academic profile uses the shared frozen host contract: `../prompts/layer1/common
 - Prefer `deep_research` for multi-aspect work; use `aspect_research` only for a single focused retry.
 - On `deep_research` partial: keep completed aspects; one `aspect_research` retry per failed aspect max.
 - On `aspect_research` partial: preserve frozen evidence; fix Layer-1 prompt/schema bugs before retrying `schema_validation_failed`.
-- Provider names must match host config; operators can list them with `moeresearch check --show-providers --no-mcp`.
-- Operator TOML limit ceilings can tighten request limits; see `budget_exceeded` in `docs/mcp-usage.md`.
+- Prefer `get_runtime_capabilities` (`schema_version: "0.2"`) once per job for live registered provider names and `operator_limits`; stable list order is not preference or fallback, and the snapshot is Layer-1-only.
+- If an old server lacks the tool, use operator-confirmed names from `moeresearch check --config <path> --show-providers --no-mcp`; otherwise fail closed and never guess providers.
+- Load the selected tier, then only tighten it against `operator_limits`; Rust stricter-wins merging remains final. See `budget_exceeded` in `docs/mcp-usage.md`.
 - After MoeResearch returns, continue with `../prompts/layer1/common/` evidence modules; host WebSearch/WebFetch remains `HV-*` only.
 - If MCP tools or required prompts are missing: stop and direct the user to `moeresearch mcp register` / `moeresearch assets install research-skills`.
 

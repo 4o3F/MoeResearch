@@ -6,7 +6,7 @@ use moe_research_workflow::{
 };
 use moe_research_workflow::{
     AspectRequest, AspectResearchRequest, DeepResearchRequest, ResearchContext, ResearchPolicy,
-    ResearchTask,
+    ResearchTask, RuntimeCapabilities, RuntimeCapabilitiesRequest,
 };
 use moe_research_workflow::{CountLimit, DurationLimitMs, Limit};
 use moe_research_workflow::{
@@ -166,6 +166,113 @@ fn aspect_research_request_roundtrips_json() {
     let decoded: AspectResearchRequest = serde_json::from_str(&value).expect("deserialize request");
 
     assert_eq!(decoded, request);
+}
+
+#[test]
+fn runtime_capabilities_dtos_roundtrip_and_reject_unknown_fields() {
+    let request = RuntimeCapabilitiesRequest {
+        schema_version: "0.2".to_owned(),
+        request_id: "capabilities-1".to_owned(),
+    };
+    let request_json = serde_json::to_value(&request).expect("request json");
+    assert_eq!(
+        serde_json::from_value::<RuntimeCapabilitiesRequest>(request_json)
+            .expect("request roundtrip"),
+        request
+    );
+
+    let data = RuntimeCapabilities {
+        model_providers: vec!["openai".to_owned()],
+        search_providers: vec!["exa".to_owned()],
+        operator_limits: moe_research_workflow::BudgetConfig {
+            research: ResearchLimits {
+                max_agents: Limit::limited(4),
+                max_concurrent_agents: Limit::limited(2),
+                max_total_model_calls: Limit::limited(40),
+                max_total_search_calls: Limit::limited(28),
+                total_timeout_ms: Limit::limited(600_000),
+                max_tokens: Limit::unlimited(),
+            },
+            per_agent: AgentLimits {
+                max_turns: Limit::limited(10),
+                max_tool_calls: Limit::limited(12),
+                max_search_calls: Limit::limited(8),
+                timeout_ms: Limit::limited(600_000),
+            },
+        },
+    };
+    let data_json = serde_json::to_value(&data).expect("data json");
+    assert_eq!(
+        data_json["operator_limits"]["research"]["max_tokens"],
+        json!(-1)
+    );
+    assert_eq!(
+        serde_json::from_value::<RuntimeCapabilities>(data_json).expect("data roundtrip"),
+        data
+    );
+
+    for value in [
+        json!({
+            "schema_version": "0.2",
+            "request_id": "capabilities-1",
+            "capabilities_schema_version": "1"
+        }),
+        json!({
+            "schema_version": "0.2",
+            "request_id": "capabilities-1",
+            "api_key_env": "OPENAI_API_KEY"
+        }),
+    ] {
+        assert!(serde_json::from_value::<RuntimeCapabilitiesRequest>(value).is_err());
+    }
+
+    let mut unknown_data = serde_json::to_value(&data).expect("data json");
+    unknown_data
+        .as_object_mut()
+        .expect("data object")
+        .insert("base_url".to_owned(), json!("https://example.invalid"));
+    assert!(serde_json::from_value::<RuntimeCapabilities>(unknown_data).is_err());
+}
+
+#[test]
+fn runtime_capabilities_schema_contains_only_snapshot_fields() {
+    let data_schema = serde_json::to_value(schema_for!(RuntimeCapabilities)).expect("data schema");
+    let data_properties = data_schema["properties"]
+        .as_object()
+        .expect("data properties");
+    assert_eq!(data_properties.len(), 3);
+    for required in ["model_providers", "search_providers", "operator_limits"] {
+        assert!(data_properties.contains_key(required), "missing {required}");
+    }
+
+    let schema_text = data_schema.to_string();
+    for forbidden in [
+        "api_key",
+        "api_key_env",
+        "base_url",
+        "fallback_order",
+        "capabilities_schema_version",
+        "supported_schema_versions",
+        "prompt",
+        "trace",
+    ] {
+        assert!(
+            !schema_text.contains(forbidden),
+            "schema leaked {forbidden}"
+        );
+    }
+    assert!(schema_text.contains("max_agents"));
+    assert!(schema_text.contains("max_turns"));
+    assert!(schema_text.contains("minimum"));
+
+    let request_schema =
+        serde_json::to_value(schema_for!(RuntimeCapabilitiesRequest)).expect("request schema");
+    let request_properties = request_schema["properties"]
+        .as_object()
+        .expect("request properties");
+    assert_eq!(request_properties.len(), 2);
+    assert!(request_properties.contains_key("schema_version"));
+    assert!(request_properties.contains_key("request_id"));
 }
 
 #[test]
@@ -981,6 +1088,18 @@ fn model_search_prompt_contract_uses_semantic_intent_and_id_only_evidence() {
             && contract.contains("provider-native DTOs"),
         "Run Binding must keep provider routing and provider-native fields out of model guidance"
     );
+    for forbidden in [
+        "operator_limits",
+        "runtime capability snapshots",
+        "model_providers",
+        "search_providers",
+        "host check output",
+    ] {
+        assert!(
+            contract.contains(forbidden),
+            "Run Binding contract must forbid {forbidden}"
+        );
+    }
 
     let personas = [
         (
@@ -1082,6 +1201,16 @@ fn layer1_search_assembly_paths_require_run_binding() {
                 "task decomposition [{index}] retains stale two-part assembly wording: {stale}"
             );
         }
+        for required in ["runtime-confirmed", "operator_limits", "Layer 2"] {
+            assert!(
+                prompt.contains(required),
+                "task decomposition [{index}] must include {required} capability boundary"
+            );
+        }
+        assert!(
+            prompt.contains("only tighten") || prompt.contains("only-tighten"),
+            "task decomposition [{index}] must only tighten against operator limits"
+        );
     }
 
     let allocations = [

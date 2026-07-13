@@ -7,7 +7,7 @@ mod request;
 pub use plan::effective_research_limits;
 pub use request::{
     AspectRequest, AspectResearchRequest, DeepResearchRequest, ResearchContext, ResearchPolicy,
-    ResearchTask,
+    ResearchTask, RuntimeCapabilities, RuntimeCapabilitiesRequest,
 };
 
 pub(crate) use plan::{EffectiveAspectPlan, EffectiveResearchPlan, WorkflowValidationContext};
