@@ -25,7 +25,7 @@ Rust core never reads prompt files at runtime. For every search-enabled aspect, 
 }
 ```
 
-`available_model_providers` and `available_search_providers` must be runtime-confirmed by `get_runtime_capabilities` (or the operator-confirmed old-server fallback). `operator_limits` is not a `DeepResearchRequest` field and is only for Layer 1 to tighten the selected tier.
+`available_model_providers` and `available_search_providers` must be runtime-confirmed by `get_runtime_capabilities` (or the operator-confirmed old-server fallback). `operator_limits` is not a `DeepResearchRequest` field and is only for Layer 1 to resolve request limits before dispatch. Apply explicit user prompt resource constraints directly to the corresponding request limits before operator-ceiling tightening.
 
 ## Output schema
 
@@ -112,7 +112,7 @@ Return only JSON matching this `DeepResearchRequest` shape; do not wrap it in Ma
 
 ## Limits
 
-Load the supplied `limits_preset` from `common/budget-tiers.md`, then only tighten every dimension against Skill-internal `operator_limits`. Re-validate finite concurrency and timeout invariants; runtime stricter-wins merging remains authoritative.
+Load the supplied `limits_preset` from `common/budget-tiers.md`. Apply explicit user prompt resource constraints to the corresponding request limit dimensions in preference to the selected tier, then only tighten every dimension against Skill-internal `operator_limits`. Re-validate finite concurrency and timeout invariants; runtime stricter-wins merging remains authoritative.
 
 ## MCP request wrapper
 

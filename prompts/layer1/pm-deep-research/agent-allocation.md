@@ -40,7 +40,7 @@ One MoeResearch aspect carries exactly one `instructions` persona prompt, so the
 
 ## Limits
 
-Use the supplied `limits_preset` from `common/budget-tiers.md` unchanged.
+Apply explicit resource constraints in the user prompt in preference to the selected tier, then tighten against operator ceilings; do not silently replace the user's constraints.
 
 ## Provider selection per aspect
 

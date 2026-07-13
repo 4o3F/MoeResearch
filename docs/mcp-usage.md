@@ -174,9 +174,9 @@ Shipped skill source of truth: `prompts/layer1/common/budget-tiers.md` (installe
 | --- | --- | --- |
 | `quick` | agents 2, concurrent 1, model calls 12, search calls 8, total_timeout_ms 300000, max_tokens -1 | turns 4, tool_calls 4, search_calls 2, timeout_ms 180000 |
 | `standard` | agents 4, concurrent 2, model calls 40, search calls 28, total_timeout_ms 600000, max_tokens -1 | turns 10, tool_calls 12, search_calls 8, timeout_ms 600000 |
-| `deep` | agents 6, concurrent 3, model calls 70, search calls 56, total_timeout_ms 1260000, max_tokens -1 | turns 8, tool_calls 8, search_calls 4, timeout_ms 600000 |
+| `deep` | agents 6, concurrent 3, model calls 180, search calls 144, total_timeout_ms 3600000, max_tokens -1 | turns 16, tool_calls 20, search_calls 12, timeout_ms 1200000 |
 
-`skills/deep-research.md` selects `quick`, `standard`, or `deep` once; profiles apply that selection unchanged.
+`skills/deep-research.md` selects `quick`, `standard`, or `deep` once. During Layer-1 request assembly, explicit resource constraints in the user prompt take precedence over the selected tier before limits are tightened against operator ceilings. An explicit user no-cap request may set request search dimensions to `-1`, but never bypasses finite operator ceilings.
 
 ### 5.4 `ResearchPolicy`
 
@@ -354,7 +354,7 @@ Validation failures return `status: "failed"`, `data: null`, `run_id: null`, and
 
 It does not expose API keys, API-key environment names or values, URLs, model IDs, provider-specific configuration, proxy/network/retry settings, TOML, host paths, health/probe data, prompts, policy templates, usage, traces, or provider ranking/default/fallback information. Unknown fields are rejected; no capabilities-specific schema-version or version-negotiation fields exist.
 
-Layer 1 may use this snapshot only to select one registered provider per aspect and only tighten selected budget tiers. Do not inject the snapshot, provider arrays, or operator limits into Layer 2 personas, `instructions`, free-text `context`, or Run Binding.
+Layer 1 may use this snapshot only to select one registered provider per aspect and tighten the selected tier after applying explicit user resource constraints. Do not inject the snapshot, provider arrays, or operator limits into Layer 2 personas, `instructions`, free-text `context`, or Run Binding.
 
 ## 7. `deep_research`
 

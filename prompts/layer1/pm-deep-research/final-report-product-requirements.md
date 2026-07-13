@@ -63,7 +63,7 @@ Before writing, check for prompt-level conflict, contradiction, and duplication:
 
 ## Phase A — Pre-synthesis gap audit
 
-Run this checklist over `aspect_reports` + `evidence_index` + `failed_aspects`. For each gap, either (a) trigger one orchestration backfill round — re-call `aspect_research` for the deficient aspect, passing `context.prior_sources` = already-collected evidence (Standard ≤1 round, Deep ≤2 rounds) — or (b) mark explicitly in 段8 (open-questions) and lower the affected confidence. **The five hard gates** (段3 4-risks / 段4 ≥3 候选 / 段5 非目标 / 段6 三套指标 / 段8 TM-11) **may not be silently soft-papered** — they trigger mandatory backfill or explicit "未完备 / 不可推荐" labeling in 段1 PR-FAQ.
+Run this checklist over `aspect_reports` + `evidence_index` + `failed_aspects`. For each gap, either (a) classify its failure, then trigger one repaired orchestration backfill round when feasible — pass `context.prior_sources` = already-collected evidence; for `budget_exceeded`, widen only the exhausted limit within explicit user constraints and operator ceilings or narrow scope (Standard ≤1 round, Deep ≤2 rounds) — or (b) mark explicitly in 段8 (open-questions) and lower the affected confidence. **The five hard gates** (段3 4-risks / 段4 ≥3 候选 / 段5 非目标 / 段6 三套指标 / 段8 TM-11) **may not be silently soft-papered** — they trigger mandatory repaired backfill or explicit "未完备 / 不可推荐" labeling in 段1 PR-FAQ.
 
 | Gap check | Fails when | Action |
 |---|---|---|

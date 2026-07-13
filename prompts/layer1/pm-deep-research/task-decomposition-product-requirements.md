@@ -35,7 +35,7 @@ Rust core never reads prompt files at runtime. For every search-enabled aspect, 
 }
 ```
 
-`available_*_providers` must be runtime-confirmed by `get_runtime_capabilities` (or the operator-confirmed old-server fallback). `operator_limits` is Layer-1-only and must not enter Layer 2, `instructions`, free-text `context`, or Run Binding.
+`available_*_providers` must be runtime-confirmed by `get_runtime_capabilities` (or the operator-confirmed old-server fallback). `operator_limits` is Layer-1-only and must not enter Layer 2, `instructions`, free-text `context`, or Run Binding. Apply explicit user prompt resource constraints directly to the corresponding request limits before operator-ceiling tightening.
 
 `subject` is required. `target_actor` and `subject_domain` are optional context. `audience` usually means PM / TPM / engineering / design stakeholders.
 
@@ -90,7 +90,7 @@ For each aspect, set:
 
 ## Step 4 — Limits + policies
 
-Load `limits` and `policy.evidence` from `common/budget-tiers.md`, then only tighten every limit dimension against Skill-internal `operator_limits`; re-check finite concurrency and timeout invariants. `evidence_pack` never changes limits, and runtime merging remains authoritative.
+Load `limits` from `common/budget-tiers.md`. Apply explicit user prompt resource constraints to the corresponding request limit dimensions in preference to the selected tier, then only tighten every limit dimension against Skill-internal `operator_limits`; re-check finite concurrency and timeout invariants. `evidence_pack` never changes limits, and runtime merging remains authoritative.
 
 Policies:
 

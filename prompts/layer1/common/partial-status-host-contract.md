@@ -12,24 +12,28 @@ Do not reinterpret fields or invent a second envelope shape. Schema 0.2 intentio
 ## Rules
 
 1. **Hard fail** (`status=failed`, no usable partial payload; codes such as `provider_unavailable`, `network_failed`, process/tool missing): surface the stable error code, `retryable`, and the smallest safe next action. Stop. There is no host-only fallback for MoeResearch execution.
-2. **`deep_research` partial** (`status=partial`, `data` present, **`error` is null**): this is not full success. Keep completed aspects from `data` (`completed_aspects` / `aspect_reports`). Treat each entry in `data.failed_aspects` as a gap. For each failed aspect, run **at most one** targeted `aspect_research` retry with the same aspect plan and inline instructions. Then write a partial report that lists remaining gaps.
-3. **`aspect_research` partial** (`status=partial`, **`data` and `error` both set**): keep frozen evidence in `data`. Do not discard `data` because `error` is present. Retry at most once if `error.retryable` is true and the failure is not a Layer-1 schema/prompt bug (`schema_validation_failed` → fix request/prompt, do not blind-retry).
+2. **`deep_research` partial** (`status=partial`, `data` present, **`error` is null**): this is not full success. Keep completed aspects from `data` (`completed_aspects` / `aspect_reports`) and treat each `data.failed_aspects` entry as a gap. Run at most one targeted `aspect_research` retry per failed aspect only after classifying the failure:
+   - retry a transient failure when `retryable = true`;
+   - for `budget_exceeded`, do not retry with the same exhausted limits—widen only the exhausted request dimension when explicit user constraints and operator ceilings allow it, or narrow the aspect scope;
+   - for a Layer-1 schema/prompt defect such as `schema_validation_failed`, fix the request or instructions before retrying.
+   If no repaired retry is feasible, preserve evidence and disclose the remaining gap.
+3. **`aspect_research` partial** (`status=partial`, **`data` and `error` both set**): keep frozen evidence in `data`. Do not discard `data` because `error` is present. Retry at most once only after the same classification and repair rules from rule 2; never blind-retry a non-retryable failure with an unchanged request.
 4. **`allow_partial_results=false`**: expect hard `failed` with no partial payload; do not invent a partial report.
-5. **Insufficient evidence after success/partial**: do not invent conclusions; emit a gap list and follow-up searches.
+5. **Insufficient evidence after success/partial**: do not invent conclusions; emit a gap list and use only a repaired, bounded follow-up allowed by the selected budget and explicit user constraints.
 
 ## Envelope table
 
 | Case | `status` | `data` | `error` | Host must |
 | --- | --- | --- | --- | --- |
-| `deep_research` partial | `partial` | present (`completed_aspects`, `aspect_reports`, `failed_aspects`, `evidence_index`, …) | **null** | Keep completed aspects; treat `failed_aspects[]` as gaps; at most one `aspect_research` retry per failed aspect |
-| `aspect_research` partial | `partial` | present (frozen evidence; findings usually empty) | **present** | Use `data`; do not treat as pure hard-fail discard; inspect `error.retryable` / code for one retry |
+| `deep_research` partial | `partial` | present (`completed_aspects`, `aspect_reports`, `failed_aspects`, `evidence_index`, …) | **null** | Keep completed aspects; classify each failed aspect; retry at most once only after transient/repaired-failure gating |
+| `aspect_research` partial | `partial` | present (frozen evidence; findings usually empty) | **present** | Use `data`; inspect code/retryability; repair before one retry |
 | Partials disabled (`allow_partial_results=false`) | `failed` | null / no partial payload | present | Stop; no partial report path |
 | Hard transport/config failure | `failed` | null | present | Surface stable code; no host-only substitute for MoeResearch execution |
 
 ## Profile notes
 
-- Default profiles (generic, academic, technical): follow rules 1–5 as written (`at most one` retry).
-- PM profile: same contract; deep partial retries are **required once** per failed aspect when a retry is feasible (same plan + instructions), not optional.
+- Default profiles (generic, academic, technical): follow rules 1–5 as written (`at most one` repaired retry).
+- PM profile: same contract; one retry is required only when it is feasible after transient-failure gating or request repair. A same-cap `budget_exceeded` retry is never required.
 
 ## Paths after install
 

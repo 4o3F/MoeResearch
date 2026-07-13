@@ -43,9 +43,9 @@ All Academic routes load `evidence-modules-overlay.md`, `../common/typst-report-
 
 ## Workflow
 
-1. Classify the capability and obtain `limits_preset` from `skills/deep-research.md`; do not re-infer it.
+1. Classify the capability and receive the already selected `limits_preset` from `skills/deep-research.md`; do not re-infer it.
 2. Call `get_runtime_capabilities` once with schema `0.2`, fail closed on a failed envelope or empty model list, and keep the snapshot Layer-1-only. On an old server, require the documented operator-confirmed fallback rather than guessing.
-3. Pass the runtime-confirmed provider lists and Skill-internal `operator_limits` into `../prompts/layer1/academic-deep-research/task-decomposition.md`, then produce a `DeepResearchRequest` with only-tightened limits.
+3. Pass the runtime-confirmed provider lists, supplied `limits_preset`, and Skill-internal `operator_limits` into `../prompts/layer1/academic-deep-research/task-decomposition.md`. Apply explicit resource constraints in the user prompt in preference to the selected tier, then tighten against operator limits when producing the `DeepResearchRequest`.
 4. Use `../prompts/layer1/academic-deep-research/agent-allocation.md` to assign Layer 2 personas.
 5. For each search-enabled aspect, assemble `AspectRequest.instructions` as selected persona Markdown, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific `moe.run_binding.v1` Run Binding projected from that aspect and `policy.search`.
 6. Call `deep_research` for multi-aspect research, or `aspect_research` for a single focused retry.
@@ -68,11 +68,11 @@ Academic profile uses the shared frozen host contract: `../prompts/layer1/common
 ### Operational checklist
 
 - Prefer `deep_research` for multi-aspect work; use `aspect_research` only for a single focused retry.
-- On `deep_research` partial: keep completed aspects; one `aspect_research` retry per failed aspect max.
-- On `aspect_research` partial: preserve frozen evidence; fix Layer-1 prompt/schema bugs before retrying `schema_validation_failed`.
+- On `deep_research` partial: keep completed aspects; classify each failed aspect and run at most one repaired `aspect_research` retry when feasible.
+- On `aspect_research` partial: preserve frozen evidence; repair Layer-1 prompt/schema defects before retrying `schema_validation_failed`, and never repeat a `budget_exceeded` request with the same exhausted limits.
 - Prefer `get_runtime_capabilities` (`schema_version: "0.2"`) once per job for live registered provider names and `operator_limits`; stable list order is not preference or fallback, and the snapshot is Layer-1-only.
 - If an old server lacks the tool, use operator-confirmed names from `moeresearch check --config <path> --show-providers --no-mcp`; otherwise fail closed and never guess providers.
-- Load the selected tier, then only tighten it against `operator_limits`; Rust stricter-wins merging remains final. See `budget_exceeded` in `docs/mcp-usage.md`.
+- Load the selected tier, apply explicit user resource constraints, then only tighten it against `operator_limits`; Rust stricter-wins merging remains final. See `budget_exceeded` in `docs/mcp-usage.md`.
 - After MoeResearch returns, continue with `../prompts/layer1/common/` evidence modules; host WebSearch/WebFetch remains `HV-*` only.
 - If MCP tools or required prompts are missing: stop and direct the user to `moeresearch mcp register` / `moeresearch assets install research-skills`.
 

@@ -27,7 +27,7 @@ You are the PM DeepResearch report synthesizer (Layer 1). You convert validated 
 
 ## Phase A — Pre-synthesis gap audit
 
-Before writing, run this checklist over `aspect_reports` + `evidence_index` + `failed_aspects`. For each gap, either (a) trigger one orchestration backfill round — re-call `aspect_research` for the deficient aspect, passing `context.prior_sources` = already-collected evidence to avoid repeats (**Standard ≤1 round, Deep ≤2 rounds**, then stop — bounded self-refine) — or (b) if backfill is exhausted/impossible, mark it explicitly in Ch 12 and lower the affected confidence. Never silently paper over a gap.
+Before writing, run this checklist over `aspect_reports` + `evidence_index` + `failed_aspects`. For each gap, either (a) classify its failure, then trigger one repaired orchestration backfill round when feasible — pass `context.prior_sources` = already-collected evidence to avoid repeats; for `budget_exceeded`, widen only the exhausted limit within explicit user constraints and operator ceilings or narrow scope (**Standard ≤1 round, Deep ≤2 rounds**, then stop — bounded self-refine) — or (b) if backfill is exhausted/impossible, mark it explicitly in Ch 12 and lower the affected confidence. Never silently paper over a gap.
 
 | Gap check | Fails when | Action |
 |---|---|---|

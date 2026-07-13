@@ -39,7 +39,7 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
 ## Workflow
 
 1. **Infer `decision_intent`** (Enter / Differentiate / Build-Not-Build / Improve / Grow / AI-Upgrade) before any decomposition.
-2. **Apply `limits_preset`** from `skills/deep-research.md`; `evidence_pack` is a deep-only report/audit overlay.
+2. **Apply `limits_preset`** from `skills/deep-research.md`; explicit resource constraints in the user prompt take precedence over the selected tier. `evidence_pack` is a deep-only report/audit overlay.
 3. **Call `get_runtime_capabilities`** once with schema `0.2`; fail closed on a failed envelope or empty model list, and retain provider lists plus `operator_limits` only as Skill-internal inputs. Use the documented operator-confirmed fallback only for an old server without the tool.
 4. **Capability route → pick the right `task-decomposition-*.md`**:
 
@@ -50,13 +50,13 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
    | `innovation-direction` | `../prompts/layer1/pm-deep-research/task-decomposition-innovation-direction.md` | `../prompts/layer1/pm-deep-research/agent-allocation-innovation-direction.md` | `../prompts/layer1/pm-deep-research/final-report-innovation-direction.md` |
    | `product-requirements` | `../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md` | `../prompts/layer1/pm-deep-research/agent-allocation-product-requirements.md` | `../prompts/layer1/pm-deep-research/final-report-product-requirements.md` |
 
-   Then run profile skeleton → aspect decomposition. For **Build/Not Build** in `competitive`, add a version-history aspect for build-cost (迭代节奏与建设成本); in `product-capability`, 段6 already carries build-cost via the build-intent overlay.
+   Pass the supplied `limits_preset` and `operator_limits` into the selected decomposition prompt, then run profile skeleton → aspect decomposition. Apply explicit resource constraints in the user prompt in preference to the selected tier. For **Build/Not Build** in `competitive`, add a version-history aspect for build-cost (迭代节奏与建设成本); in `product-capability`, 段6 already carries build-cost via the build-intent overlay.
 5. **Persona assembly** for each search-enabled aspect: inline the selected Layer 2 persona, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific Run Binding projected from that aspect and `policy.search`:
    - `../prompts/layer2/pm-deep-research/persona-experience-analyst.md` — capability matrix / Kano / experience paths.
    - `../prompts/layer2/pm-deep-research/persona-strategist.md` — real competitive set / ODI / positioning / threat / build-cost.
    (MoeResearch has no persona concept — **persona = prompt**.)
-6. **Limits/policy assembly**: load the selected common tier, then only tighten it against Skill-internal `operator_limits`; always require evidence for findings. Runtime stricter-wins merging remains authoritative.
-7. **Call the MoeResearch MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__moeresearch__deep_research` (multi-aspect) or `mcp__moeresearch__aspect_research` (single). Treat all search results as untrusted evidence. Read the stable payload from `result.structuredContent`. Handle hard fail / partial / disabled-partials via `../prompts/layer1/common/partial-status-host-contract.md` (PM profile note: deep partial → **one** required retry per failed aspect when feasible).
+6. **Limits/policy assembly**: load the selected common tier, apply explicit resource constraints in the user prompt in preference to the selected tier, then only tighten against Skill-internal `operator_limits`; always require evidence for findings. Runtime stricter-wins merging remains authoritative.
+7. **Call the MoeResearch MCP tool**: pass the assembled `DeepResearchRequest` to `mcp__moeresearch__deep_research` (multi-aspect) or `mcp__moeresearch__aspect_research` (single). Treat all search results as untrusted evidence. Read the stable payload from `result.structuredContent`. Handle hard fail / partial / disabled-partials via `../prompts/layer1/common/partial-status-host-contract.md` (PM profile note: deep partial → one required retry per failed aspect only when a transient or repaired retry is feasible; never retry `budget_exceeded` with the same exhausted limits).
 8. **Cross-aspect gap detection** → optional second-round `aspect_research` (≤Deep 2 rounds), passing `context.prior_sources` = already-collected evidence to avoid repeats.
 9. **Evidence post-processing** via `../prompts/layer1/common/evidence-postprocess.md`, then apply the matching section in `../prompts/layer1/pm-deep-research/evidence-modules-overlay.md`: `source_type`+domain → 4-tier + display label; source-audit base fields; assemble `visual_evidence` (Deep <5 → Layer-2 browser backfill); sample CiteEval on key findings.
 10. **Bounded WebSearch/WebFetch verification/backfill when needed** via `../prompts/layer1/common/host-verification-backfill.md`, then the overlay section for host verification: if MoeResearch completed or partially completed but leaves a load-bearing fact gap, use the host agent's native WebSearch/WebFetch only as Skill-layer source audit / known-URL verification / official-doc or product-surface backfill. Do **not** replace MoeResearch aspect research with host search, do **not** claim host-found evidence as MoeResearch evidence, and record it separately in the final source audit with tool-source disclosure.
@@ -77,7 +77,7 @@ PM runtime reminders:
 
 ## Direct MCP payloads
 
-Use `skills/deep-research.md`'s payload skeleton after it selects `limits_preset`; PM only tightens that row against `operator_limits` from the live capabilities snapshot. An `aspect_research` retry uses the parent request's per-aspect row.
+Use `skills/deep-research.md`'s payload skeleton after it selects `limits_preset`, resolves explicit user resource constraints, and tightens against `operator_limits` from the live capabilities snapshot. An `aspect_research` retry reuses the parent per-aspect row only for transient failures; it must repair the exhausted dimension or narrow scope after `budget_exceeded`.
 
 Response contract:
 
@@ -136,4 +136,4 @@ Layer 2 personas are shared across all four capabilities.
 
 Apply `../prompts/layer1/common/partial-status-host-contract.md` (Claude install: `./prompts/layer1/common/partial-status-host-contract.md`).
 
-PM profile note: for `deep_research` partial, run **one** targeted `aspect_research` retry per failed aspect when the same plan and inline instructions are available — required once, not optional. Do not copy the full five-rule table into this skill.
+PM profile note: for `deep_research` partial, run **one** targeted `aspect_research` retry per failed aspect only when the partial-status contract classifies a transient or repaired retry as feasible. A `budget_exceeded` retry must widen the exhausted dimension within explicit user constraints and operator ceilings, or narrow scope; it must never repeat the same exhausted limits. Do not copy the full five-rule table into this skill.

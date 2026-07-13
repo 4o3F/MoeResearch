@@ -35,7 +35,7 @@ Extract these fields from the user request:
   "deliverable": "report | comparison | literature review | paper critique | roadmap input | migration plan | risk assessment | other",
   "domain_signals": ["product", "academic", "technical", "generic"],
   "named_entities": ["products, papers, libraries, frameworks, standards, competitors, markets"],
-  "constraints": ["time window, geography, audience, stack, evidence requirements, output language"],
+  "constraints": ["time window, geography, audience, stack, evidence requirements, output language, explicit resource limits"],
   "depth_signal": "user hint | inferred",
   "language": "requested output language or inferred default"
 }
@@ -89,7 +89,9 @@ Choose a concrete non-null `limits_preset` here; profiles only apply it. Then pr
 }
 ```
 
-Select it once: explicit `limits_hint` wins; otherwise use `quick` for narrow low-stakes work, `standard` for normal multi-aspect work, and `deep` for broad, high-stakes, or ambiguous work. Load the tier and evidence minimum from `../prompts/layer1/common/budget-tiers.md`, then only tighten limits against the connected server's `operator_limits`; profiles must not change them. Set `evidence_pack=true` only for an explicit PM review/archive request with `deep`; it never changes limits.
+Select the tier once: explicit `limits_hint` wins; otherwise use `quick` for narrow low-stakes work, `standard` for normal multi-aspect work, and `deep` for broad, high-stakes, or ambiguous work. When assembling request limits, explicit resource constraints in the user prompt take precedence over the selected tier under `../prompts/layer1/common/budget-tiers.md`. A named tier alone is not an unlimited-execution request. Load the tier, apply the applicable user-prompt constraints, then only tighten the resolved limits against the connected server's `operator_limits`. Set `evidence_pack=true` only for an explicit PM review/archive request with `deep`; it never changes limits.
+
+If a user requests unlimited or unbounded search, explain any remaining finite dimensions and operator ceilings before execution. If a finite operator ceiling prevents the requested coverage, ask whether to narrow scope or stop rather than silently degrading the plan.
 
 Then read only the selected profile's task-decomposition prompt and continue the normal workflow. Common evidence modules and the mandatory model-search tool contract are available under `../prompts/layer1/common/` for all profiles.
 
@@ -167,14 +169,14 @@ The skill produces a Layer 1 final-report handoff. Academic and Technical report
 
 ## Workflow
 
-1. Use the `limits_preset` chosen in Step 4; do not re-infer it.
+1. Use the `limits_preset` chosen in Step 4, honor explicit resource constraints in the user prompt when assembling limits, and do not re-infer the tier inside a profile.
 2. Route to PM, academic, technical, or generic profile.
 3. Confirm `get_runtime_capabilities` is present in the MCP tool catalog and call it once per top-level job with `{ "schema_version": "0.2", "request_id": "<job-id>" }`. Use its live provider lists and `operator_limits` only for Layer 1 assembly; list order is not preference or fallback.
    - Empty model list fails fast. An empty search list is usable only when every planned aspect has `tools: []`.
    - Intersect user preferences with the snapshot. If the intersection is empty, stop and show registered names; never guess defaults.
    - If an old server lacks the tool, require `moeresearch check --config <path> --show-providers --no-mcp` or operator-confirmed names. On capability failure, surface the public envelope error and stop. Refresh at most once after `provider_unavailable`.
    - Never put snapshots, provider lists, or operator limits in Layer 2 personas, `instructions`, free-text `context`, or Run Binding.
-4. Read the selected profile's task-decomposition prompt. Pass the snapshot into its Skill-internal input as `available_model_providers`, `available_search_providers`, and `operator_limits`, then convert the user request into a `DeepResearchRequest` using those providers and only-tightened limits.
+4. Read the selected profile's task-decomposition prompt. Pass the snapshot into its Skill-internal input as `available_model_providers`, `available_search_providers`, and `operator_limits`. Convert the user request into a `DeepResearchRequest` using those providers, the selected tier, explicit resource constraints in the user prompt, and operator-ceiling tightening.
 5. Select `aspect_research` for one aspect or `deep_research` for multi-aspect execution.
 6. Call Rust MCP with only stable MoeResearch schema `0.2`. Each search-enabled `AspectRequest` must include exactly one `search_provider`, and its `instructions` must carry the inline selected Layer 2 persona, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific Run Binding derived from that aspect and `policy.search`. Aspects without `search` omit the binding.
 7. Never expose provider-native request bodies to Layer 1.
@@ -194,7 +196,7 @@ Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider
 
 Compact `deep_research` direct payload skeleton:
 
-Default skeleton = **standard** tier from `../prompts/layer1/common/budget-tiers.md` (Claude install: `./prompts/layer1/common/budget-tiers.md`). For `quick` or `deep`, substitute that tier’s numbers instead of editing ad hoc.
+Default skeleton = **standard** tier from `../prompts/layer1/common/budget-tiers.md` (Claude install: `./prompts/layer1/common/budget-tiers.md`). For `quick` or `deep`, substitute that tier’s numbers, then apply explicit resource constraints in the user prompt before operator-ceiling tightening. Do not silently discard an explicit no-cap request or edit unrelated dimensions ad hoc.
 
 ```json
 {

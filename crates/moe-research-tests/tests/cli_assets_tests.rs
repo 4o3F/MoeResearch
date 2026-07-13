@@ -231,9 +231,48 @@ fn package_script_manifest_covers_expanded_research_roots() {
 }
 
 #[test]
-fn prompt_assets_keep_budget_selection_in_generic_skill() {
+fn prompt_assets_keep_budget_selection_and_user_prompt_priority_in_generic_skill() {
     let skill = fs::read_to_string(workspace().join(SKILL_PATH)).expect("read generic skill");
-    assert!(skill.contains("profiles must not change them"));
+    assert!(!skill.contains("user_limit_overrides"));
+    assert!(!skill.contains("resource_constraints"));
+    assert!(skill.contains("explicit resource constraints in the user prompt take precedence"));
+    assert!(skill.contains("Do not silently discard an explicit no-cap request"));
+
+    let budget_tiers =
+        fs::read_to_string(workspace().join("prompts/layer1/common/budget-tiers.md"))
+            .expect("read budget tiers");
+    for deep_limit in [
+        "max_total_model_calls` 180",
+        "max_total_search_calls` 144",
+        "total_timeout_ms` 3600000",
+        "max_turns` 16",
+        "max_tool_calls` 20",
+        "max_search_calls` 12",
+        "timeout_ms` 1200000",
+    ] {
+        assert!(budget_tiers.contains(deep_limit), "missing {deep_limit}");
+    }
+    assert!(budget_tiers.contains("operator ceiling > explicit user override > selected preset"));
+    assert!(budget_tiers.contains("max_total_search_calls = -1"));
+    assert!(budget_tiers.contains("Explicit user prompt constraints"));
+
+    let partial_contract = fs::read_to_string(
+        workspace().join("prompts/layer1/common/partial-status-host-contract.md"),
+    )
+    .expect("read partial contract");
+    assert!(partial_contract.contains("do not retry with the same exhausted limits"));
+
+    for profile_skill in [
+        "skills/academic-deep-research.md",
+        "skills/technical-evaluation.md",
+        PM_SKILL_PATH,
+    ] {
+        let profile_skill =
+            fs::read_to_string(workspace().join(profile_skill)).expect("read profile skill");
+        assert!(!profile_skill.contains("user_limit_overrides"));
+        assert!(profile_skill.contains("explicit resource constraints in the user prompt"));
+    }
+
     let pm_skill = fs::read_to_string(workspace().join(PM_SKILL_PATH)).expect("read PM skill");
     assert!(pm_skill.contains("Apply `limits_preset`"));
     assert!(!pm_skill.contains("Deep+Evidence-Pack"));
@@ -276,6 +315,11 @@ fn prompt_assets_keep_budget_selection_in_generic_skill() {
         assert!(!prompt.contains("infer the tier"), "{profile}");
         assert!(!prompt.contains("\"limits\": \"selected"), "{profile}");
         assert!(prompt.contains("timeout_ms"), "{profile}");
+        assert!(!prompt.contains("user_limit_overrides"), "{profile}");
+        assert!(
+            prompt.contains("explicit user prompt resource constraints"),
+            "{profile}"
+        );
     }
 }
 

@@ -376,6 +376,32 @@ fn deep_research_request_rejects_old_flattened_policy_blocks() {
 }
 
 #[test]
+fn deep_research_request_rejects_skill_orchestration_fields() {
+    let field = "limits_preset";
+    let mut value = serde_json::to_value(DeepResearchRequest {
+        schema_version: "0.2".to_owned(),
+        request_id: "request-1".to_owned(),
+        task: ResearchTask {
+            question: "What should MoeResearch build first?".to_owned(),
+            aspects: vec![aspect()],
+        },
+        limits: ResearchLimits::unlimited(),
+        policy: research_policy(&["openai"], &["exa"]),
+        context: ResearchContext::empty(),
+    })
+    .expect("request json");
+
+    value
+        .as_object_mut()
+        .expect("request object")
+        .insert(field.to_owned(), json!(null));
+
+    let error = serde_json::from_value::<DeepResearchRequest>(value)
+        .expect_err("Skill-internal fields must be rejected");
+    assert!(error.to_string().contains(field));
+}
+
+#[test]
 fn aspect_report_schema_omits_embedded_evidence() {
     let report = AspectReport {
         aspect_id: "aspect-1".to_owned(),
@@ -1340,6 +1366,14 @@ fn layer1_search_assembly_paths_require_run_binding() {
         assert!(
             prompt.contains("only tighten") || prompt.contains("only-tighten"),
             "task decomposition [{index}] must only tighten against operator limits"
+        );
+        assert!(
+            prompt.contains("explicit user prompt resource constraints"),
+            "task decomposition [{index}] must prioritize explicit user resource constraints"
+        );
+        assert!(
+            !prompt.contains("user_limit_overrides"),
+            "task decomposition [{index}] must not introduce user_limit_overrides"
         );
     }
 
