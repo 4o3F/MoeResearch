@@ -1053,6 +1053,136 @@ fn academic_and_technical_typst_report_assets_stay_outside_mcp_schemas() {
 }
 
 #[test]
+fn typst_report_assets_separate_reader_citations_from_audit_identifiers() {
+    let typst_contract = include_str!("../../../prompts/layer1/common/typst-report-contract.md");
+    let academic_guidance =
+        include_str!("../../../prompts/layer1/academic-deep-research/final-report-guidance.md");
+    let academic_overlay =
+        include_str!("../../../prompts/layer1/academic-deep-research/evidence-modules-overlay.md");
+    let technical_guidance =
+        include_str!("../../../prompts/layer1/technical-evaluation/final-report-guidance.md");
+    let technical_overlay =
+        include_str!("../../../prompts/layer1/technical-evaluation/evidence-modules-overlay.md");
+    let evidence_postprocess =
+        include_str!("../../../prompts/layer1/common/evidence-postprocess.md");
+    let claim_ledger = include_str!("../../../prompts/layer1/common/claim-ledger.md");
+
+    for marker in [
+        "Every load-bearing factual claim in the body uses one or more native Typst citekeys",
+        "literal frozen value",
+        "compact citekey, concise domain, or Annex A.1 cross-reference",
+        "disclosed manual/local records",
+        "never reconstruct, de-namespace, emit them in body prose",
+        "citation_map",
+        "Annex A.1",
+    ] {
+        assert!(
+            typst_contract.contains(marker),
+            "Typst contract missing {marker}"
+        );
+    }
+    assert!(
+        !typst_contract.contains("retains its frozen MoeResearch ID")
+            && !typst_contract.contains("Show a source ID or concise domain"),
+        "Typst contract must not require raw audit IDs in reader-facing body content"
+    );
+
+    for (name, asset) in [
+        ("Academic guidance", academic_guidance),
+        ("Academic overlay", academic_overlay),
+        ("Technical guidance", technical_guidance),
+        ("Technical overlay", technical_overlay),
+    ] {
+        for marker in [
+            "native Typst citekey",
+            "Annex A.1",
+            "citation_map",
+            "do not emit raw IDs or invented evidence labels",
+        ] {
+            assert!(asset.contains(marker), "{name} missing {marker}");
+        }
+    }
+
+    let technical_templates = [
+        include_str!(
+            "../../../prompts/layer1/technical-evaluation/final-report-library-comparison.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/technical-evaluation/final-report-architecture-evaluation.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/technical-evaluation/final-report-dependency-risk.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/technical-evaluation/final-report-migration-assessment.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/technical-evaluation/final-report-benchmark-performance-review.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/technical-evaluation/final-report-technical-due-diligence.md"
+        ),
+    ];
+    for template in technical_templates {
+        assert!(
+            template.contains("Use native Typst citekeys in reader-facing body prose"),
+            "Technical template must define the reader-facing citation rule"
+        );
+    }
+
+    let academic_templates = [
+        include_str!(
+            "../../../prompts/layer1/academic-deep-research/final-report-literature-review.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/academic-deep-research/final-report-evidence-synthesis.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/academic-deep-research/final-report-paper-evaluation.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/academic-deep-research/final-report-research-gap-map.md"
+        ),
+        include_str!(
+            "../../../prompts/layer1/academic-deep-research/final-report-study-design-background.md"
+        ),
+    ];
+    for template in academic_templates {
+        assert!(
+            template.contains("Use native Typst citekeys in reader-facing body prose"),
+            "Academic template must define the reader-facing citation rule"
+        );
+    }
+    let evidence_synthesis = include_str!(
+        "../../../prompts/layer1/academic-deep-research/final-report-evidence-synthesis.md"
+    );
+    assert!(
+        evidence_synthesis.contains("one or more native Typst citekeys")
+            && evidence_synthesis.contains("Annex A.1/`citation_map` audit trace")
+            && !evidence_synthesis.contains("citekey/evidence trace"),
+        "Academic evidence synthesis must separate body citations from audit evidence"
+    );
+
+    for (name, guidance) in [
+        ("Academic guidance", academic_guidance),
+        ("Technical guidance", technical_guidance),
+    ] {
+        assert!(
+            guidance.contains("In body tables, use compact citekeys"),
+            "{name} must explain the body-table audit-ID exception"
+        );
+    }
+
+    assert!(
+        evidence_postprocess.contains("\"evidence_id\": \"aspect-id:ev-1-1\"")
+            && claim_ledger.contains("\"evidence_refs\": [\"aspect-id:ev-1-1\"]")
+            && evidence_postprocess.contains("An individual aspect result may use `ev-1-1`")
+            && claim_ledger.contains("An individual aspect result may use `ev-1-1`"),
+        "common evidence examples must use literal frozen result IDs, not invented placeholders"
+    );
+}
+
+#[test]
 fn model_search_prompt_contract_uses_semantic_intent_and_id_only_evidence() {
     let contract = include_str!("../../../prompts/layer1/common/model-search-tool-contract.md");
     for marker in [

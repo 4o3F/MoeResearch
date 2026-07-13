@@ -27,7 +27,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 
 - State the best-fit direction, confidence, and largest design uncertainty first.
 - Separate conceptual fit, measurement validity, sampling feasibility, causal identification, operational feasibility, and ethics/legal constraints.
-- For each recommended design, identify the target evidence, evidence IDs/citekeys, main validity threat, feasibility caveat, and observation that would falsify the rationale.
+- For each recommended design, identify the target evidence, native Typst citekeys, main validity threat, feasibility caveat, and observation that would falsify the rationale. Keep the evidence-ID audit trace in Annex A.1 and `citation_map`.
 - Describe measures, datasets, interventions, populations, and methods only to the degree the evidence supports; do not invent availability, power, safety, compliance, or ethical approval.
 - Present alternatives when different validity, feasibility, or construct-coverage trade-offs remain credible.
 
@@ -35,6 +35,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 
 - Apply the `typst-report-contract.md` semantic highlighting vocabulary only to load-bearing design implications, limitations, validity threats, and validation conditions; never use color without its visible label and boundary cue.
 - Apply the common table-readability and degradation rules. Do not compress measure/design appraisal prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every audit field.
+- Use native Typst citekeys in reader-facing body prose. Keep full evidence IDs in Annex A.1 and `citation_map`; use readable source-origin or source-class labels by default in body tables, following `typst-report-contract.md` for the narrow literal-audit-ID exception.
 
 ## Annex mapping
 

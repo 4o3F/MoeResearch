@@ -26,4 +26,4 @@ Keep the common fixed order A.1–A.8. A.1 must retain every canonical logical b
 
 ## Body-to-Annex discipline
 
-A body section may summarize an appraisal or contradiction, but must retain the consequence for the conclusion and link to the detailed Annex row. Never hide an evidence downgrade by moving it only to the Annex. Keep confidence labels, evidence IDs, and abstention markers visible where the reader makes the decision.
+A body section may summarize an appraisal or contradiction, but must retain the consequence for the conclusion and link to the detailed Annex row. Never hide an evidence downgrade by moving it only to the Annex. Keep confidence labels, native Typst citekeys, and abstention markers visible where the reader makes the decision. Keep full evidence IDs in Annex A.1 and `citation_map`; do not emit raw IDs or invented evidence labels in body prose. For body tables, use readable source-origin or source-class labels by default; follow `typst-report-contract.md` for the narrow literal-audit-ID exception.

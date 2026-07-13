@@ -33,7 +33,7 @@ Use this profile for evidence-backed library/framework selection, architecture e
 | `benchmark-performance-review` | `task-decomposition.md` | `agent-allocation.md` | `final-report-benchmark-performance-review.md` |
 | `technical-due-diligence` | `task-decomposition.md` | `agent-allocation.md` | `final-report-technical-due-diligence.md` |
 
-All Technical routes load `evidence-modules-overlay.md`, `../common/typst-report-contract.md`, and `final-report-guidance.md` before the capability template.
+All Technical routes load `evidence-modules-overlay.md`, `../common/typst-report-contract.md`, and `final-report-guidance.md` before the capability template. Reader-facing body prose uses native Typst citekeys; frozen evidence IDs remain in Annex A.1 and `citation_map`. Body tables use citekeys, Annex A.1 cross-references, and readable source-origin or source-class labels by default. Show a literal audit identifier only when source-origin distinction is material to the decision, and state that purpose.
 
 ## Workflow
 

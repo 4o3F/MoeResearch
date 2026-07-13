@@ -30,7 +30,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 ```
 
 - State `Adopt`, `Trial`, `Defer`, `Reject`, `Migrate`, `Replace`, or `Monitor` first, with confidence and constraints that could reverse the decision.
-- The criteria and requirements matrices use Typst tables and retain evidence IDs/citekeys, applicability conditions, confidence, and assumptions.
+- The criteria and requirements matrices use Typst tables and retain native Typst citekeys, applicability conditions, confidence, and assumptions. Keep the evidence-ID audit trace in Annex A.1 and `citation_map`.
 - Separate documented APIs/guarantees, repository/release facts, benchmark observations, advisory/license evidence, independent engineering analysis, and community opinion.
 - Benchmark findings include workload, version, hardware/runtime, method, variance/reproducibility, and user-context fit when available. Do not compare incompatible raw numbers.
 - Adoption gates name required evidence or local-spike results. Kill criteria are falsifiable, such as runtime incompatibility, unacceptable measured latency, blocker license, critical unpatched advisory, or absent rollback.
@@ -39,6 +39,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 
 - Apply the `typst-report-contract.md` semantic highlighting vocabulary only to decisions, material risks, adoption gates, and validation conditions; never use color without its visible label and boundary cue.
 - Apply the common table-readability and degradation rules. Do not compress requirements/comparison prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every decision field.
+- Use native Typst citekeys in reader-facing body prose. Keep full evidence IDs in Annex A.1 and `citation_map`; use readable source-origin or source-class labels by default in body tables, following `typst-report-contract.md` for the narrow literal-audit-ID exception.
 
 ## Annex mapping
 
@@ -46,7 +47,7 @@ Use A.1–A.8 in `sections/annex.typ`. Put official/release/repository and struc
 
 ## Capability gates
 
-- Every recommendation traces to requirements, evidence IDs/citekeys, expected impact, validation step, and residual risk.
+- Every recommendation traces to requirements, native Typst citekeys, expected impact, validation step, and residual risk. Keep the evidence-ID audit trace in Annex A.1 and `citation_map`.
 - Cost, effort, and migration duration are assumptions unless directly evidenced.
 - License notes are engineering due diligence, not legal advice.
 - Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.

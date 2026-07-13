@@ -36,6 +36,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 
 - Apply the `typst-report-contract.md` semantic highlighting vocabulary only to load-bearing evaluation, limitations, validity risks, and validation conditions; never use color without its visible label and boundary cue.
 - Apply the common table-readability and degradation rules. Do not compress identity, methods, and appraisal prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every audit field.
+- Use native Typst citekeys in reader-facing body prose. Keep full evidence IDs in Annex A.1 and `citation_map`; use readable source-origin or source-class labels by default in body tables, following `typst-report-contract.md` for the narrow literal-audit-ID exception.
 
 ## Annex mapping
 
@@ -43,7 +44,7 @@ Use A.1–A.8 in `sections/annex.typ`. Put identity/version evidence and methods
 
 ## Capability gates
 
-- Every criticism and praise names the criterion, supporting evidence IDs/citekeys, and its decision consequence.
+- Every criticism and praise names the criterion, supporting native Typst citekeys, and its decision consequence. Keep the evidence-ID audit trace in Annex A.1 and `citation_map`.
 - Applicability claims state the target user/context and boundary conditions.
 - Unknown source identity, methods, effect, correction, or reproducibility facts are listed as open questions or abstentions.
 - Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.

@@ -27,4 +27,4 @@ Keep the common fixed order A.1–A.8. A.1 must retain every canonical logical b
 
 ## Body-to-Annex discipline
 
-A body section may summarize a matrix or risk register, but must keep the decision consequence, confidence, evidence ID, and unresolved condition visible. Never move a safety, adoption, benchmark, license, or rollback warning only to the Annex.
+A body section may summarize a matrix or risk register, but must keep the decision consequence, confidence, native Typst citekey, and unresolved condition visible. Never move a safety, adoption, benchmark, license, or rollback warning only to the Annex. Keep full evidence IDs in Annex A.1 and `citation_map`; do not emit raw IDs or invented evidence labels in body prose. For body tables, use readable source-origin or source-class labels by default; follow `typst-report-contract.md` for the narrow literal-audit-ID exception.

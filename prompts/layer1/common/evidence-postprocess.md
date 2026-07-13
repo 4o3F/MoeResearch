@@ -34,11 +34,13 @@ Findings cited only by Low or Unknown evidence must be narrowed, downgraded, mov
 
 ## Source-audit base
 
+For every evidence item, copy the literal frozen `Evidence.id` as the sidecar key. An individual aspect result may use `ev-1-1`; a deep result may use `aspect-id:ev-1-1`. Never reconstruct, shorten, or remove an aspect namespace.
+
 For every evidence item, derive:
 
 ```json
 {
-  "evidence_id": "E1",
+  "evidence_id": "aspect-id:ev-1-1",
   "authority_class": "official|regulator|standards_body|academic|independent_media|vendor_owned|community|repository|dataset|unknown",
   "independence_status": "independent|vendor_owned|practitioner_self_report|community|unknown",
   "freshness_status": "current|stale|date_unknown|not_time_sensitive",

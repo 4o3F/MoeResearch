@@ -144,18 +144,20 @@ Tables compare compact values; prose carries explanation. Before emitting a tabl
 1. Use `auto` or narrow fixed tracks for IDs, states, dates, citekeys, and short numeric values. Allocate `fr` width only to one or two high-priority narrative fields.
 2. A portrait prose table has at most three substantive narrative columns. Never place four or more narrative fields in near-equal `fr` tracks, and never shrink table text below `9pt` or scale a table merely to fit.
 3. Move secondary explanation into adjacent prose, split a wide table into linked panels that repeat the stable row key, or render a small entity set as two-column label–value cards. These are required degradations, not optional polish.
-4. Show a source ID or concise domain in a comparison table. Put full URLs in the bibliography or a dedicated provenance ledger; do not create a wide URL column inside a prose comparison table.
+4. Show a compact citekey, concise domain, or Annex A.1 cross-reference in a comparison table. Use a readable source-origin or source-class label when that distinction matters. Display a literal audit ID only under Citation and provenance rule 3. Put full URLs in the bibliography or a dedicated provenance ledger; do not create a wide URL column inside a prose comparison table.
 5. Every multi-row table uses `table.header`. A captioned/labeled table uses a breakable figure or equivalent pagination-safe wrapper so its header and content can span pages.
 6. Use a landscape page or `rotate(..., reflow: true)` only as a last resort for compact numeric, version, or code matrices. Never rotate long prose or source-URL tables.
 7. Annex A.1 retains the canonical logical baseline from `report-annex.md`: `evidence_id | citekey | source_origin | claim_summary | source_title | source_url | source_type | tier | confidence | cited_in`. Profile extensions are additive only. It may render compact index columns plus per-source audit cards; logical fields never require ten physical columns.
 
 ## Citation and provenance rules
 
-1. Every load-bearing factual claim in the body cites its Typst citekey and retains its frozen MoeResearch ID, `HV-*` marker, or existing manual/local record ID inline or in its immediately associated table.
-2. Annex A.1 implements the canonical logical baseline in `report-annex.md`; it is the audit bridge between Typst citations, frozen host evidence, host verification, and disclosed manual/local records. Academic and Technical profile fields extend this baseline without replacing it.
-3. Generate BibTeX only from returned evidence or separately disclosed host-verification records. Never invent authors, dates, DOI/PMID/arXiv identifiers, venues, titles, URLs, or source classes. If a record is incomplete, use a conservative `@misc` entry and state the missing metadata in Annex A.1.
-4. Keep these origins separate: `moe_research`, `host_verification` (`HV-*`), and `manual_or_local`. Never insert host/manual sources into MoeResearch `evidence_refs`, never mint fake MoeResearch IDs, and never attribute host work to Rust.
-5. An unsupported claim is narrowed, downgraded, moved to an open question, or logged in A.7. A citation key is not evidence by itself.
+1. Every load-bearing factual claim in the body uses one or more native Typst citekeys. Each citekey must resolve to a `citation_map` row and its corresponding Annex A.1 record.
+2. Frozen MoeResearch IDs, `HV-*` markers, and existing manual/local record IDs are audit identifiers. Copy each literal frozen value from the returned result — an aspect result may use `ev-<search_turn>-<global_candidate_index>`, while a deep result may use `aspect_id:ev-<search_turn>-<global_candidate_index>`. Preserve them in Annex A.1 and `citation_map`; never reconstruct, de-namespace, emit them in body prose, or create substitute labels for them.
+3. In a body table, use a compact citekey, readable source-origin or source-class label, or Annex A.1 cross-reference by default. Display an existing audit identifier only when distinguishing source origin is material to the decision; copy its literal value, keep it out of narrative prose, and state the disambiguation purpose.
+4. Annex A.1 implements the canonical logical baseline in `report-annex.md`; it is the audit bridge between Typst citations, frozen host evidence, host verification, and disclosed manual/local records. Academic and Technical profile fields extend this baseline without replacing it.
+5. Generate BibTeX only from returned evidence, separately disclosed host-verification records, or separately disclosed manual/local records. For a manual/local record, a conservative `@misc` entry may identify its existing record ID and source origin, but must not invent bibliographic metadata. Never invent authors, dates, DOI/PMID/arXiv identifiers, venues, titles, URLs, source classes, or evidence IDs. If a record is incomplete, state the missing metadata in Annex A.1.
+6. Keep these origins separate: `moe_research`, `host_verification` (`HV-*`), and `manual_or_local`. Never insert host/manual sources into MoeResearch `evidence_refs`, never mint fake MoeResearch IDs, and never attribute host work to Rust.
+7. An unsupported claim is narrowed, downgraded, moved to an open question, or logged in A.7. A citation key is not evidence by itself.
 
 ## Typst safety and reproducibility rules
 

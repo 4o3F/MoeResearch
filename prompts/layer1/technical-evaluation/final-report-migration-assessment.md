@@ -38,6 +38,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 
 - Apply the `typst-report-contract.md` semantic highlighting vocabulary only to decisions, material risks, rollout gates, and validation conditions; never use color without its visible label and boundary cue.
 - Apply the common table-readability and degradation rules. Do not compress compatibility/change-surface prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every decision field.
+- Use native Typst citekeys in reader-facing body prose. Keep full evidence IDs in Annex A.1 and `citation_map`; use readable source-origin or source-class labels by default in body tables, following `typst-report-contract.md` for the narrow literal-audit-ID exception.
 
 ## Annex mapping
 

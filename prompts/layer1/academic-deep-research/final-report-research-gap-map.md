@@ -27,7 +27,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 ```
 
 - Lead with the most decision-relevant gaps, why they matter, and the confidence that the gap is real rather than merely unsearched.
-- For each gap, show what is already known, which evidence IDs/citekeys establish the coverage boundary, what remains untested or unresolved, and whether the gap is conceptual, empirical, methodological, measurement-related, population/setting-specific, replication-related, or translational.
+- For each gap, show what is already known, which native Typst citekeys establish the coverage boundary, what remains untested or unresolved, and whether the gap is conceptual, empirical, methodological, measurement-related, population/setting-specific, replication-related, or translational. Keep the evidence-ID audit trace in Annex A.1 and `citation_map`.
 - Do not label a missing search result, inaccessible source, or failed aspect as a field-wide evidence gap.
 - Candidate questions and study options include a minimal design idea, target evidence, likely validity threat, feasibility caveat, and falsification signal.
 - Prioritize by importance, tractability, expected information gain, evidence confidence, and ethical/operational caveats; do not fabricate numeric scores.
@@ -36,6 +36,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 
 - Apply the `typst-report-contract.md` semantic highlighting vocabulary only to load-bearing gap claims, limitations, conflicts, and study-validation conditions; never use color without its visible label and boundary cue.
 - Apply the common table-readability and degradation rules. Do not compress coverage/gap prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every audit field.
+- Use native Typst citekeys in reader-facing body prose. Keep full evidence IDs in Annex A.1 and `citation_map`; use readable source-origin or source-class labels by default in body tables, following `typst-report-contract.md` for the narrow literal-audit-ID exception.
 
 ## Annex mapping
 

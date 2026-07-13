@@ -26,6 +26,8 @@ Create a compact audit trail for load-bearing claims. The ledger is not a longer
 
 ## Ledger schema
 
+Use literal frozen evidence IDs from the result. An individual aspect result may use `ev-1-1`; a deep result may use `aspect-id:ev-1-1`. Never reconstruct, shorten, or remove an aspect namespace.
+
 ```json
 {
   "claim_id": "CL-001",
@@ -33,7 +35,7 @@ Create a compact audit trail for load-bearing claims. The ledger is not a longer
   "claim_type": "fact|interpretation|estimate|recommendation|risk|academic_claim|technical_claim|regulatory_claim|benchmark_claim|security_claim|methodological_claim",
   "load_bearing": true,
   "appears_in": ["body:section-name"],
-  "evidence_refs": ["E1"],
+  "evidence_refs": ["aspect-id:ev-1-1"],
   "host_verification_refs": ["HV-001"],
   "source_origin": "moe_research_only|host_verified|mixed|manual_host_verified",
   "source_tiers": ["High"],

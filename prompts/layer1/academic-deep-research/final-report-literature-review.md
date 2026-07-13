@@ -27,7 +27,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 
 - Open the abstract with the answer, confidence, and main downgrade reason.
 - Build the literature map by theme, construct, method, setting, or outcome; do not serialize one paper after another unless the user explicitly asks for an annotated bibliography.
-- For each major theme, state source/study class, directness, independence/shared lineage, evidence IDs/citekeys, and material limitations.
+- For each major theme, state source/study class, directness, independence/shared lineage, native Typst citekeys, and material limitations. Keep the evidence-ID audit trace in Annex A.1 and `citation_map`.
 - Separate seminal influence from current evidence. Citation count, popularity, or age alone is not proof of methodological quality.
 - Explain disagreement rather than averaging it away. State whether differing populations, definitions, designs, settings, or evidence quality plausibly bound the conclusion.
 - Use PRISMA-style transparency and appraisal lenses only as appropriate reporting lenses. Do not claim a systematic review or formal score unless the run supports it.
@@ -36,6 +36,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 
 - Apply the `typst-report-contract.md` semantic highlighting vocabulary only to load-bearing synthesis, limitations, conflicts, and future-work validation conditions; never use color without its visible label and boundary cue.
 - Apply the common table-readability and degradation rules. Do not compress literature/appraisal prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every audit field.
+- Use native Typst citekeys in reader-facing body prose. Keep full evidence IDs in Annex A.1 and `citation_map`; use readable source-origin or source-class labels by default in body tables, following `typst-report-contract.md` for the narrow literal-audit-ID exception.
 
 ## Annex mapping
 

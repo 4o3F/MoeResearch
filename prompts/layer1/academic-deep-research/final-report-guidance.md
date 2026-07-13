@@ -37,7 +37,7 @@ Do not silently rerun research. A focused retry or host verification is allowed 
 ## Phase B — Section plan and assembly
 
 1. Select the exact capability template before writing. Its sections are mandatory unless its trim rule explicitly excludes them.
-2. Create an internal section plan mapping every section to: central judgement, supporting evidence IDs, counterarguments, confidence, gaps, and Annex destination.
+2. Create an internal section plan mapping every section to: central judgement, supporting evidence IDs for Annex A.1, body citekeys, counterarguments, confidence, gaps, and Annex destination.
 3. Synthesize by theme, outcome, method, or research question — never as a paper-by-paper chronology unless the user explicitly requests an annotated bibliography.
 4. Start each section with its conclusion. Tables compare and audit evidence; they do not replace the argument.
 5. Use calibrated language. State `High`, `Medium`, or `Low` confidence based on evidence quality, directness, independence, consistency, and remaining uncertainty. Do not upgrade a conclusion because it is plausible.
@@ -50,7 +50,7 @@ Before emitting the Typst project, verify:
 | Floor item | Minimum response |
 | --- | --- |
 | Scope | question, boundaries, inclusion/exclusion logic, and source classes are explicit |
-| Evidence closure | every load-bearing conclusion has evidence IDs/citekeys or is marked as an assumption, open question, or abstention |
+| Evidence closure | every load-bearing conclusion has one or more native Typst citekeys, each traceable through `citation_map` to an Annex A.1 evidence ID, or is marked as an assumption, open question, or abstention |
 | Method transparency | source/study type, directness, independence, and material limitations are stated for each major theme |
 | Conflicts | material disagreement and alternative interpretations are preserved, not averaged away |
 | Academic integrity | no formal PRISMA, GRADE, CONSORT, STROBE, AMSTAR 2, RoB 2, ROBINS-I, CASP, or JBI rating is claimed unless the run contains the necessary evidence |
@@ -65,6 +65,8 @@ If an item fails, revise, narrow, lower confidence, or abstain. Do not compensat
 - Emit the fixed project tree and citation map from `typst-report-contract.md`.
 - Preserve the selected template's section meaning and order, but localize all reader-facing headings, table headers, captions, body text, and Annex labels to `output_language`. The English headings in capability templates are semantic placeholders; filenames, citekeys, evidence IDs, and `HV-*` identifiers remain stable ASCII.
 - Academic body sections use Typst `=`/`==` headings, cited prose, and Typst tables/figures only. Do not emit Markdown source as final report content.
+- Use native Typst citekeys in body prose. Keep full evidence IDs in Annex A.1 and `citation_map`; do not emit raw IDs or invented evidence labels in reader-facing prose.
+- In body tables, use compact citekeys, Annex A.1 cross-references, and readable source-origin or source-class labels by default. Display a literal audit ID only when source-origin distinction is material to the decision; follow `typst-report-contract.md` for that narrow exception.
 - Use Typst's built-in `#bibliography("references.bib", style: "ieee")` exactly once. Do not select APA or another bibliography style, and do not write manual numeric citations.
 - Use `report-decision` for the abstract/core synthesis, `report-limitation` for weak evidence, source dependence, method limits, failed aspects, and conflicts, `report-risk` for material validity, ethics, safety, or prohibited-conclusion risks, and `report-validation` for research gaps or study-design conditions. A label and non-color cue remain visible in body prose.
 - Apply the common table-readability contract: prose tables have at most three narrative columns; split or convert wide evidence/appraisal grids into linked panels or label–value cards while retaining all audit fields.

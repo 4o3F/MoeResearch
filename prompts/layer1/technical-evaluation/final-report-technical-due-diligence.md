@@ -37,6 +37,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 
 - Apply the `typst-report-contract.md` semantic highlighting vocabulary only to decisions, material risks, adoption gates, and validation conditions; never use color without its visible label and boundary cue.
 - Apply the common table-readability and degradation rules. Do not compress due-diligence prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every decision field.
+- Use native Typst citekeys in reader-facing body prose. Keep full evidence IDs in Annex A.1 and `citation_map`; use readable source-origin or source-class labels by default in body tables, following `typst-report-contract.md` for the narrow literal-audit-ID exception.
 
 ## Annex mapping
 
@@ -44,6 +45,6 @@ Use A.1–A.8 in `sections/annex.typ`. Put official/repository/structured eviden
 
 ## Capability gates
 
-- The broad scope does not permit broad claims: each decision conclusion has evidence IDs/citekeys, confidence, validation need, and residual risk.
+- The broad scope does not permit broad claims: each decision conclusion has native Typst citekeys, confidence, validation need, and residual risk. Keep the evidence-ID audit trace in Annex A.1 and `citation_map`.
 - Missing critical evidence converts the outcome to trial/defer/reject or an explicit abstention.
 - Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.

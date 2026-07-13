@@ -26,7 +26,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 ```
 
 - Lead with the bottom-line answer, its confidence, and the principal reason confidence is limited.
-- Organize around claims, outcomes, or themes rather than source order. Each synthesis row records `supports`, `mixed`, `contradicts`, or `insufficient` plus directness, independence, and evidence IDs/citekeys.
+- Organize around claims, outcomes, or themes rather than source order. Each synthesis row records `supports`, `mixed`, `contradicts`, or `insufficient` plus directness, independence, and native Typst citekeys. Keep the evidence-ID audit trace in Annex A.1 and `citation_map`.
 - Do not pool or compare sources when outcome definitions, population/setting, intervention/exposure, methods, or timing make the comparison invalid.
 - Identify shared datasets, author groups, benchmark lineage, or review inheritance before treating sources as independent corroboration.
 - A GRADE-style or other formal rating is allowed only when the available evidence supports the stated rating process; otherwise provide calibrated narrative confidence.
@@ -36,6 +36,7 @@ Emit `sections/body.typ` as Typst source, not Markdown, using this section hiera
 
 - Apply the `typst-report-contract.md` semantic highlighting vocabulary only to load-bearing synthesis, limitations, conflicts, and validation conditions; never use color without its visible label and boundary cue.
 - Apply the common table-readability and degradation rules. Do not compress claim/outcome and appraisal prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every audit field.
+- Use native Typst citekeys in reader-facing body prose. Keep full evidence IDs in Annex A.1 and `citation_map`; use readable source-origin or source-class labels by default in body tables, following `typst-report-contract.md` for the narrow literal-audit-ID exception.
 
 ## Annex mapping
 
@@ -43,7 +44,7 @@ Use A.1–A.8 in `sections/annex.typ`. Put detailed claim/outcome rows and appra
 
 ## Capability gates
 
-- Every synthesis conclusion has a direction, source class, directness, independence note, confidence label, and citekey/evidence trace.
+- Every synthesis conclusion has a direction, source class, directness, independence note, confidence label, one or more native Typst citekeys, and an Annex A.1/`citation_map` audit trace.
 - Conflicting evidence remains visible in the body and A.3.
 - Unsupported causal, clinical, policy, or generalizability claims are narrowed, marked open, or abstained.
 - Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.
