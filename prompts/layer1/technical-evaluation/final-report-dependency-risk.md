@@ -1,52 +1,50 @@
-# Layer 1 Prompt: Final Report — Dependency Risk Assessment
+# Layer 1 Prompt: Technical Typst Final Report — Dependency Risk Assessment
 
 ## Role
 
-Convert validated MoeResearch results into a decision-oriented technical report focused on maintenance, advisories, supply chain, license, ecosystem health, alternatives, mitigations, and exit options. Do not fabricate evidence, benchmark numbers, security findings, or costs.
+Convert validated MoeResearch results into a `typst-project-v1` dependency-risk decision report. Use `typst-report-contract.md`, Technical final-report guidance, and the Technical evidence overlay as binding prerequisites. Make risk acceptance, mitigation, and exit conditions explicit and testable.
 
-## Decision stance
+## Body assembly
 
-State whether to adopt, keep, monitor, replace, or reject the dependency. The report should make risk acceptance explicit and testable.
+Emit `sections/body.typ` as Typst source, not Markdown, using this section hierarchy:
 
-## Output template
+```typst
+= Technical Evaluation: {Topic}
 
-```markdown
-# Technical Evaluation: {Topic}
-
-## Decision Summary
-Recommendation: Adopt / Trial / Defer / Reject / Migrate / Replace / Monitor
-Confidence: High / Medium / Low
-
-## Evaluation Scope and Constraints
-## Dependency Identity and Usage Context
-## Risk Register
-## Maintenance and Release Health
-## Security Advisory and Supply-Chain Review
-## License / Compliance Notes
-## Ecosystem Maturity and Governance
-## Alternatives Comparison
-## Mitigation Plan
-## Adoption / Continued-Use Gate
-## Open Risks and Kill Criteria
-## Rollback / Exit Options
-
-## Annex A
-A.1 Evidence Index
-A.2 Official Docs / Release / Repo Evidence
-A.3 Advisory / Vulnerability Evidence
-A.4 Security / License Audit
-A.5 Decision Matrix
-A.6 Minimal Spike or Mitigation Plan
-A.7 Self-Verification
-A.8 Tool Provenance
+== Decision Summary
+== Evaluation Scope and Constraints
+== Dependency Identity and Usage Context
+== Risk Register
+== Maintenance and Release Health
+== Security Advisory and Supply-Chain Review
+== License and Compliance Notes
+== Ecosystem Maturity and Governance
+== Alternatives Comparison
+== Mitigation Plan
+== Adoption or Continued-Use Gate
+== Open Risks and Kill Criteria
+== Rollback and Exit Options
 ```
 
-## Rules
+- State whether to adopt, keep, monitor, replace, or reject first, with confidence and material residual risk.
+- Separate known vulnerabilities/advisories from theoretical weaknesses, issue chatter, missing evidence, and synthesis inference.
+- Record affected/supported versions, maintainer response posture, release cadence, security policy, governance, and dependency footprint only when evidenced.
+- Never state that a dependency is safe because no advisory was found. State what sources and versions were checked, what remains unknown, and the mitigation boundary.
+- Popularity is weak evidence unless combined with maintenance, governance, and production-readiness evidence.
+- Kill criteria are falsifiable: unpatched critical advisory, unsupported runtime, blocker license, unmanaged single-maintainer risk, or no credible migration route.
 
-- Use existing MoeResearch evidence ids only for MoeResearch claims. Keep host verification as `HV-*` and disclose it separately.
-- Separate known vulnerabilities/advisories from theoretical weaknesses, issue chatter, and missing evidence.
-- Identify affected versions, supported versions, maintainer response posture, release cadence, security policy, and dependency footprint when evidenced.
-- Popularity is weak evidence unless paired with maintenance, governance, and production-readiness signals.
-- Kill criteria must be falsifiable: unpatched critical advisory, unsupported runtime, unacceptable license, single-maintainer risk without mitigation, no credible migration path.
-- License notes are engineering due diligence, not legal advice.
-- If evidence is weak, mark confidence Low and move unsupported claims to Open Risks.
+## Rendering rules
+
+- Apply the `typst-report-contract.md` semantic highlighting vocabulary only to decisions, material risks, kill criteria, and validation conditions; never use color without its visible label and boundary cue.
+- Apply the common table-readability and degradation rules. Do not compress risk/advisory/governance prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every decision field.
+
+## Annex mapping
+
+Use A.1–A.8 in `sections/annex.typ`. Put dependency/release/advisory artifacts in A.2, risk and license uncertainty in A.3, unknown affected versions/governance facts in A.4, mitigation tests in A.5, and risk-closure checks in A.6.
+
+## Capability gates
+
+- Risk acceptance has a concrete mitigation owner/condition or is a defer/replace recommendation.
+- Security and license claims retain their evidence scope and legal boundary.
+- Unsupported compatibility, maintenance, or migration assertions enter A.4/A.7.
+- Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.

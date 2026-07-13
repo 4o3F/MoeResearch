@@ -1,51 +1,51 @@
-# Layer 1 Prompt: Final Report — Benchmark / Performance Review
+# Layer 1 Prompt: Technical Typst Final Report — Benchmark / Performance Review
 
 ## Role
 
-Convert validated MoeResearch results into a decision-oriented technical report focused on benchmark methodology, workload fit, latency, throughput, scalability, variance, reproducibility, operational cost, and tuning implications. Do not fabricate benchmark numbers, environments, security findings, or costs.
+Convert validated MoeResearch results into a `typst-project-v1` benchmark and performance decision report. Use `typst-report-contract.md`, Technical final-report guidance, and the Technical evidence overlay as binding prerequisites. Benchmark results are decision evidence only when workload and environment fit the user's constraints.
 
-## Decision stance
+## Body assembly
 
-Benchmark results are only decision evidence when the workload and environment match the user's constraints. State transferability limits before making recommendations.
+Emit `sections/body.typ` as Typst source, not Markdown, using this section hierarchy:
 
-## Output template
+```typst
+= Technical Evaluation: {Topic}
 
-```markdown
-# Technical Evaluation: {Topic}
-
-## Decision Summary
-Recommendation: Adopt / Trial / Defer / Reject / Migrate / Replace / Monitor
-Confidence: High / Medium / Low
-
-## Evaluation Scope and Workload Assumptions
-## Candidate Options / Versions
-## Benchmark Evidence Inventory
-## Methodology Appraisal
-## Workload and Environment Fit
-## Latency / Throughput / Scalability Findings
-## Variance, Reproducibility, and Bias Risks
-## Operational Cost and Tuning Implications
-## Alternatives Comparison
-## Adoption Gate
-## Minimal Local Benchmark Plan
-## Open Risks and Kill Criteria
-## Rollback / Exit Options
-
-## Annex A
-A.1 Evidence Index
-A.2 Official Docs / Release / Repo Evidence
-A.3 Benchmark Evidence
-A.4 Environment and Methodology Table
-A.5 Decision Matrix
-A.6 Minimal Spike Plan
-A.7 Self-Verification
-A.8 Tool Provenance
+== Decision Summary
+== Evaluation Scope and Workload Assumptions
+== Candidate Options and Versions
+== Benchmark Evidence Inventory
+== Methodology Appraisal
+== Workload and Environment Fit
+== Latency, Throughput, and Scalability Findings
+== Variance, Reproducibility, and Bias Risks
+== Operational Cost and Tuning Implications
+== Alternatives Comparison
+== Adoption Gate
+== Minimal Local Benchmark Plan
+== Open Risks and Kill Criteria
+== Rollback and Exit Options
 ```
 
-## Rules
+- State the decision implication, confidence, and principal transferability limit first.
+- Every benchmark observation retains workload, version, data, hardware/runtime, configuration, method, variance/reproducibility limit, and sponsor/author incentive when available.
+- Do not compare raw numbers across incompatible workloads, environments, versions, configurations, or measurement methods.
+- Treat absent environment details as a reason for a local benchmark, not a reason to generalize.
+- The local plan defines workload, success metric, guardrail metric, data size, environment, repeat/variance method, success threshold, and kill threshold.
+- Operational cost and tuning recommendations distinguish measured evidence from estimate or inference.
 
-- Use existing MoeResearch evidence ids only for MoeResearch claims. Keep host verification as `HV-*` and disclose it separately.
-- Benchmark claims must include workload, version, hardware/runtime, dataset, configuration, methodology, variance/reproducibility limits, and sponsor/author incentives when available.
-- Do not compare raw numbers across incompatible workloads or environments.
-- The local benchmark plan must define workload, success metric, guardrail metric, data size, environment, and kill threshold.
-- If evidence is weak, mark confidence Low and move unsupported claims to Open Risks.
+## Rendering rules
+
+- Apply the `typst-report-contract.md` semantic highlighting vocabulary only to decisions, transferability limits, kill thresholds, and validation conditions; never use color without its visible label and boundary cue.
+- Apply the common table-readability and degradation rules. Do not compress workload/environment prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every decision field.
+
+## Annex mapping
+
+Use A.1–A.8 in `sections/annex.typ`. Put benchmark environment/method artifacts in A.2, variance/bias/transferability risks in A.3, missing workload or configuration facts in A.4, the local benchmark protocol in A.5, and reproducibility closure in A.6.
+
+## Capability gates
+
+- Every recommendation identifies whether it is directly supported, conditionally supported, or unverified locally.
+- A performance claim with no workload or environment context does not support an adoption recommendation.
+- Unsupported numbers, costs, and scalability claims become A.4/A.7 items.
+- Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.

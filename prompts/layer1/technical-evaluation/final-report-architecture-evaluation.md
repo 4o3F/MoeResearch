@@ -1,55 +1,52 @@
-# Layer 1 Prompt: Final Report — Architecture Option Evaluation
+# Layer 1 Prompt: Technical Typst Final Report — Architecture Option Evaluation
 
 ## Role
 
-Convert validated MoeResearch results into a decision-oriented technical report focused on quality attributes, integration, operational model, trade-offs, security/reliability boundaries, migration path, and exit options. Do not fabricate evidence, benchmark numbers, security findings, or costs.
+Convert validated MoeResearch results into a `typst-project-v1` architecture decision report. Use `typst-report-contract.md`, Technical final-report guidance, and the Technical evidence overlay as binding prerequisites. The report is ADR input: context, options, decision, consequences, verification, and reversal path.
 
-## Decision stance
+## Body assembly
 
-State the recommendation first, then make trade-offs explicit. The report should be usable as an ADR input: context, options, decision, consequences, verification, and reversal path.
+Emit `sections/body.typ` as Typst source, not Markdown, using this section hierarchy:
 
-## Output template
+```typst
+= Technical Evaluation: {Topic}
 
-```markdown
-# Technical Evaluation: {Topic}
-
-## Decision Summary
-Recommendation: Adopt / Trial / Defer / Reject / Migrate / Replace / Monitor
-Confidence: High / Medium / Low
-
-## Evaluation Scope and Constraints
-## Candidate Architecture Options
-## Decision Criteria Matrix
-## Requirements and Quality Attributes
-## Architecture and Integration Analysis
-## Operational Model
-## Performance and Scalability Evidence
-## Security / Compliance / Reliability Risks
-## Ecosystem and Platform Maturity
-## Alternatives Comparison
-## Recommended Option and Consequences
-## Adoption Gate
-## Minimal Spike / Verification Plan
-## Open Risks and Kill Criteria
-## Rollback / Exit Options
-
-## Annex A
-A.1 Evidence Index
-A.2 Official Docs / Release / Repo Evidence
-A.3 Benchmark Evidence
-A.4 Security / License Audit
-A.5 Decision Matrix
-A.6 Minimal Spike Plan
-A.7 Self-Verification
-A.8 Tool Provenance
+== Decision Summary
+== Evaluation Scope and Constraints
+== Candidate Architecture Options
+== Decision Criteria Matrix
+== Requirements and Quality Attributes
+== Architecture and Integration Analysis
+== Operational Model
+== Performance and Scalability Evidence
+== Security, Compliance, and Reliability Risks
+== Ecosystem and Platform Maturity
+== Alternatives Comparison
+== Recommended Option and Consequences
+== Adoption Gate
+== Minimal Spike and Verification Plan
+== Open Risks and Kill Criteria
+== Rollback and Exit Options
 ```
 
-## Rules
+- State the recommended option, confidence, and the trade-off that most threatens it first.
+- Evaluate relevant quality attributes explicitly: availability, scalability, latency, consistency, durability, operability, observability, security, compliance, and maintainability.
+- Separate documented guarantees from examples, marketing claims, community anecdotes, and Layer 1 engineering judgement.
+- Benchmark evidence includes workload, version, runtime/hardware, methodology, variance, and transferability; otherwise it only supports a validation hypothesis.
+- Consequences, adoption gates, local spike, kill criteria, and rollback/exit path must be testable and tied to the chosen constraints.
 
-- Use existing MoeResearch evidence ids only for MoeResearch claims. Keep host verification as `HV-*` and disclose it separately.
-- Evaluate quality attributes explicitly: availability, scalability, latency, consistency, durability, operability, observability, security, compliance, and maintainability when relevant.
-- Separate documented guarantees from examples, marketing claims, community anecdotes, and inferred engineering judgment.
-- Benchmark claims must include workload, version, hardware/runtime, methodology, variance/reproducibility limits, and applicability to the user's context when available.
-- The adoption gate and kill criteria must be falsifiable and tied to local verification where evidence is missing.
+## Rendering rules
+
+- Apply the `typst-report-contract.md` semantic highlighting vocabulary only to decisions, material risks, adoption gates, and validation conditions; never use color without its visible label and boundary cue.
+- Apply the common table-readability and degradation rules. Do not compress architecture/quality-attribute prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every decision field.
+
+## Annex mapping
+
+Use A.1–A.8 in `sections/annex.typ`. Put architecture/repository/release artifacts in A.2, quality-attribute risks and benchmark limits in A.3, unresolved integration/operational facts in A.4, verification metrics in A.5, and ADR decision closure in A.6.
+
+## Capability gates
+
+- Every architecture conclusion distinguishes a factual evidence statement from a synthesis judgement.
+- Missing local environment or operational evidence changes the recommendation to a conditional trial/defer, not a false certainty.
 - License notes are engineering due diligence, not legal advice.
-- If evidence is weak, mark confidence Low and move unsupported claims to Open Risks.
+- Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.

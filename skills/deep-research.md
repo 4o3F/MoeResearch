@@ -10,7 +10,7 @@ version: 0.1.0
 
 Use this skill when a user asks for structured research that needs broad search coverage, multi-perspective analysis, evidence tracking, or a final decision-oriented report.
 
-The skill is the Layer 1 Orchestration Layer. It plans the research, calls the Rust MCP execution tools, validates returned structure, resolves conflicts, and writes the final natural-language report. Rust remains responsible for MCP execution, provider calls, tool loops, runtime limit accounting, schema validation, and trace summaries.
+The skill is the Layer 1 Orchestration Layer. It plans the research, calls the Rust MCP execution tools, validates returned structure, resolves conflicts, and produces the final profile-specific handoff: Academic and Technical use a Typst source project, while PM and Generic retain their documented legacy Markdown report. Rust remains responsible for MCP execution, provider calls, tool loops, runtime limit accounting, schema validation, and trace summaries.
 
 ## Trigger examples
 
@@ -81,6 +81,7 @@ Choose a concrete non-null `limits_preset` here; profiles only apply it. Then pr
     "task_decomposition": "string",
     "agent_allocation": "string|null",
     "final_report": "string",
+    "final_report_assets": ["profile overlay, Typst contract, profile guidance"],
     "layer2_personas": ["string"]
   },
   "why_this_route": ["short evidence from the request"],
@@ -104,6 +105,26 @@ Do not improvise Generic orchestration without those files.
 
 Installed Claude Code layout rewrites skill-relative paths to `./prompts/...` under `~/.claude/skills/deep-research/`; repo/manual layout keeps sibling `../prompts/...` paths from `skills/deep-research.md`.
 
+### Final-report capability routing
+
+For Academic and Technical, resolve every capability to exactly one report template and the Typst assembly assets below. Load the common evidence modules before the profile overlay, `typst-report-contract.md`, profile guidance, and selected template. These are Skill assets, never Rust runtime inputs.
+
+| Profile | Capability | Final template | Delivery |
+| --- | --- | --- | --- |
+| Academic | `literature-review` | `academic-deep-research/final-report-literature-review.md` | `typst-project-v1` |
+| Academic | `evidence-synthesis` | `academic-deep-research/final-report-evidence-synthesis.md` | `typst-project-v1` |
+| Academic | `paper-evaluation` | `academic-deep-research/final-report-paper-evaluation.md` | `typst-project-v1` |
+| Academic | `research-gap-analysis` | `academic-deep-research/final-report-research-gap-map.md` | `typst-project-v1` |
+| Academic | `study-design-background` | `academic-deep-research/final-report-study-design-background.md` | `typst-project-v1` |
+| Technical | `library-framework-comparison` | `technical-evaluation/final-report-library-comparison.md` | `typst-project-v1` |
+| Technical | `architecture-option-evaluation` | `technical-evaluation/final-report-architecture-evaluation.md` | `typst-project-v1` |
+| Technical | `dependency-risk-assessment` | `technical-evaluation/final-report-dependency-risk.md` | `typst-project-v1` |
+| Technical | `migration-upgrade-assessment` | `technical-evaluation/final-report-migration-assessment.md` | `typst-project-v1` |
+| Technical | `benchmark-performance-review` | `technical-evaluation/final-report-benchmark-performance-review.md` | `typst-project-v1` |
+| Technical | `technical-due-diligence` | `technical-evaluation/final-report-technical-due-diligence.md` | `typst-project-v1` |
+
+Academic additionally loads `academic-deep-research/evidence-modules-overlay.md` and `academic-deep-research/final-report-guidance.md`. Technical additionally loads `technical-evaluation/evidence-modules-overlay.md` and `technical-evaluation/final-report-guidance.md`. Both load `common/typst-report-contract.md`. PM and Generic retain their documented Markdown delivery until separately migrated.
+
 ## Inputs
 
 ```json
@@ -123,17 +144,26 @@ Installed Claude Code layout rewrites skill-relative paths to `./prompts/...` un
 
 ## Outputs
 
-The skill produces a Markdown report for the user and may also persist intermediate structured artifacts when the caller requests disk output.
+The skill produces a Layer 1 final-report handoff. Academic and Technical reports use a `typst-project-v1` source project; PM and Generic reports retain their documented Markdown delivery until explicitly migrated. Layer 1 may materialize the fixed Typst project only in a caller-specified destination and must not overwrite it without explicit approval.
 
 ```json
 {
-  "report_markdown": "string",
+  "final_report": {
+    "kind": "typst_project | markdown_legacy",
+    "format": "typst-project-v1 | markdown",
+    "entrypoint": "report.typ | null",
+    "files": [{"path": "string", "content": "string"}],
+    "citation_map": [{"citekey": "string", "evidence_id": "string", "source_origin": "string"}],
+    "compile_status": "not_run | succeeded | failed | not_applicable"
+  },
   "deep_research_request": "DeepResearchRequest",
   "rust_result": "DeepResearchResult | AspectResearchResult",
   "limitations": ["string"],
   "open_questions": ["string"]
 }
 ```
+
+`final_report` is a Skill-layer delivery contract, never an MCP request or response field. Rust does not write, compile, or judge final report artifacts.
 
 ## Workflow
 
@@ -148,7 +178,8 @@ The skill produces a Markdown report for the user and may also persist intermedi
    - every finding with `require_evidence_for_findings = true` has evidence refs;
    - contradictions are surfaced, not hidden;
    - low-confidence findings are marked as limitations or open questions when appropriate.
-9. Read the selected profile's final-report prompt and generate the final report in the user's language.
+9. Read the selected profile's final-report prompt and generate the final report in the user's language. For Academic and Technical, load the profile overlay, `typst-report-contract.md`, profile final-report guidance, and the uniquely routed capability template; return the fixed `typst-project-v1` handoff. For PM and Generic, retain their documented Markdown delivery.
+10. Only write a Typst project when the caller specifies an output destination and approves any overwrite. Do not compile it automatically; Typst compilation remains an explicit caller-side action outside Rust MCP.
 
 ### Claude Code MCP direct invocation contract
 
@@ -244,7 +275,7 @@ For `aspect_research`, use the same `schema_version`, `request_id`, `policy`, an
 
 - Layer 1 may plan, allocate, validate, and synthesize.
 - Layer 1 must not call Exa, Grok, or model provider APIs directly when Rust MCP is available.
-- Rust must not generate the final natural-language report.
+- Rust must not generate the final natural-language report, write report artifacts, compile Typst, or evaluate the final synthesis.
 - Rust never reads prompt files at runtime. For every search-enabled aspect, Layer 1 loads the chosen Layer 2 aspect-agent Markdown asset from the workspace, appends `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then appends a request-specific Run Binding, and passes the three-part content inline as `AspectRequest.instructions`. Layer 1 owns prompt selection, version pinning, Run Binding projection, and any per-aspect customization. The string must be non-empty and under 64 KiB.
 - Provider API keys, base URLs, retry policy, operator limits, and raw DTOs stay behind Rust configuration and provider adapters.
 - Domain filters belong to `SearchPolicy`, not to ad-hoc search request text.

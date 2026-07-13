@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -25,6 +24,15 @@ const GENERIC_LAYER2_SEARCH_PLANNER: &str = "prompts/layer2/search-planner.md";
 const GENERIC_LAYER2_EVIDENCE_EXTRACTOR: &str = "prompts/layer2/evidence-extractor.md";
 const COMMON_PATH: &str = "prompts/layer1/common/evidence-postprocess.md";
 const MODEL_SEARCH_CONTRACT_PATH: &str = "prompts/layer1/common/model-search-tool-contract.md";
+const TYPST_REPORT_CONTRACT_PATH: &str = "prompts/layer1/common/typst-report-contract.md";
+const ACADEMIC_REPORT_GUIDANCE_PATH: &str =
+    "prompts/layer1/academic-deep-research/final-report-guidance.md";
+const ACADEMIC_EVIDENCE_OVERLAY_PATH: &str =
+    "prompts/layer1/academic-deep-research/evidence-modules-overlay.md";
+const TECHNICAL_REPORT_GUIDANCE_PATH: &str =
+    "prompts/layer1/technical-evaluation/final-report-guidance.md";
+const TECHNICAL_EVIDENCE_OVERLAY_PATH: &str =
+    "prompts/layer1/technical-evaluation/evidence-modules-overlay.md";
 const PM_LAYER1_PATH: &str = "prompts/layer1/pm-deep-research/task-decomposition.md";
 const PM_LAYER2_PATH: &str = "prompts/layer2/pm-deep-research/persona-strategist.md";
 const ACADEMIC_LAYER1_PATH: &str = "prompts/layer1/academic-deep-research/task-decomposition.md";
@@ -46,6 +54,22 @@ const EXPECTED_FILES: &[&str] = &[
     GENERIC_LAYER2_EVIDENCE_EXTRACTOR,
     COMMON_PATH,
     MODEL_SEARCH_CONTRACT_PATH,
+    TYPST_REPORT_CONTRACT_PATH,
+    ACADEMIC_REPORT_GUIDANCE_PATH,
+    ACADEMIC_EVIDENCE_OVERLAY_PATH,
+    TECHNICAL_REPORT_GUIDANCE_PATH,
+    TECHNICAL_EVIDENCE_OVERLAY_PATH,
+    "prompts/layer1/academic-deep-research/final-report-literature-review.md",
+    "prompts/layer1/academic-deep-research/final-report-evidence-synthesis.md",
+    "prompts/layer1/academic-deep-research/final-report-paper-evaluation.md",
+    "prompts/layer1/academic-deep-research/final-report-research-gap-map.md",
+    "prompts/layer1/academic-deep-research/final-report-study-design-background.md",
+    "prompts/layer1/technical-evaluation/final-report-library-comparison.md",
+    "prompts/layer1/technical-evaluation/final-report-architecture-evaluation.md",
+    "prompts/layer1/technical-evaluation/final-report-dependency-risk.md",
+    "prompts/layer1/technical-evaluation/final-report-migration-assessment.md",
+    "prompts/layer1/technical-evaluation/final-report-benchmark-performance-review.md",
+    "prompts/layer1/technical-evaluation/final-report-technical-due-diligence.md",
     PM_LAYER1_PATH,
     PM_LAYER2_PATH,
     ACADEMIC_LAYER1_PATH,
@@ -55,31 +79,20 @@ const EXPECTED_FILES: &[&str] = &[
 ];
 
 struct TestDir {
-    path: PathBuf,
+    dir: tempfile::TempDir,
 }
 
 impl TestDir {
     fn new(name: &str) -> Self {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock after epoch")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "moe-research-assets-test-{}-{nanos}-{name}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).expect("create test dir");
-        Self { path }
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("moe-research-assets-test-{name}-"))
+            .tempdir()
+            .expect("create test dir");
+        Self { dir }
     }
 
     fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
+        self.dir.path()
     }
 }
 
@@ -339,6 +352,18 @@ fn assets_install_default_claude_code_layout_rewrites_skill_prompt_paths() {
             && contract.contains("selected_evidence_rule"),
         "installed common contract must retain Run Binding projection and closure guidance"
     );
+    for expected in [
+        TYPST_REPORT_CONTRACT_PATH,
+        ACADEMIC_REPORT_GUIDANCE_PATH,
+        ACADEMIC_EVIDENCE_OVERLAY_PATH,
+        TECHNICAL_REPORT_GUIDANCE_PATH,
+        TECHNICAL_EVIDENCE_OVERLAY_PATH,
+    ] {
+        assert!(
+            skill_root.join(expected).is_file(),
+            "installed Claude layout missing {expected}"
+        );
+    }
     assert!(
         skill_root
             .join("prompts/layer1/academic-deep-research/task-decomposition.md")
@@ -648,7 +673,13 @@ fn assets_install_preserves_conflicting_files_without_force() {
 
     let output = install_repo_layout(&fixture, &target);
 
-    assert!(!output.status.success());
+    assert!(
+        !output.status.success(),
+        "installer unexpectedly succeeded for {}\nstdout: {}\nstderr: {}",
+        skill_path.display(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
     assert_eq!(
         fs::read_to_string(skill_path).expect("read local edit"),
         "local edit"

@@ -16,7 +16,9 @@ MoeResearch has one Rust MCP backend and one Markdown asset installer. The asset
 | Academic DeepResearch | Literature review, evidence synthesis, paper evaluation, research gaps. | `prompts/layer1/academic-deep-research/`, `prompts/layer2/academic-deep-research/` |
 | Technical Evaluation | Library/framework comparison, architecture evaluation, dependency risk, migration assessment. | `prompts/layer1/technical-evaluation/`, `prompts/layer2/technical-evaluation/` |
 | Generic DeepResearch | Multi-aspect research that does not fit PM/academic/technical. | `prompts/layer1/task-decomposition.md`, `prompts/layer1/final-report.md`, `prompts/layer2/aspect-agent.md` |
-| Common modules | Evidence tiering, claim ledger, host verification, verifier, annex, partial-status host contract, budget tiers, model-search tool contract. | `prompts/layer1/common/` |
+| Common modules | Evidence tiering, claim ledger, host verification, verifier, annex, Typst report contract, partial-status host contract, budget tiers, model-search tool contract. | `prompts/layer1/common/` |
+
+Academic and Technical final-report routes also load their profile `evidence-modules-overlay.md` and `final-report-guidance.md`, then emit a `typst-project-v1` source project. PM and Generic retain Markdown delivery until separately migrated.
 
 Optional Generic Layer-2 helpers (not required when `aspect-agent.md` is inlined): `prompts/layer2/search-planner.md`, `prompts/layer2/evidence-extractor.md`.
 

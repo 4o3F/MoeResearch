@@ -16,9 +16,18 @@ Do not claim Rust/MoeResearch fetched, inspected, or verified host-only sources.
 
 ## Common annex skeleton
 
-### A.1 Evidence Index
+### A.1 Evidence Index and Citation Map
 
-MoeResearch evidence only. Include `evidence_id`, `claim_summary`, `source_title`, `source_url`, `source_type`, `tier`, `confidence`, and `cited_in`.
+A.1 is the canonical source ledger for every source actually cited or used for a load-bearing claim. Keep origins separate in rows; it does not turn host/manual sources into MoeResearch evidence. Every A.1 row uses this fixed logical baseline:
+
+`evidence_id | citekey | source_origin | claim_summary | source_title | source_url | source_type | tier | confidence | cited_in`
+
+- `evidence_id` is a frozen MoeResearch ID for `moe_research`, an `HV-*` ID for `host_verification`, or an existing manual/local record ID for `manual_or_local`; never mint a fake MoeResearch ID.
+- `citekey` is the rendered bibliography key when the report format has a bibliography; retain it as `not_applicable` only for a documented legacy report without a citation system.
+- `source_origin` is exactly `moe_research`, `host_verification`, or `manual_or_local`.
+- Preserve unavailable metadata as visibly incomplete rather than inventing it. `tier` and `confidence` record the report's actual evidence assessment, not a fabricated source score.
+
+This is a logical ledger, not a mandatory physical grid. A Typst report may render compact index columns plus per-source audit cards, provided every baseline field remains associated with the same row/record.
 
 ### A.2 Artifact / Visual / Structured Evidence
 

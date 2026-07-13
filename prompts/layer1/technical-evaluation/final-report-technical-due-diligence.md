@@ -1,51 +1,49 @@
-# Layer 1 Prompt: Final Report — Technical Due Diligence
+# Layer 1 Prompt: Technical Typst Final Report — Technical Due Diligence
 
 ## Role
 
-Convert validated MoeResearch results into a decision-oriented technical due-diligence report focused on requirements fit, architecture, operability, security/reliability, ecosystem health, cost, risk, and exit options. Do not fabricate evidence, benchmark numbers, security findings, or costs.
+Convert validated MoeResearch results into a `typst-project-v1` broad technical due-diligence report. Use `typst-report-contract.md`, Technical final-report guidance, and the Technical evidence overlay as binding prerequisites. Use this template when the request does not fit a narrower comparison, architecture, dependency, migration, or benchmark capability.
 
-## Decision stance
+## Body assembly
 
-Use this report when the request does not fit a narrower comparison, architecture, dependency, migration, or benchmark template. State what can be concluded now and what must be verified before commitment.
+Emit `sections/body.typ` as Typst source, not Markdown, using this section hierarchy:
 
-## Output template
+```typst
+= Technical Evaluation: {Topic}
 
-```markdown
-# Technical Evaluation: {Topic}
-
-## Decision Summary
-Recommendation: Adopt / Trial / Defer / Reject / Migrate / Replace / Monitor
-Confidence: High / Medium / Low
-
-## Evaluation Scope and Constraints
-## Technical Context and Requirements
-## Architecture and Integration Findings
-## Operational Readiness
-## Security / Reliability / Compliance Risks
-## Ecosystem and Governance Health
-## Cost, Migration, and Reversibility
-## Alternatives Comparison
-## Adoption Gate
-## Minimal Spike / Verification Plan
-## Open Risks and Kill Criteria
-## Rollback / Exit Options
-
-## Annex A
-A.1 Evidence Index
-A.2 Official Docs / Release / Repo Evidence
-A.3 Benchmark or Performance Evidence
-A.4 Security / License Audit
-A.5 Decision Matrix
-A.6 Minimal Spike Plan
-A.7 Self-Verification
-A.8 Tool Provenance
+== Decision Summary
+== Evaluation Scope and Constraints
+== Technical Context and Requirements
+== Architecture and Integration Findings
+== Operational Readiness
+== Security, Reliability, and Compliance Risks
+== Ecosystem and Governance Health
+== Cost, Migration, and Reversibility
+== Alternatives Comparison
+== Adoption Gate
+== Minimal Spike and Verification Plan
+== Open Risks and Kill Criteria
+== Rollback and Exit Options
 ```
 
-## Rules
+- State what can be concluded now, what must be verified before commitment, and the confidence/reversal condition first.
+- Separate official documentation, repository/release evidence, benchmark/performance evidence, advisory/license evidence, independent engineering analysis, and community opinion.
+- Treat technical feasibility, operational readiness, security/reliability, ecosystem health, cost, migration, and reversibility as separate decision dimensions.
+- The adoption gate names evidence or local-spike results required before production use. Kill criteria are falsifiable and tied to user constraints.
+- Cost, migration duration, staffing, capacity, and rollback feasibility are assumptions unless evidence establishes them.
+- License analysis is engineering due diligence, not legal advice.
 
-- Use existing MoeResearch evidence ids only for MoeResearch claims. Keep host verification as `HV-*` and disclose it separately.
-- Separate official documentation, repository/release evidence, benchmark evidence, security/license evidence, independent engineering writeups, and community opinion.
-- The adoption gate must list the evidence or local spike results required before production use.
-- Kill criteria must be falsifiable and tied to the user's constraints.
-- License notes are engineering due diligence, not legal advice.
-- If evidence is weak, mark confidence Low and move unsupported claims to Open Risks.
+## Rendering rules
+
+- Apply the `typst-report-contract.md` semantic highlighting vocabulary only to decisions, material risks, adoption gates, and validation conditions; never use color without its visible label and boundary cue.
+- Apply the common table-readability and degradation rules. Do not compress due-diligence prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every decision field.
+
+## Annex mapping
+
+Use A.1–A.8 in `sections/annex.typ`. Put official/repository/structured evidence in A.2, risk and applicability limits in A.3, unresolved decision facts in A.4, spike/falsification details in A.5, and due-diligence closure in A.6.
+
+## Capability gates
+
+- The broad scope does not permit broad claims: each decision conclusion has evidence IDs/citekeys, confidence, validation need, and residual risk.
+- Missing critical evidence converts the outcome to trial/defer/reject or an explicit abstention.
+- Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.

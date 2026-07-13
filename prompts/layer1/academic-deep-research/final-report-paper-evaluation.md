@@ -1,50 +1,49 @@
-# Layer 1 Prompt: Final Report — Paper Evaluation
+# Layer 1 Prompt: Academic Typst Final Report — Paper Evaluation
 
 ## Role
 
-Convert validated MoeResearch results into an academic paper-evaluation report focused on research question, claims, methods, results, validity, limitations, contribution, and applicability. Do not fabricate sources or overstate evidence.
+Convert validated MoeResearch results into a `typst-project-v1` critical evaluation of one paper or a bounded paper set. Use `typst-report-contract.md`, Academic final-report guidance, and the Academic evidence overlay as binding prerequisites. Evaluate the paper's claims, evidence, and applicability separately.
 
-## Evaluation stance
+## Body assembly
 
-Evaluate the paper on its own terms first, then evaluate how strongly its evidence supports the user's intended use. Separate what the paper claims, what the evidence supports, and what remains uncertain.
+Emit `sections/body.typ` as Typst source, not Markdown, using this section hierarchy:
 
-## Output template
+```typst
+= {Title}
 
-```markdown
-# {Title}
-
-## Abstract / Executive Answer
-- Bottom-line evaluation of the paper.
-- Confidence: High / Medium / Low, with the main reason.
-
-## Paper Identity and Citation Status
-## Research Question and Stated Claims
-## Methods and Data
-## Results and Effect / Contribution Size
-## Internal Validity
-## External Validity and Applicability
-## Limitations and Bias Risks
-## Relation to Prior / Later Work
-## Citation Faithfulness and Validity Checks
-## Overall Contribution
-## Recommendation for Use
-
-## Annex A
-A.1 Evidence Index
-A.2 Claim Ledger
-A.3 Search Query Log
-A.4 Methods Appraisal Table
-A.5 Contradiction Register
-A.6 Retraction / Correction / Version Checks
-A.7 Abstain Log
-A.8 Tool Provenance
+== Abstract / Executive Answer
+== Paper Identity and Citation Status
+== Research Question and Stated Claims
+== Methods and Data
+== Results and Effect or Contribution Size
+== Internal Validity
+== External Validity and Applicability
+== Limitations and Bias Risks
+== Relation to Prior and Later Work
+== Citation Faithfulness and Validity Checks
+== Overall Contribution
+== Recommendation for Use
 ```
 
-## Rules
+- State the use recommendation, confidence, and decisive limitation first.
+- Distinguish what the paper asserts, what its reported evidence supports, what the wider evidence supports, and what remains unknown.
+- Verify title, authors, year, venue, DOI/PMID/arXiv/version, landing page, correction, and retraction only when evidence is present; missing identity data stays unknown.
+- Separate methods limitations, reporting limitations, statistical uncertainty, reproducibility, bias risk, and applicability limits.
+- Do not infer effect magnitude, peer-review status, replication outcome, retraction status, or causal validity from plausibility.
+- Treat later work as contextual evidence, not an automatic verdict on the paper.
 
-- Use MoeResearch evidence ids only for MoeResearch claims. Keep host verification as `HV-*`; never insert host-found sources into MoeResearch evidence.
-- Verify source identity when possible: title, authors, year, venue, DOI/PMID/arXiv/version, official landing page, and correction/retraction signals.
-- Distinguish methods limitations, reporting limitations, statistical uncertainty, and applicability limitations.
-- Do not infer effect size, reproducibility, peer-review status, or retraction status unless evidenced.
-- Apply CONSORT, STROBE, PRISMA, AMSTAR 2, RoB 2, ROBINS-I, CASP, or JBI only when relevant to the study/source type.
-- If evidence is weak, stale, indirect, single-source, or contested, lower confidence, narrow the claim, move it to open questions, or abstain.
+## Rendering rules
+
+- Apply the `typst-report-contract.md` semantic highlighting vocabulary only to load-bearing evaluation, limitations, validity risks, and validation conditions; never use color without its visible label and boundary cue.
+- Apply the common table-readability and degradation rules. Do not compress identity, methods, and appraisal prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every audit field.
+
+## Annex mapping
+
+Use A.1–A.8 in `sections/annex.typ`. Put identity/version evidence and methods appraisal in A.2/A.3, correction/retraction uncertainty and contradictions in A.3/A.4, falsification or replication needs in A.5, and source-identity/self-check records in A.6.
+
+## Capability gates
+
+- Every criticism and praise names the criterion, supporting evidence IDs/citekeys, and its decision consequence.
+- Applicability claims state the target user/context and boundary conditions.
+- Unknown source identity, methods, effect, correction, or reproducibility facts are listed as open questions or abstentions.
+- Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.

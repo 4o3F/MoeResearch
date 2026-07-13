@@ -1,50 +1,49 @@
-# Layer 1 Prompt: Final Report — Literature Review
+# Layer 1 Prompt: Academic Typst Final Report — Literature Review
 
 ## Role
 
-Convert validated MoeResearch results into an academic literature-review report focused on field map, terminology, themes, methods, controversies, and gaps. Do not fabricate sources or overstate evidence.
+Convert validated MoeResearch results into a `typst-project-v1` literature review. Use `typst-report-contract.md`, Academic final-report guidance, and the Academic evidence overlay as binding prerequisites. Do not fabricate sources, metadata, formal appraisal, or certainty.
 
-## Synthesis stance
+## Body assembly
 
-Write thematically, not as a paper-by-paper dump, unless the user explicitly asks for annotated bibliography style. Every load-bearing claim must be traceable to MoeResearch evidence ids or separately disclosed host verification ids (`HV-*`).
+Emit `sections/body.typ` as Typst source, not Markdown, using this section hierarchy:
 
-## Output template
+```typst
+= {Title}
 
-```markdown
-# {Title}
-
-## Abstract / Executive Answer
-- One-paragraph answer to the research question.
-- Confidence: High / Medium / Low, with the main reason.
-
-## Research Question and Scope
-## Inclusion and Exclusion Criteria
-## Search Strategy and Source Classes
-## Concept and Terminology Map
-## Literature Map / Evidence Themes
-## Seminal Work vs Current Work
-## Methodological Appraisal
-## Consensus, Disagreement, and Alternative Interpretations
-## Certainty / Confidence Assessment
-## Research Gaps and Future Work
-## Limitations
-
-## Annex A
-A.1 Evidence Index
-A.2 Claim Ledger
-A.3 Search Query Log
-A.4 Study / Source Appraisal Table
-A.5 Contradiction Register
-A.6 Retraction / Validity Checks
-A.7 Abstain Log
-A.8 Tool Provenance
+== Abstract / Executive Answer
+== Research Question and Scope
+== Inclusion and Exclusion Criteria
+== Search Strategy and Source Classes
+== Concept and Terminology Map
+== Literature Map and Evidence Themes
+== Seminal Work and Current Work
+== Methodological Appraisal
+== Consensus, Disagreement, and Alternative Interpretations
+== Certainty and Confidence Assessment
+== Research Gaps and Future Work
+== Limitations
 ```
 
-## Rules
+- Open the abstract with the answer, confidence, and main downgrade reason.
+- Build the literature map by theme, construct, method, setting, or outcome; do not serialize one paper after another unless the user explicitly asks for an annotated bibliography.
+- For each major theme, state source/study class, directness, independence/shared lineage, evidence IDs/citekeys, and material limitations.
+- Separate seminal influence from current evidence. Citation count, popularity, or age alone is not proof of methodological quality.
+- Explain disagreement rather than averaging it away. State whether differing populations, definitions, designs, settings, or evidence quality plausibly bound the conclusion.
+- Use PRISMA-style transparency and appraisal lenses only as appropriate reporting lenses. Do not claim a systematic review or formal score unless the run supports it.
 
-- Use MoeResearch evidence ids only for MoeResearch claims. Keep host verification as `HV-*`; never insert host-found sources into MoeResearch evidence.
-- For each major theme, state source class, directness, independence, and known limitations.
-- Mark whether claims rest on primary studies, reviews, guidelines, datasets, standards, or commentary.
-- Apply PRISMA-style transparency only as a reporting lens when relevant; do not imply a full systematic review unless the run actually followed one.
-- Use methodology lenses such as GRADE, CONSORT, STROBE, AMSTAR 2, RoB 2, ROBINS-I, CASP, or JBI only when relevant to the evidence type.
-- If evidence is weak, stale, indirect, single-source, or contested, lower confidence, narrow the claim, move it to open questions, or abstain.
+## Rendering rules
+
+- Apply the `typst-report-contract.md` semantic highlighting vocabulary only to load-bearing synthesis, limitations, conflicts, and future-work validation conditions; never use color without its visible label and boundary cue.
+- Apply the common table-readability and degradation rules. Do not compress literature/appraisal prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every audit field.
+
+## Annex mapping
+
+Use A.1–A.8 in `sections/annex.typ`. Academic additions include the terminology/source map in A.2, study/source appraisal in A.3, unresolved coverage and identity checks in A.4, validation routes in A.5, and certainty/independence checks in A.6.
+
+## Capability gates
+
+- Every major theme has at least one evidence cluster or is explicitly marked as a coverage gap.
+- A claim about a paper's version, correction, retraction, peer-review state, DOI/PMID/arXiv record, or venue appears only when evidenced.
+- Weak, stale, indirect, single-lineage, or contested evidence lowers confidence, narrows the conclusion, enters A.4/A.7, or is omitted from the body.
+- Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.

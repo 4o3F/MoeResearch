@@ -664,6 +664,288 @@ fn research_profile_task_decomposition_prompts_keep_schema_boundary() {
 }
 
 #[test]
+fn academic_and_technical_typst_report_assets_stay_outside_mcp_schemas() {
+    let router = include_str!("../../../skills/deep-research.md");
+    let academic_skill = include_str!("../../../skills/academic-deep-research.md");
+    let technical_skill = include_str!("../../../skills/technical-evaluation.md");
+    let typst_contract = include_str!("../../../prompts/layer1/common/typst-report-contract.md");
+    let common_annex = include_str!("../../../prompts/layer1/common/report-annex.md");
+    let academic_guidance =
+        include_str!("../../../prompts/layer1/academic-deep-research/final-report-guidance.md");
+    let academic_overlay =
+        include_str!("../../../prompts/layer1/academic-deep-research/evidence-modules-overlay.md");
+    let technical_guidance =
+        include_str!("../../../prompts/layer1/technical-evaluation/final-report-guidance.md");
+    let technical_overlay =
+        include_str!("../../../prompts/layer1/technical-evaluation/evidence-modules-overlay.md");
+
+    for marker in [
+        "typst-project-v1",
+        "final_report_assets",
+        "literature-review",
+        "evidence-synthesis",
+        "paper-evaluation",
+        "research-gap-analysis",
+        "study-design-background",
+        "library-framework-comparison",
+        "architecture-option-evaluation",
+        "dependency-risk-assessment",
+        "migration-upgrade-assessment",
+        "benchmark-performance-review",
+        "technical-due-diligence",
+    ] {
+        assert!(router.contains(marker), "router missing {marker}");
+    }
+    assert!(
+        !router.contains("\"report_markdown\""),
+        "router must not expose the retired Markdown-only handoff field"
+    );
+
+    for (name, skill) in [("academic", academic_skill), ("technical", technical_skill)] {
+        for marker in [
+            "Final-report routing",
+            "evidence-modules-overlay.md",
+            "final-report-guidance.md",
+            "typst-report-contract.md",
+            "typst-project-v1",
+        ] {
+            assert!(skill.contains(marker), "{name} skill missing {marker}");
+        }
+    }
+
+    for (name, asset) in [
+        ("Typst contract", typst_contract),
+        ("Academic overlay", academic_overlay),
+        ("Technical overlay", technical_overlay),
+    ] {
+        assert!(
+            asset.contains("HV-*") && asset.contains("MoeResearch"),
+            "{name} must retain source-origin boundaries"
+        );
+    }
+    let canonical_a1_fields = "evidence_id | citekey | source_origin | claim_summary | source_title | source_url | source_type | tier | confidence | cited_in";
+    for (name, asset) in [
+        ("Common annex", common_annex),
+        ("Typst contract", typst_contract),
+    ] {
+        assert!(
+            asset.contains(canonical_a1_fields),
+            "{name} must define the canonical A.1 logical field set"
+        );
+    }
+    for (name, overlay, extension) in [
+        (
+            "Academic overlay",
+            academic_overlay,
+            "source_or_study_type | directness | independence_note",
+        ),
+        (
+            "Technical overlay",
+            technical_overlay,
+            "source_class | option_or_version | applicability_conditions",
+        ),
+    ] {
+        assert!(
+            overlay.contains("A.1 must retain every canonical logical baseline field")
+                && overlay.contains(extension),
+            "{name} must add rather than replace canonical A.1 fields"
+        );
+    }
+
+    for (name, guidance) in [
+        ("Academic guidance", academic_guidance),
+        ("Technical guidance", technical_guidance),
+    ] {
+        assert!(
+            guidance.contains("HV-*") && guidance.contains("evidence"),
+            "{name} must preserve evidence and verification boundaries"
+        );
+        assert!(
+            guidance.contains("style: \"ieee\""),
+            "{name} must require the built-in IEEE bibliography style"
+        );
+    }
+    assert!(
+        !academic_guidance.contains("APA-compatible"),
+        "Academic guidance must not retain the retired APA default"
+    );
+    for marker in [
+        "report-decision",
+        "report-limitation",
+        "report-risk",
+        "report-validation",
+    ] {
+        assert!(
+            academic_guidance.contains(marker),
+            "Academic guidance missing semantic helper {marker}"
+        );
+    }
+    for marker in [
+        "report-decision",
+        "report-limitation",
+        "report-risk",
+        "report-validation",
+    ] {
+        assert!(
+            technical_guidance.contains(marker),
+            "Technical guidance missing semantic helper {marker}"
+        );
+    }
+    for marker in [
+        "typst-project-v1",
+        "references.bib",
+        "citation_map",
+        "style: \"ieee\"",
+        "report-decision",
+        "report-limitation",
+        "report-risk",
+        "report-validation",
+        "#let report-callout",
+        "stroke: (left: 2pt + accent)",
+        "color is never the only semantic signal",
+        "portrait prose table has at most three substantive narrative columns",
+        "label–value cards",
+        "table.header",
+        "last resort for compact numeric, version, or code matrices",
+        "compile_status",
+        "not_run",
+        "succeeded",
+        "failed",
+        "not_applicable",
+        "output_language",
+        "manual section-number prefixes",
+        "Typst automatic numbering",
+        "Libertinus Serif",
+        "Noto Sans CJK SC",
+        "New Computer Modern Math",
+        "DejaVu Sans Mono",
+        "#show math.equation",
+        "#show raw",
+        "#import \"/modules/report-style.typ\": <helpers>",
+        "do **not** export bindings",
+        "untrusted",
+    ] {
+        assert!(
+            typst_contract.contains(marker),
+            "Typst contract missing {marker}"
+        );
+    }
+    assert!(
+        !typst_contract.contains("APA-compatible"),
+        "Typst contract must not retain the retired APA default"
+    );
+
+    let templates = [
+        (
+            "academic literature review",
+            include_str!(
+                "../../../prompts/layer1/academic-deep-research/final-report-literature-review.md"
+            ),
+        ),
+        (
+            "academic evidence synthesis",
+            include_str!(
+                "../../../prompts/layer1/academic-deep-research/final-report-evidence-synthesis.md"
+            ),
+        ),
+        (
+            "academic paper evaluation",
+            include_str!(
+                "../../../prompts/layer1/academic-deep-research/final-report-paper-evaluation.md"
+            ),
+        ),
+        (
+            "academic research gap map",
+            include_str!(
+                "../../../prompts/layer1/academic-deep-research/final-report-research-gap-map.md"
+            ),
+        ),
+        (
+            "academic study design",
+            include_str!(
+                "../../../prompts/layer1/academic-deep-research/final-report-study-design-background.md"
+            ),
+        ),
+        (
+            "technical library comparison",
+            include_str!(
+                "../../../prompts/layer1/technical-evaluation/final-report-library-comparison.md"
+            ),
+        ),
+        (
+            "technical architecture evaluation",
+            include_str!(
+                "../../../prompts/layer1/technical-evaluation/final-report-architecture-evaluation.md"
+            ),
+        ),
+        (
+            "technical dependency risk",
+            include_str!(
+                "../../../prompts/layer1/technical-evaluation/final-report-dependency-risk.md"
+            ),
+        ),
+        (
+            "technical migration assessment",
+            include_str!(
+                "../../../prompts/layer1/technical-evaluation/final-report-migration-assessment.md"
+            ),
+        ),
+        (
+            "technical benchmark review",
+            include_str!(
+                "../../../prompts/layer1/technical-evaluation/final-report-benchmark-performance-review.md"
+            ),
+        ),
+        (
+            "technical due diligence",
+            include_str!(
+                "../../../prompts/layer1/technical-evaluation/final-report-technical-due-diligence.md"
+            ),
+        ),
+    ];
+    assert_eq!(templates.len(), 11);
+    for (name, template) in templates {
+        for marker in [
+            "typst-project-v1",
+            "typst-report-contract.md",
+            "sections/body.typ",
+            "not Markdown",
+            "A.1–A.8",
+            "Rendering rules",
+            "semantic highlighting vocabulary",
+            "table-readability and degradation rules",
+        ] {
+            assert!(
+                template.contains(marker),
+                "{name} template missing {marker}"
+            );
+        }
+        assert!(
+            !template.contains("```markdown"),
+            "{name} template must not define Markdown as final output"
+        );
+    }
+
+    for schema in [
+        serde_json::to_string(&schema_for!(DeepResearchRequest)).expect("deep request schema"),
+        serde_json::to_string(&schema_for!(AspectResearchRequest)).expect("aspect request schema"),
+        serde_json::to_string(&schema_for!(AspectResearchResult)).expect("aspect result schema"),
+    ] {
+        for forbidden in [
+            "final_report",
+            "typst_project",
+            "report_markdown",
+            "artifact_writer",
+        ] {
+            assert!(
+                !schema.contains(forbidden),
+                "Rust MCP schema leaked Skill-only field {forbidden}"
+            );
+        }
+    }
+}
+
+#[test]
 fn model_search_prompt_contract_uses_semantic_intent_and_id_only_evidence() {
     let contract = include_str!("../../../prompts/layer1/common/model-search-tool-contract.md");
     for marker in [

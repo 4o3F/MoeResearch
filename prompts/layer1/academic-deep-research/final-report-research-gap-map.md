@@ -1,51 +1,49 @@
-# Layer 1 Prompt: Final Report — Research Gap Map
+# Layer 1 Prompt: Academic Typst Final Report — Research Gap Map
 
 ## Role
 
-Convert validated MoeResearch results into an academic research-gap map focused on current frontier, unresolved claims, methodological gaps, evidence gaps, practical/theoretical importance, and future study designs. Do not fabricate sources or overstate evidence.
+Convert validated MoeResearch results into a `typst-project-v1` research-gap map. Use `typst-report-contract.md`, Academic final-report guidance, and the Academic evidence overlay as binding prerequisites. A gap is valid only when existing coverage and its boundary are evidenced.
 
-## Synthesis stance
+## Body assembly
 
-A gap is only useful if it is grounded in what existing evidence already covers. Distinguish true evidence gaps from search gaps, implementation gaps, theory gaps, measurement gaps, and replication gaps.
+Emit `sections/body.typ` as Typst source, not Markdown, using this section hierarchy:
 
-## Output template
+```typst
+= {Title}
 
-```markdown
-# {Title}
-
-## Abstract / Executive Answer
-- Most important gaps and why they matter.
-- Confidence: High / Medium / Low, with the main reason.
-
-## Research Question and Scope
-## Inclusion and Exclusion Criteria
-## Search Strategy and Source Classes
-## Current Frontier
-## Evidence Coverage Map
-## Methodological Gaps
-## Theory / Construct / Measurement Gaps
-## Practical or Policy-Relevant Gaps
-## Candidate Research Questions
-## Future Study Design Options
-## Prioritization and Feasibility
-## Limitations
-
-## Annex A
-A.1 Evidence Index
-A.2 Claim Ledger
-A.3 Search Query Log
-A.4 Gap-to-Evidence Matrix
-A.5 Contradiction Register
-A.6 Retraction / Validity Checks
-A.7 Abstain Log
-A.8 Tool Provenance
+== Abstract / Executive Answer
+== Research Question and Scope
+== Inclusion and Exclusion Criteria
+== Search Strategy and Source Classes
+== Current Frontier
+== Evidence Coverage Map
+== Methodological Gaps
+== Theory, Construct, and Measurement Gaps
+== Practical or Policy-Relevant Gaps
+== Candidate Research Questions
+== Future Study Design Options
+== Prioritization and Feasibility
+== Limitations
 ```
 
-## Rules
+- Lead with the most decision-relevant gaps, why they matter, and the confidence that the gap is real rather than merely unsearched.
+- For each gap, show what is already known, which evidence IDs/citekeys establish the coverage boundary, what remains untested or unresolved, and whether the gap is conceptual, empirical, methodological, measurement-related, population/setting-specific, replication-related, or translational.
+- Do not label a missing search result, inaccessible source, or failed aspect as a field-wide evidence gap.
+- Candidate questions and study options include a minimal design idea, target evidence, likely validity threat, feasibility caveat, and falsification signal.
+- Prioritize by importance, tractability, expected information gain, evidence confidence, and ethical/operational caveats; do not fabricate numeric scores.
 
-- Use MoeResearch evidence ids only for MoeResearch claims. Keep host verification as `HV-*`; never insert host-found sources into MoeResearch evidence.
-- For each proposed gap, cite evidence showing what is already known and explain what remains untested, under-tested, or unresolved.
-- Mark whether the gap is conceptual, empirical, methodological, measurement-related, population/setting-specific, replication-related, or translational.
-- Future-study suggestions must include a minimal design idea, target evidence, likely validity threat, and feasibility caveat.
-- Apply PRISMA, GRADE, CONSORT, STROBE, AMSTAR 2, RoB 2, ROBINS-I, CASP, or JBI only as relevant lenses.
-- If evidence is weak, stale, indirect, single-source, or contested, lower confidence, narrow the gap claim, move it to open questions, or abstain.
+## Rendering rules
+
+- Apply the `typst-report-contract.md` semantic highlighting vocabulary only to load-bearing gap claims, limitations, conflicts, and study-validation conditions; never use color without its visible label and boundary cue.
+- Apply the common table-readability and degradation rules. Do not compress coverage/gap prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every audit field.
+
+## Annex mapping
+
+Use A.1–A.8 in `sections/annex.typ`. Put the gap-to-evidence matrix in A.2, conflict and coverage limitations in A.3, unresolved searches/identity checks in A.4, study validation routes in A.5, and gap-audit results in A.6.
+
+## Capability gates
+
+- Each proposed gap has evidence for both existing coverage and the remaining uncertainty.
+- Future-study advice is conditional, evidence-backed, and not an ethics/IRB, power-analysis, or grant-protocol claim.
+- Search gaps, implementation gaps, theory gaps, measurement gaps, and replication gaps remain distinct.
+- Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.

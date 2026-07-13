@@ -42,7 +42,9 @@ Special requirements:
 
 ## Expected Report Shape
 
-Technical reports include decision summary, scope and constraints, requirements fit, architecture and integration, API/developer experience, performance evidence, security/compliance/license risk, ecosystem maturity, operational cost, alternatives, verification plan, open risks, and kill criteria.
+Technical reports are delivered by the unified `deep-research` Skill as a `typst-project-v1` source package: `report.typ`, `modules/report-style.typ`, `sections/body.typ`, `sections/annex.typ`, and `references.bib`. The selected capability determines the decision sections; all reports use Typst's built-in IEEE bibliography, retain evidence IDs/citekeys/applicability conditions/confidence/adoption gates/kill criteria/contradictions/self-verification/abstentions/tool provenance in Annex A.1–A.8, and keep native `@citekey` citations rather than manual numeric references.
+
+The Layer 1 report guidance performs bounded evidence preparation, decision-section planning, evidence-led assembly, and self-verification. It uses labeled, accessible visual callouts for decisions, risks, limitations, and validation conditions; color is reinforcement rather than the only meaning. Long prose tables are split into readable panels or label–value cards instead of shrinking text or forcing many narrative columns onto an A4 page. It does not add provider routing, retries, or extra research rounds. A Typst project is only materialized in a caller-specified destination and is never compiled automatically; callers may explicitly run `typst compile --root <project-dir> <project-dir>/report.typ <project-dir>/report.pdf` after reviewing the generated source.
 
 ## Source Quality Rules
 

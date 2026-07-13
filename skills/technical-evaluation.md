@@ -22,6 +22,19 @@ Use this profile for evidence-backed library/framework selection, architecture e
 | `benchmark-performance-review` | Benchmark methodology, workload fit, latency/throughput/scalability evidence. |
 | `technical-due-diligence` | Broad feasibility, maintainability, risk, and exit-option review. |
 
+## Final-report routing
+
+| Capability | Task decomposition | Agent allocation | Capability template |
+| --- | --- | --- | --- |
+| `library-framework-comparison` | `task-decomposition.md` | `agent-allocation.md` | `final-report-library-comparison.md` |
+| `architecture-option-evaluation` | `task-decomposition.md` | `agent-allocation.md` | `final-report-architecture-evaluation.md` |
+| `dependency-risk-assessment` | `task-decomposition.md` | `agent-allocation.md` | `final-report-dependency-risk.md` |
+| `migration-upgrade-assessment` | `task-decomposition.md` | `agent-allocation.md` | `final-report-migration-assessment.md` |
+| `benchmark-performance-review` | `task-decomposition.md` | `agent-allocation.md` | `final-report-benchmark-performance-review.md` |
+| `technical-due-diligence` | `task-decomposition.md` | `agent-allocation.md` | `final-report-technical-due-diligence.md` |
+
+All Technical routes load `evidence-modules-overlay.md`, `../common/typst-report-contract.md`, and `final-report-guidance.md` before the capability template.
+
 ## Workflow
 
 1. Classify the technical capability and obtain `limits_preset` from `skills/deep-research.md`; do not re-infer it.
@@ -29,8 +42,9 @@ Use this profile for evidence-backed library/framework selection, architecture e
 3. Use `../prompts/layer1/technical-evaluation/agent-allocation.md` to assign personas.
 4. For each search-enabled aspect, assemble `AspectRequest.instructions` as selected persona Markdown, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific `moe.run_binding.v1` Run Binding projected from that aspect and `policy.search`.
 5. Call `deep_research` for multi-aspect evaluation or `aspect_research` for one focused retry.
-6. Apply common evidence modules from `../prompts/layer1/common/`.
-7. Synthesize with the final-report prompt matching the capability.
+6. Apply `evidence-postprocess.md`, this profile's `evidence-modules-overlay.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, and `report-annex.md` in that order.
+7. Read `../prompts/layer1/common/typst-report-contract.md`, `final-report-guidance.md`, then the unique capability template from the routing table. Synthesize a `typst-project-v1` report; only materialize it in a caller-specified directory and never overwrite without explicit approval.
+8. Do not compile Typst automatically. A caller may explicitly compile the generated project outside MoeResearch with a project-root-bounded argv invocation.
 
 ## Policy boundaries
 
@@ -57,9 +71,9 @@ Technical profile uses the shared frozen host contract: `../prompts/layer1/commo
 
 ## Assets
 
-Layer 1 (profile): `../prompts/layer1/technical-evaluation/task-decomposition.md`, `agent-allocation.md`, and the matching `final-report-*.md` for the chosen capability.
+Layer 1 (profile): `../prompts/layer1/technical-evaluation/task-decomposition.md`, `agent-allocation.md`, `evidence-modules-overlay.md`, `final-report-guidance.md`, and exactly one routed `final-report-*.md` capability template.
 
-Layer 1 (common): `../prompts/layer1/common/evidence-postprocess.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, `report-annex.md`, `partial-status-host-contract.md`, `budget-tiers.md`, `model-search-tool-contract.md`.
+Layer 1 (common): `../prompts/layer1/common/evidence-postprocess.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, `report-annex.md`, `typst-report-contract.md`, `partial-status-host-contract.md`, `budget-tiers.md`, `model-search-tool-contract.md`.
 
 Layer 2: `../prompts/layer2/technical-evaluation/` persona prompts for the selected capability.
 

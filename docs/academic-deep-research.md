@@ -43,7 +43,9 @@ Special requirements:
 
 ## Expected Report Shape
 
-Academic reports include scope, inclusion/exclusion criteria, search strategy, literature map, evidence synthesis, methodological appraisal, certainty/confidence assessment, research gaps, limitations, and an evidence annex.
+Academic reports are delivered by the unified `deep-research` Skill as a `typst-project-v1` source package: `report.typ`, `modules/report-style.typ`, `sections/body.typ`, `sections/annex.typ`, and `references.bib`. The selected capability determines the body structure; all reports use Typst's built-in IEEE bibliography, retain source IDs/citekeys/confidence/contradictions/open questions/self-verification/abstentions/tool provenance in Annex A.1–A.8, and keep native `@citekey` citations rather than manual numeric references.
+
+The Layer 1 report guidance performs bounded evidence preparation, section planning, thematic assembly, and self-verification. It uses labeled, accessible visual callouts for conclusions, limitations, and validation conditions; color is reinforcement rather than the only meaning. Long prose tables are split into readable panels or label–value cards instead of shrinking text or forcing many narrative columns onto an A4 page. It does not rerun research outside the existing budget/partial-status contracts or claim a formal systematic review without the required evidence. A Typst project is only materialized in a caller-specified destination and is never compiled automatically; callers may explicitly run `typst compile --root <project-dir> <project-dir>/report.typ <project-dir>/report.pdf` after reviewing the generated source.
 
 ## Evidence Quality Rules
 

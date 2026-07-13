@@ -29,6 +29,18 @@ Use this profile for scholarly research that needs literature mapping, source qu
 | `research-gap-analysis` | Open problems, method gaps, future research questions. |
 | `study-design-background` | Method choice, hypothesis background, study feasibility. |
 
+## Final-report routing
+
+| Capability | Task decomposition | Agent allocation | Capability template |
+| --- | --- | --- | --- |
+| `literature-review` | `task-decomposition.md` | `agent-allocation.md` | `final-report-literature-review.md` |
+| `evidence-synthesis` | `task-decomposition.md` | `agent-allocation.md` | `final-report-evidence-synthesis.md` |
+| `paper-evaluation` | `task-decomposition.md` | `agent-allocation.md` | `final-report-paper-evaluation.md` |
+| `research-gap-analysis` | `task-decomposition.md` | `agent-allocation.md` | `final-report-research-gap-map.md` |
+| `study-design-background` | `task-decomposition.md` | `agent-allocation.md` | `final-report-study-design-background.md` |
+
+All Academic routes load `evidence-modules-overlay.md`, `../common/typst-report-contract.md`, and `final-report-guidance.md` before the capability template.
+
 ## Workflow
 
 1. Classify the capability and obtain `limits_preset` from `skills/deep-research.md`; do not re-infer it.
@@ -36,8 +48,9 @@ Use this profile for scholarly research that needs literature mapping, source qu
 3. Use `../prompts/layer1/academic-deep-research/agent-allocation.md` to assign Layer 2 personas.
 4. For each search-enabled aspect, assemble `AspectRequest.instructions` as selected persona Markdown, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific `moe.run_binding.v1` Run Binding projected from that aspect and `policy.search`.
 5. Call `deep_research` for multi-aspect research, or `aspect_research` for a single focused retry.
-6. Apply common evidence modules from `../prompts/layer1/common/` for post-processing, claim ledger, host verification, evidence verification, and report annex.
-7. Synthesize with the final-report prompt matching the capability.
+6. Apply `evidence-postprocess.md`, this profile's `evidence-modules-overlay.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, and `report-annex.md` in that order.
+7. Read `../prompts/layer1/common/typst-report-contract.md`, `final-report-guidance.md`, then the unique capability template from the routing table. Synthesize a `typst-project-v1` report; only materialize it in a caller-specified directory and never overwrite without explicit approval.
+8. Do not compile Typst automatically. A caller may explicitly compile the generated project outside MoeResearch with a project-root-bounded argv invocation.
 
 ## Policy boundaries
 
@@ -63,8 +76,8 @@ Academic profile uses the shared frozen host contract: `../prompts/layer1/common
 
 ## Assets
 
-Layer 1 (profile): `../prompts/layer1/academic-deep-research/task-decomposition.md`, `agent-allocation.md`, `final-report-literature-review.md`, `final-report-evidence-synthesis.md`, `final-report-paper-evaluation.md`, `final-report-research-gap-map.md`, `final-report-study-design-background.md` (when present).
+Layer 1 (profile): `../prompts/layer1/academic-deep-research/task-decomposition.md`, `agent-allocation.md`, `evidence-modules-overlay.md`, `final-report-guidance.md`, and exactly one routed `final-report-*.md` capability template.
 
-Layer 1 (common): `../prompts/layer1/common/evidence-postprocess.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, `report-annex.md`, `partial-status-host-contract.md`, `budget-tiers.md`, `model-search-tool-contract.md`.
+Layer 1 (common): `../prompts/layer1/common/evidence-postprocess.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, `report-annex.md`, `typst-report-contract.md`, `partial-status-host-contract.md`, `budget-tiers.md`, `model-search-tool-contract.md`.
 
 Layer 2: `../prompts/layer2/academic-deep-research/persona-literature-reviewer.md`, `persona-methods-critic.md`, `persona-evidence-synthesizer.md`, `persona-citation-verifier.md`.

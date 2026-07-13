@@ -1,55 +1,52 @@
-# Layer 1 Prompt: Final Report — Library / Framework Comparison
+# Layer 1 Prompt: Technical Typst Final Report — Library / Framework Comparison
 
 ## Role
 
-Convert validated MoeResearch results into a decision-oriented technical report focused on requirements fit, developer experience, architecture, performance, security, ecosystem, migration cost, and reversibility. Do not fabricate evidence, benchmark numbers, security findings, or costs.
+Convert validated MoeResearch results into a `typst-project-v1` library/framework decision report. Use `typst-report-contract.md`, Technical final-report guidance, and the Technical evidence overlay as binding prerequisites. Do not fabricate benchmarks, security findings, license terms, costs, or migration facts.
 
-## Decision stance
+## Body assembly
 
-State the recommendation first, then make it conditional on the user's constraints. The report should support an engineering decision, not present an encyclopedic comparison.
+Emit `sections/body.typ` as Typst source, not Markdown, using this section hierarchy:
 
-## Output template
+```typst
+= Technical Evaluation: {Topic}
 
-```markdown
-# Technical Evaluation: {Topic}
-
-## Decision Summary
-Recommendation: Adopt / Trial / Defer / Reject / Migrate / Replace / Monitor
-Confidence: High / Medium / Low
-
-## Evaluation Scope and Constraints
-## Candidate Options
-## Decision Criteria Matrix
-## Requirements Fit Matrix
-## Architecture and Integration Analysis
-## API / Developer Experience
-## Performance and Scalability Evidence
-## Security / Compliance / License Risks
-## Ecosystem Maturity
-## Maintenance and Operational Cost
-## Alternatives Comparison
-## Adoption Gate
-## Minimal Spike / Verification Plan
-## Open Risks and Kill Criteria
-## Rollback / Exit Options
-
-## Annex A
-A.1 Evidence Index
-A.2 Official Docs / Release / Repo Evidence
-A.3 Benchmark Evidence
-A.4 Security / License Audit
-A.5 Decision Matrix
-A.6 Minimal Spike Plan
-A.7 Self-Verification
-A.8 Tool Provenance
+== Decision Summary
+== Evaluation Scope and Constraints
+== Candidate Options
+== Decision Criteria Matrix
+== Requirements Fit Matrix
+== Architecture and Integration Analysis
+== API and Developer Experience
+== Performance and Scalability Evidence
+== Security, Compliance, and License Risks
+== Ecosystem Maturity
+== Maintenance and Operational Cost
+== Alternatives Comparison
+== Adoption Gate
+== Minimal Spike and Verification Plan
+== Open Risks and Kill Criteria
+== Rollback and Exit Options
 ```
 
-## Rules
+- State `Adopt`, `Trial`, `Defer`, `Reject`, `Migrate`, `Replace`, or `Monitor` first, with confidence and constraints that could reverse the decision.
+- The criteria and requirements matrices use Typst tables and retain evidence IDs/citekeys, applicability conditions, confidence, and assumptions.
+- Separate documented APIs/guarantees, repository/release facts, benchmark observations, advisory/license evidence, independent engineering analysis, and community opinion.
+- Benchmark findings include workload, version, hardware/runtime, method, variance/reproducibility, and user-context fit when available. Do not compare incompatible raw numbers.
+- Adoption gates name required evidence or local-spike results. Kill criteria are falsifiable, such as runtime incompatibility, unacceptable measured latency, blocker license, critical unpatched advisory, or absent rollback.
 
-- Use existing MoeResearch evidence ids only for MoeResearch claims. Keep host verification as `HV-*` and disclose it separately.
-- Separate official documentation, repository/release evidence, benchmark evidence, security/license evidence, independent engineering writeups, and community opinion.
-- Benchmark claims must include workload, version, hardware/runtime, methodology, variance/reproducibility limits, and applicability to the user's context when available.
-- The adoption gate must list the evidence or local spike results required before production use.
-- Kill criteria must be falsifiable: e.g. unsupported runtime, unacceptable latency, critical unpatched advisory, license blocker, missing rollback path.
+## Rendering rules
+
+- Apply the `typst-report-contract.md` semantic highlighting vocabulary only to decisions, material risks, adoption gates, and validation conditions; never use color without its visible label and boundary cue.
+- Apply the common table-readability and degradation rules. Do not compress requirements/comparison prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every decision field.
+
+## Annex mapping
+
+Use A.1–A.8 in `sections/annex.typ`. Put official/release/repository and structured comparison artifacts in A.2, benchmark and security/license limits in A.3, unknown integration or compatibility facts in A.4, spike/falsification metrics in A.5, and decision-gate coverage in A.6.
+
+## Capability gates
+
+- Every recommendation traces to requirements, evidence IDs/citekeys, expected impact, validation step, and residual risk.
+- Cost, effort, and migration duration are assumptions unless directly evidenced.
 - License notes are engineering due diligence, not legal advice.
-- If evidence is weak, mark confidence Low and move unsupported claims to Open Risks.
+- Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.

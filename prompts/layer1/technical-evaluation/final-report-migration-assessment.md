@@ -1,53 +1,51 @@
-# Layer 1 Prompt: Final Report — Migration / Upgrade Assessment
+# Layer 1 Prompt: Technical Typst Final Report — Migration / Upgrade Assessment
 
 ## Role
 
-Convert validated MoeResearch results into a decision-oriented technical report focused on breaking changes, compatibility, change surface, operational risk, testing, rollout, rollback, and exit criteria. Do not fabricate evidence, benchmark numbers, security findings, or costs.
+Convert validated MoeResearch results into a `typst-project-v1` migration or upgrade decision report. Use `typst-report-contract.md`, Technical final-report guidance, and the Technical evidence overlay as binding prerequisites. Separate evidence-backed migration requirements from inferred effort and local unknowns.
 
-## Decision stance
+## Body assembly
 
-State whether to migrate now, trial first, defer, replace, or monitor. Separate evidence-backed migration requirements from inferred effort and local unknowns.
+Emit `sections/body.typ` as Typst source, not Markdown, using this section hierarchy:
 
-## Output template
+```typst
+= Technical Evaluation: {Topic}
 
-```markdown
-# Technical Evaluation: {Topic}
-
-## Decision Summary
-Recommendation: Adopt / Trial / Defer / Reject / Migrate / Replace / Monitor
-Confidence: High / Medium / Low
-
-## Evaluation Scope and Constraints
-## Current vs Target State
-## Compatibility and Breaking Changes
-## Code / Data / Runtime Change Surface
-## Operational Risk
-## Performance and Scalability Evidence
-## Security / Compliance / License Risks
-## Testing Strategy
-## Rollout Plan
-## Rollback / Exit Options
-## Adoption Gate
-## Minimal Spike / Verification Plan
-## Open Risks and Kill Criteria
-
-## Annex A
-A.1 Evidence Index
-A.2 Official Docs / Release / Repo Evidence
-A.3 Benchmark Evidence
-A.4 Security / License Audit
-A.5 Decision Matrix
-A.6 Minimal Spike Plan
-A.7 Self-Verification
-A.8 Tool Provenance
+== Decision Summary
+== Evaluation Scope and Constraints
+== Current and Target State
+== Compatibility and Breaking Changes
+== Code, Data, and Runtime Change Surface
+== Operational Risk
+== Performance and Scalability Evidence
+== Security, Compliance, and License Risks
+== Testing Strategy
+== Rollout Plan
+== Rollback and Exit Options
+== Adoption Gate
+== Minimal Spike and Verification Plan
+== Open Risks and Kill Criteria
 ```
 
-## Rules
+- State whether to migrate now, trial first, defer, replace, or monitor first, with confidence and the highest-impact unknown.
+- Prioritize migration guides, release notes, changelogs, compatibility matrices, deprecations, repositories, and issue trackers; label non-official sources accordingly.
+- Separate change surface into code, data/schema, runtime/deployment, observability, CI/CD, tests, and team learning.
+- Cost and timeline estimates are assumptions unless direct evidence supports them. Give a bounded spike/validation step rather than invented precision.
+- The rollout includes measurable gate(s), guardrail(s), rollback trigger(s), data recovery/compatibility assumptions, and ownership where available.
+- Kill criteria are falsifiable: unsupported version path, irrecoverable data risk, unacceptable measured regression, blocker advisory/license issue, or missing test coverage.
 
-- Use existing MoeResearch evidence ids only for MoeResearch claims. Keep host verification as `HV-*` and disclose it separately.
-- Prioritize migration guides, release notes, changelogs, compatibility matrices, deprecation notices, repositories, and issue trackers.
-- Change-surface analysis must separate code, data/schema, runtime/deployment, observability, CI/CD, tests, and team learning.
-- Cost/timeline estimates are assumptions unless directly evidenced; label them and propose a spike to validate.
-- Kill criteria must be falsifiable: unsupported version path, data migration risk without rollback, unacceptable performance regression, blocker advisory/license issue, test coverage gap.
+## Rendering rules
+
+- Apply the `typst-report-contract.md` semantic highlighting vocabulary only to decisions, material risks, rollout gates, and validation conditions; never use color without its visible label and boundary cue.
+- Apply the common table-readability and degradation rules. Do not compress compatibility/change-surface prose into four or more near-equal columns; split it into linked panels or label–value cards while retaining every decision field.
+
+## Annex mapping
+
+Use A.1–A.8 in `sections/annex.typ`. Put release/compatibility artifacts in A.2, operational/security/license limitations in A.3, unknown change-surface facts in A.4, spike/rollout/rollback tests in A.5, and migration closure in A.6.
+
+## Capability gates
+
+- Do not present a feasible path as proved until compatibility, data, runtime, and rollback evidence support it.
+- Every inferred effort or schedule carries an assumption marker and validation route.
 - License notes are engineering due diligence, not legal advice.
-- If evidence is weak, mark confidence Low and move unsupported claims to Open Risks.
+- Return the fixed project handoff with `format: "typst-project-v1"`; do not return a Markdown report or automatically compile a PDF.
