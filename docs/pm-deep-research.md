@@ -18,7 +18,7 @@ MoeResearch provides the MCP tools:
 | `deep_research` | Multi-aspect research. Use this for complete PM DeepResearch reports. |
 | `aspect_research` | One targeted aspect. Use this for retries, gap backfill, or a narrow dive. |
 
-All PM personas use the same model-only retrieval contract: `query`, optional `max_results`, and a required semantic `intent` (`source_focus`, `timeliness`, `coverage`, `detail`). Layer 1 assembles each search-enabled aspect as persona + common model-search contract + profile-neutral Run Binding. Default PM category is open; if a study fixes a category or another semantic intent ceiling, the binding projects only host-compatible choices. Rust resolves the intent against exactly one selected provider and `policy.search`, then returns `intent_resolution` as `enforced`, `best_effort`, or `unsupported`. This is not an MCP request field and does not vary by PM capability.
+PM personas can use the internal tools advertised by `get_runtime_capabilities.aspect_tools`. Search calls use `query`, optional `max_results`, and required semantic `intent` (`source_focus`, `timeliness`, `coverage`, `detail`); WebFetch calls use exactly `url` and `prompt`. Layer 1 assembles instructions by selected tools: persona only for `[]`, persona + search contract + Run Binding for `[search]`, persona + WebFetch contract for `[web_fetch]`, and persona + search contract + WebFetch contract + Run Binding for both. Rust resolves each search intent against exactly one selected provider and `policy.search`; WebFetch uses its independent configured model endpoint.
 
 PM DeepResearch adds the skill and prompt assets:
 
@@ -327,8 +327,8 @@ For generic clients, ensure the installed repo-like asset root contains `skills/
 
 ## What This Does Not Do
 
-- It does not add native WebFetch to the MoeResearch Rust engine.
-- It does not make host WebSearch/WebFetch part of MoeResearch provenance.
+- It does not expose internal `search` or `web_fetch` as additional top-level MCP tools.
+- It does not make host-side WebSearch/WebFetch calls part of MoeResearch provenance; only Rust workflow evidence is host-owned and rehydrated.
 - It does not make MCP registration install client-side PM DeepResearch skill assets.
 - It does not replace source verification for high-risk health, fitness, safety, regulatory, or academic claims.
 

@@ -13,7 +13,7 @@ use crate::server::MoeResearchMcpServer;
 #[tool_router(server_handler)]
 impl MoeResearchMcpServer {
     #[tool(
-        description = "Run exactly one MoeResearch aspect. Input is the AspectResearchRequest request object directly, with top-level fields schema_version, request_id, task, policy, and context. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.2\". task.instructions must be inline Markdown content, not a file path. task.tools and task.limits are required. task.model_provider is required. task.search_provider is required when task.tools includes \"search\"."
+        description = "Run exactly one MoeResearch aspect. Input is the AspectResearchRequest request object directly, with top-level fields schema_version, request_id, task, policy, and context. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.2\". task.instructions must be inline Markdown content, not a file path. task.tools and task.limits are required. task.tools may include internal tools advertised by get_runtime_capabilities.aspect_tools. task.model_provider is required. task.search_provider is required only when task.tools includes \"search\"."
     )]
     pub async fn aspect_research(
         &self,
@@ -35,6 +35,7 @@ impl MoeResearchMcpServer {
                 request,
                 &self.model_service,
                 &self.search_service,
+                &self.web_fetch_service,
                 &self.budget_config,
             )
             .await
@@ -94,7 +95,7 @@ impl MoeResearchMcpServer {
     }
 
     #[tool(
-        description = "Run a complete multi-aspect MoeResearch plan. Input is the DeepResearchRequest request object directly, with top-level fields schema_version, request_id, task, limits, policy, and context. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.2\". Each task.aspects entry must include inline instructions, tools, explicit model_provider, per-aspect limits, and search_provider when search is enabled."
+        description = "Run a complete multi-aspect MoeResearch plan. Input is the DeepResearchRequest request object directly, with top-level fields schema_version, request_id, task, limits, policy, and context. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.2\". Each task.aspects entry must include inline instructions, tools selected from get_runtime_capabilities.aspect_tools, explicit model_provider, per-aspect limits, and search_provider only when search is enabled."
     )]
     pub async fn deep_research(
         &self,
@@ -113,6 +114,7 @@ impl MoeResearchMcpServer {
                 request,
                 &self.model_service,
                 &self.search_service,
+                &self.web_fetch_service,
                 &self.budget_config,
             )
             .await
@@ -152,7 +154,7 @@ impl MoeResearchMcpServer {
     }
 
     #[tool(
-        description = "Return a read-only snapshot of this MCP server's live runtime capabilities. Input is the RuntimeCapabilitiesRequest object directly, with top-level fields schema_version and request_id only. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.2\". Success data contains registered model_providers and search_providers from the live ModelService/SearchService registries; stable order is not preference or fallback. operator_limits is the server BudgetConfig ceiling. Empty provider arrays are successful. run_id is always null and status is never partial. No secrets, endpoints, config paths, probes, prompts, policies, usage, or traces are exposed."
+        description = "Return a read-only snapshot of this MCP server's live runtime capabilities. Input is the RuntimeCapabilitiesRequest object directly, with top-level fields schema_version and request_id only. Do not wrap the payload in JSON-RPC, tools/call, params, arguments, request, input, or tool_input. schema_version must be \"0.2\". Success data contains registered model_providers, search_providers, and available internal aspect_tools; stable order is not preference or fallback. operator_limits is the server BudgetConfig ceiling. Empty provider arrays are successful. run_id is always null and status is never partial. No secrets, endpoints, config paths, probes, prompts, policies, usage, or traces are exposed."
     )]
     pub async fn get_runtime_capabilities(
         &self,
@@ -168,9 +170,18 @@ impl MoeResearchMcpServer {
 
         Json(match request.validate() {
             Ok(()) => {
+                let search_providers = self.search_service.provider_names();
+                let mut aspect_tools = Vec::new();
+                if !search_providers.is_empty() {
+                    aspect_tools.push("search".to_owned());
+                }
+                if self.web_fetch_service.is_enabled() {
+                    aspect_tools.push("web_fetch".to_owned());
+                }
                 let data = RuntimeCapabilities {
                     model_providers: self.model_service.provider_names(),
-                    search_providers: self.search_service.provider_names(),
+                    search_providers,
+                    aspect_tools,
                     operator_limits: self.budget_config.clone(),
                 };
                 tracing::info!(

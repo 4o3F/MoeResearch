@@ -10,9 +10,11 @@ use moe_research_error::Result;
 use moe_research_model::ModelProvider;
 use moe_research_model::ModelService;
 use moe_research_model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
+use moe_research_net::JsonNetworkResponse;
 use moe_research_search::SearchProvider;
 use moe_research_search::SearchService;
 use moe_research_search::{SearchRequest, SearchResponse, SearchResult};
+use moe_research_web_fetch::{WebFetchRuntimeConfig, WebFetchService};
 use moe_research_workflow::Limit;
 use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
 use moe_research_workflow::{
@@ -21,6 +23,9 @@ use moe_research_workflow::{
 use moe_research_workflow::{
     AspectRequest, AspectResearchRequest, DeepResearchRequest, ResearchContext, ResearchPolicy,
     ResearchTask,
+};
+use moe_research_workflow::{
+    AspectResearchFailure, AspectResearchOutput, DeepResearchFailure, DeepResearchResult,
 };
 use moe_research_workflow::{
     EvidencePolicy, ExecutionPolicy, ModelPolicy, OutputPolicy, SearchPolicy, ToolName,
@@ -99,6 +104,86 @@ impl SearchProvider for StaticSearchProvider {
                 published_at: None,
             }],
         })
+    }
+}
+
+pub fn disabled_web_fetch_service() -> WebFetchService {
+    let network = Arc::new(super::network::MockNetworkClient::new(std::iter::empty::<
+        JsonNetworkResponse,
+    >()));
+    WebFetchService::disabled(
+        network,
+        WebFetchRuntimeConfig {
+            cache_ttl_ms: 0,
+            max_cache_entries: 1,
+            max_redirects: 0,
+            inactivity_timeout_ms: Some(1),
+        },
+    )
+    .expect("disabled web_fetch service")
+}
+
+pub async fn aspect_research(
+    request: AspectResearchRequest,
+    model_service: &ModelService,
+    search_service: &SearchService,
+    web_fetch_service: Option<&WebFetchService>,
+    budget_config: &BudgetConfig,
+) -> std::result::Result<AspectResearchOutput, Box<AspectResearchFailure>> {
+    match web_fetch_service {
+        Some(service) => {
+            moe_research_workflow::aspect_research(
+                request,
+                model_service,
+                search_service,
+                service,
+                budget_config,
+            )
+            .await
+        }
+        None => {
+            let service = disabled_web_fetch_service();
+            moe_research_workflow::aspect_research(
+                request,
+                model_service,
+                search_service,
+                &service,
+                budget_config,
+            )
+            .await
+        }
+    }
+}
+
+pub async fn deep_research(
+    request: DeepResearchRequest,
+    model_service: &ModelService,
+    search_service: &SearchService,
+    web_fetch_service: Option<&WebFetchService>,
+    budget_config: &BudgetConfig,
+) -> std::result::Result<DeepResearchResult, Box<DeepResearchFailure>> {
+    match web_fetch_service {
+        Some(service) => {
+            moe_research_workflow::deep_research(
+                request,
+                model_service,
+                search_service,
+                service,
+                budget_config,
+            )
+            .await
+        }
+        None => {
+            let service = disabled_web_fetch_service();
+            moe_research_workflow::deep_research(
+                request,
+                model_service,
+                search_service,
+                &service,
+                budget_config,
+            )
+            .await
+        }
     }
 }
 

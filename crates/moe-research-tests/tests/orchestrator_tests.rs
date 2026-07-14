@@ -1,3 +1,5 @@
+mod support;
+
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,7 +14,6 @@ use moe_research_search::SearchProvider;
 use moe_research_search::SearchService;
 use moe_research_search::{SearchRequest, SearchResponse, SearchResult};
 use moe_research_workflow::Limit;
-use moe_research_workflow::aspect_research;
 use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
 use moe_research_workflow::{
     AspectReport, Confidence, Evidence, FailureStage, Finding, FindingType, Importance,
@@ -26,6 +27,7 @@ use moe_research_workflow::{
     SearchDepth, SearchPolicy, SearchRecency, ToolName,
 };
 use serde_json::json;
+use support::research::aspect_research;
 
 fn unlimited_budget_config() -> BudgetConfig {
     BudgetConfig {
@@ -465,6 +467,7 @@ async fn rejects_invalid_request_fields() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -503,6 +506,7 @@ async fn instructions_content_is_passed_as_system_message() {
         request.clone(),
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -578,6 +582,7 @@ async fn model_user_prompt_excludes_control_plane_fields() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -627,6 +632,7 @@ async fn aspect_research_rejects_empty_inline_prompt_before_dispatch() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -648,6 +654,7 @@ async fn aspect_research_rejects_oversized_inline_prompt_before_dispatch() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -673,6 +680,7 @@ async fn instructions_empty_string_is_rejected_at_schema_validation() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -694,6 +702,7 @@ async fn instructions_exceeding_max_bytes_is_rejected() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -714,6 +723,7 @@ async fn rejects_conflicting_domains() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -733,6 +743,7 @@ async fn rejects_search_enabled_aspect_without_provider() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -752,6 +763,7 @@ async fn rejects_search_provider_not_allowed_by_policy() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -773,6 +785,7 @@ async fn rejects_empty_search_provider_allowlist() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -811,6 +824,7 @@ async fn non_search_aspect_runs_without_search_provider() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -836,9 +850,15 @@ async fn configured_agent_timeout_caps_request_runtime() {
         },
     };
 
-    let error = aspect_research(request, &model_service, &search_service, &budget_config)
-        .await
-        .expect_err("configured timeout should cap request runtime");
+    let error = aspect_research(
+        request,
+        &model_service,
+        &search_service,
+        None,
+        &budget_config,
+    )
+    .await
+    .expect_err("configured timeout should cap request runtime");
 
     assert!(matches!(error.error, Error::BudgetExceeded { .. }));
     assert_eq!(model_calls.load(Ordering::SeqCst), 1);
@@ -857,6 +877,7 @@ async fn delegates_valid_request_to_runtime() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -881,7 +902,7 @@ async fn aspect_research_uses_configured_research_model_call_budget() {
         per_agent: AgentLimits::unlimited(),
     };
 
-    let failure = aspect_research(request, &model_service, &search_service, &limits)
+    let failure = aspect_research(request, &model_service, &search_service, None, &limits)
         .await
         .expect_err("configured research model budget should cap aspect_research");
 
@@ -921,7 +942,7 @@ async fn aspect_research_suppresses_partial_output_when_policy_disallows_partial
         per_agent: AgentLimits::unlimited(),
     };
 
-    let failure = aspect_research(request, &model_service, &search_service, &limits)
+    let failure = aspect_research(request, &model_service, &search_service, None, &limits)
         .await
         .expect_err("partial output must be suppressed by policy");
 
@@ -947,7 +968,7 @@ async fn aspect_research_uses_configured_research_search_budget() {
         per_agent: AgentLimits::unlimited(),
     };
 
-    let failure = aspect_research(request, &model_service, &search_service, &limits)
+    let failure = aspect_research(request, &model_service, &search_service, None, &limits)
         .await
         .expect_err("configured research search budget should cap aspect_research");
 
@@ -971,6 +992,7 @@ async fn fake_model_and_search_complete_successfully() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1001,6 +1023,7 @@ async fn success_output_includes_resource_accounting() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1024,6 +1047,7 @@ async fn search_tool_keeps_query_in_business_evidence() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1057,6 +1081,7 @@ async fn model_tool_outputs_use_ordered_responses_items() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1114,6 +1139,7 @@ async fn search_tool_output_includes_full_results_for_layer2() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1165,6 +1191,7 @@ async fn rejects_selected_evidence_not_seen_in_tool_output() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1210,6 +1237,7 @@ async fn accepts_closed_evidence_selection_across_search_turns() {
         aspect_request(),
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1257,6 +1285,7 @@ async fn rejects_unselected_evidence_reference_across_search_turns() {
         aspect_request(),
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1279,6 +1308,7 @@ async fn host_rehydrates_immutable_evidence_provenance() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1301,6 +1331,7 @@ async fn host_owns_evidence_interpretation_fields() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1338,6 +1369,7 @@ async fn model_tool_outputs_fallback_replays_tool_calls() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1388,6 +1420,7 @@ async fn model_tool_outputs_use_previous_response_id_when_available() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1435,6 +1468,7 @@ async fn model_tool_outputs_can_fall_back_after_previous_response_id() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1481,6 +1515,7 @@ async fn evidence_includes_structured_sources() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1507,6 +1542,7 @@ async fn success_output_retains_budget_usage_and_token_usage() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1536,6 +1572,7 @@ async fn budget_failure_stops_after_completed_searches() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1575,6 +1612,7 @@ async fn provider_failure_returns_error_after_prior_successful_search() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1601,6 +1639,7 @@ async fn budget_exhaustion_stops_before_actions() {
         zero_turn_request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1619,6 +1658,7 @@ async fn budget_exhaustion_stops_before_actions() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1643,6 +1683,7 @@ async fn slow_final_model_call_exhausts_effective_timeout() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1671,6 +1712,7 @@ async fn lower_execution_timeout_is_enforced_before_search() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1691,6 +1733,7 @@ async fn invalid_tool_stops_without_search() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1710,6 +1753,7 @@ async fn invalid_final_output_returns_schema_failure() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1759,6 +1803,7 @@ async fn duplicate_tool_call_ids_are_rejected_before_dispatch() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1789,6 +1834,7 @@ async fn search_tool_rejects_non_protocol_arguments_before_dispatch() {
             request,
             &model_service,
             &search_service,
+            None,
             &unlimited_budget_config(),
         )
         .await
@@ -1815,6 +1861,7 @@ async fn search_tool_rejects_invalid_or_incomplete_arguments_before_dispatch() {
             request,
             &model_service,
             &search_service,
+            None,
             &unlimited_budget_config(),
         )
         .await
@@ -1845,6 +1892,7 @@ async fn policy_conflicting_intent_is_rejected_before_provider_dispatch() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1903,6 +1951,7 @@ async fn agent_loop_resolves_provider_neutral_search_intent() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -1960,6 +2009,7 @@ async fn aspect_with_empty_tools_sends_empty_model_tools() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -2011,6 +2061,7 @@ async fn aspect_with_search_tool_sends_only_logical_search_tool() {
         request,
         &model_service,
         &search_service,
+        None,
         &unlimited_budget_config(),
     )
     .await

@@ -1,14 +1,16 @@
+mod support;
+
 use async_trait::async_trait;
 use moe_research_error::{Error, Result};
 use moe_research_model::{ModelProvider, ModelRequest, ModelResponse, ModelService};
 use moe_research_search::SearchService;
-use moe_research_workflow::aspect_research;
 use moe_research_workflow::{
     AgentLimits, AspectReport, AspectResearchRequest, AspectResearchResult, Confidence,
     EvidencePolicy, ExecutionPolicy, Finding, FindingType, Importance, Limit, ModelPolicy,
     OutputPolicy, ResearchContext, ResearchPolicy, SearchPolicy,
 };
 use serde_json::json;
+use support::research::aspect_research;
 
 struct StaticModelProvider {
     content: String,
@@ -158,6 +160,7 @@ async fn run_result(
         aspect_request(output_policy),
         &model_service,
         &search_service,
+        None,
         &moe_research_workflow::BudgetConfig {
             research: moe_research_workflow::ResearchLimits::unlimited(),
             per_agent: AgentLimits::unlimited(),
@@ -185,6 +188,7 @@ async fn public_workflow_rejects_malformed_json() {
         aspect_request(output_policy()),
         &model_service,
         &search_service,
+        None,
         &moe_research_workflow::BudgetConfig {
             research: moe_research_workflow::ResearchLimits::unlimited(),
             per_agent: AgentLimits::unlimited(),
@@ -212,6 +216,7 @@ async fn public_workflow_rejects_empty_model_evidence_array() {
         aspect_request(output_policy()),
         &model_service,
         &search_service,
+        None,
         &moe_research_workflow::BudgetConfig {
             research: moe_research_workflow::ResearchLimits::unlimited(),
             per_agent: AgentLimits::unlimited(),
@@ -294,6 +299,7 @@ async fn public_workflow_rejects_selected_evidence_not_seen_in_search_output() {
         request,
         &model_service,
         &search_service,
+        None,
         &moe_research_workflow::BudgetConfig {
             research: moe_research_workflow::ResearchLimits::unlimited(),
             per_agent: AgentLimits::unlimited(),

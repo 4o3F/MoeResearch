@@ -123,7 +123,7 @@ Before creating a release tag:
 
 ## MCP Tools
 
-The server exposes three MCP tools:
+The server exposes three MCP tools. Layer 2 may additionally use internal `search` and `web_fetch` tools advertised by `get_runtime_capabilities.aspect_tools`; `web_fetch` is not a fourth MCP tool.
 
 | Tool | Purpose |
 | --- | --- |

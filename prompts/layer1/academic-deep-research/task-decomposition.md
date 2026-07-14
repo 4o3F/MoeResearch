@@ -4,7 +4,7 @@
 
 Convert the user's academic research request into a valid `DeepResearchRequest`. Do not perform the research yourself and do not write the final report.
 
-Rust core never reads prompt files at runtime. For every search-enabled aspect, Layer 1 assembles `AspectRequest.instructions` as the selected Layer 2 Markdown, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding derived from that aspect and `policy.search`.
+Rust core never reads prompt files at runtime. Select tools only from `available_aspect_tools`, then assemble instructions by tool set: persona only for `[]`; persona → search contract → Run Binding for `[search]`; persona → WebFetch contract for `[web_fetch]`; persona → search contract → WebFetch contract → Run Binding for both.
 
 ## Inputs
 
@@ -17,6 +17,7 @@ Rust core never reads prompt files at runtime. For every search-enabled aspect, 
   "language": "string",
   "available_model_providers": ["string"],
   "available_search_providers": ["string"],
+  "available_aspect_tools": ["search", "web_fetch"],
   "operator_limits": "BudgetConfig ceilings from get_runtime_capabilities; Skill-internal only",
   "limits_preset": "quick | standard | deep",
   "available_aspect_agent_prompts": {
@@ -152,7 +153,7 @@ For a single-aspect Quick study, you may emit an `AspectResearchRequest` instead
 
 ## Run Binding assembly
 
-For every aspect whose `tools` includes `search`, the complete `instructions` value is:
+For every aspect whose `tools` is exactly `["search"]`, the complete `instructions` value is:
 
 ```text
 <selected persona Markdown>
@@ -162,6 +163,6 @@ For every aspect whose `tools` includes `search`, the complete `instructions` va
 <request-specific Run Binding>
 ```
 
-This three-part order is mandatory for every search-enabled aspect. Derive the Run Binding from this aspect and `policy.search` using `moe.run_binding.v1` from the common contract. It must project only compatible semantic `allowed_*` intent values, `safe_default_intent`, `required_aspect_id`, `required_aspect_name`, and evidence-closure hints. JSON-escape identity strings; do not put providers, budgets, runtime capabilities, `operator_limits`, host check output, domains, language, region, raw policy tool fields, or credentials into the binding. Runtime-confirmed provider lists and ceilings are Layer-1-only and must not enter Layer 2, `instructions`, or free-text `context`.
+For a search-only aspect, the mandatory three-part order is selected persona Markdown, then the common search contract, then a request-specific Run Binding. For a dual-tool aspect, insert `model-web-fetch-tool-contract.md` between the search contract and Run Binding. Derive the Run Binding from this aspect and `policy.search` using `moe.run_binding.v1` from the common contract. It must project only compatible semantic `allowed_*` intent values, `safe_default_intent`, `required_aspect_id`, `required_aspect_name`, and evidence-closure hints. JSON-escape identity strings; do not put providers, budgets, runtime capabilities, `operator_limits`, host check output, domains, language, region, raw policy tool fields, or credentials into the binding. Runtime-confirmed provider lists and ceilings are Layer-1-only and must not enter Layer 2, `instructions`, or free-text `context`.
 
 When `policy.search.category` is `academic`, the binding allows only `general` and `academic` for `source_focus`. When category is null, it allows the full source-focus vocabulary. Apply the same rank-compatible projection to coverage, detail, and timeliness. Do not replace a fixed category simply to avoid a model policy conflict.

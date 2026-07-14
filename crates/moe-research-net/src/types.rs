@@ -25,6 +25,31 @@ pub struct NetworkRequest {
     pub inactivity_timeout_ms: Option<u64>,
 }
 
+#[derive(Clone, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+pub struct DocumentNetworkResponse {
+    pub status: u16,
+    pub headers: Vec<Header>,
+    pub body: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentNetworkRejection {
+    UnsafeScheme,
+    CredentialsPresent,
+    UnsafeHost,
+    UnsafeResolvedAddress,
+    DnsResolutionFailed,
+    UnsupportedContentEncoding,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentNetworkOutcome {
+    Response(DocumentNetworkResponse),
+    Rejected(DocumentNetworkRejection),
+}
+
 #[derive(Clone, Deserialize, JsonSchema, PartialEq, Serialize)]
 pub struct JsonNetworkResponse {
     pub status: u16,
@@ -63,6 +88,16 @@ impl fmt::Debug for NetworkRequest {
 
         debug
             .field("inactivity_timeout_ms", &self.inactivity_timeout_ms)
+            .finish()
+    }
+}
+
+impl fmt::Debug for DocumentNetworkResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DocumentNetworkResponse")
+            .field("status", &self.status)
+            .field("headers", &self.headers)
+            .field("body_bytes", &self.body.len())
             .finish()
     }
 }

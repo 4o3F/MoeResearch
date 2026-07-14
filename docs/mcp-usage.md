@@ -45,6 +45,8 @@ deep_research
 get_runtime_capabilities
 ```
 
+`web_fetch` remains an internal model-visible aspect tool and is never added to `tools/list`. Call `get_runtime_capabilities` and inspect `aspect_tools` before allocating `search` or `web_fetch`; the capability snapshot does not expose WebFetch endpoint, model, or credential metadata.
+
 All three tools use MoeResearch request schema version `0.2`:
 
 ```json
@@ -133,9 +135,9 @@ Fields:
 | `boundaries` | string[] | Yes | Out-of-scope boundaries. |
 | `success_criteria` | string[] | Yes | Criteria the result should satisfy. |
 | `instructions` | string | Yes | Inline Layer 2 prompt content. Rust core never reads prompt files. Must be non-empty and below 64 KiB. |
-| `tools` | string[] | Yes | Currently supports `"search"`. Use `[]` for no tool access. |
+| `tools` | string[] | Yes | Supports `"search"` and `"web_fetch"` when advertised by `get_runtime_capabilities.aspect_tools`; use `[]` for no tool access. |
 | `model_provider` | string | Yes | Explicit provider selected by the client. It must be allowed by `policy.model.allowed_providers`. |
-| `search_provider` | string or null | Conditional | Required when `tools` includes `"search"`; otherwise may be null. It must be allowed by `policy.search.allowed_providers`. |
+| `search_provider` | string or null | Conditional | Required only when `tools` includes `"search"`; fetch-only aspects use null. It must be allowed by `policy.search.allowed_providers`. |
 | `limits` | object | Yes | Per-aspect resource and timeout limits. |
 
 ### 5.3 `ResearchLimits` and `AgentLimits`
@@ -318,7 +320,7 @@ Pass this direct payload:
 }
 ```
 
-A successful `ToolEnvelope` has `run_id: null`, `status: "ok"`, `error: null`, and `data` containing exactly `model_providers`, `search_providers`, and `operator_limits`. Provider arrays are live registry keys in stable lexical order; their order is not preference or fallback. Empty arrays are successful snapshots. `operator_limits` is the server `BudgetConfig` ceiling using the existing `-1` / `null` unlimited wire format. The tool never returns `partial`.
+A successful `ToolEnvelope` has `run_id: null`, `status: "ok"`, `error: null`, and `data` containing exactly `model_providers`, `search_providers`, `aspect_tools`, and `operator_limits`. Provider arrays are live registry keys in stable lexical order; their order is not preference or fallback. `aspect_tools` lists the internal tools that Layer 1 may allocate, currently `search` and `web_fetch` when their runtime dependencies are available. Empty arrays are successful snapshots. `operator_limits` is the server `BudgetConfig` ceiling using the existing `-1` / `null` unlimited wire format. The tool never returns `partial`.
 
 ```json
 {
@@ -329,6 +331,7 @@ A successful `ToolEnvelope` has `run_id: null`, `status: "ok"`, `error: null`, a
   "data": {
     "model_providers": ["openai"],
     "search_providers": ["exa", "grok"],
+    "aspect_tools": ["search", "web_fetch"],
     "operator_limits": {
       "research": {
         "max_agents": 4,
@@ -535,12 +538,17 @@ host-owned structured execution context:
 
 - `stage` identifies the failed boundary (`request_validation`, `model_turn`,
   `tool_validation`, `search_intent_resolution`, `search_policy`,
-  `search_budget`, `search_dispatch`, `output_validation`, `research_budget`,
-  or `result_aggregation`).
+  `search_budget`, `search_dispatch`, `web_fetch_budget`,
+  `web_fetch_dispatch`, `output_validation`, `research_budget`, or
+  `result_aggregation`).
 - `model_turn` and `search_turn` are optional one-based logical operation
   ordinals within the aspect. They are omitted when the failure occurs before
-  that operation begins.
-- `search_budget` identifies the current aspect's local tool/search limit;
+  that operation begins. `search_turn` is retained for wire compatibility and
+  counts every retrieval batch, including `web_fetch`.
+- `search_budget` identifies the current aspect's local Search tool/search
+  limit. `web_fetch_budget` identifies the current aspect's local generic tool
+  limit before WebFetch dispatch. `web_fetch_dispatch` covers document
+  retrieval and the independent WebFetch prompt-processing call.
   `research_budget` identifies the shared research-level guard, including the
   operator research cap used by standalone `aspect_research`.
 - Each deep-research `AspectFailure` carries the same `aspect_id` plus

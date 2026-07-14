@@ -16,7 +16,9 @@ use moe_research_mcp::{ToolEnvelope, ToolError, ToolErrorCode, ToolStatus};
 use moe_research_model::ModelProvider;
 use moe_research_model::ModelService;
 use moe_research_model::{ModelInputItem, ModelRequest, ModelResponse, ModelToolCall};
+use moe_research_net::JsonNetworkResponse;
 use moe_research_search::{SearchProvider, SearchRequest, SearchResponse, SearchService};
+use moe_research_web_fetch::{WebFetchRuntimeConfig, WebFetchService};
 use moe_research_workflow::Limit;
 use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
 use moe_research_workflow::{
@@ -26,10 +28,12 @@ use rmcp::ServerHandler;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::schemars::schema_for;
 use serde_json::json;
+use support::network::MockNetworkClient;
 use support::research::{
-    Services, aspect_field, aspect_request, deep_request, final_response,
-    first_evidence_from_tool_output, medium_result_json, services, services_with_delay,
-    services_with_token_usage, static_search_service, tool_response, unlimited_budget_config,
+    Services, aspect_field, aspect_request, deep_request, disabled_web_fetch_service,
+    final_response, first_evidence_from_tool_output, medium_result_json, services,
+    services_with_delay, services_with_token_usage, static_search_service, tool_response,
+    unlimited_budget_config,
 };
 
 struct SequenceModelProvider {
@@ -145,11 +149,21 @@ fn capabilities_request(schema_version: &str, request_id: &str) -> RuntimeCapabi
 }
 
 fn mcp_server(services: Services) -> MoeResearchMcpServer {
-    MoeResearchMcpServer::new(services.model, services.search, unlimited_budget_config())
+    MoeResearchMcpServer::new(
+        services.model,
+        services.search,
+        disabled_web_fetch_service(),
+        unlimited_budget_config(),
+    )
 }
 
 fn mcp_server_with_budget(services: Services, budget_config: BudgetConfig) -> MoeResearchMcpServer {
-    MoeResearchMcpServer::new(services.model, services.search, budget_config)
+    MoeResearchMcpServer::new(
+        services.model,
+        services.search,
+        disabled_web_fetch_service(),
+        budget_config,
+    )
 }
 
 #[test]
@@ -161,6 +175,7 @@ fn public_tool_lookup_exposes_m6_contract_tools() {
     assert!(server.get_tool("get_runtime_capabilities").is_some());
     assert!(server.get_tool("serve_stdio").is_none());
     assert!(server.get_tool("search").is_none());
+    assert!(server.get_tool("web_fetch").is_none());
 }
 
 #[test]
@@ -204,6 +219,7 @@ fn public_tool_descriptions_explain_direct_payload_shape() {
         "read-only",
         "model_providers",
         "search_providers",
+        "aspect_tools",
         "operator_limits",
         "never partial",
     ] {
@@ -341,10 +357,15 @@ async fn runtime_capabilities_returns_live_sorted_provider_names_and_limits() {
         },
     };
 
-    let envelope = MoeResearchMcpServer::new(model, search, budget_config.clone())
-        .get_runtime_capabilities(Parameters(capabilities_request("0.2", "capabilities-1")))
-        .await
-        .0;
+    let envelope = MoeResearchMcpServer::new(
+        model,
+        search,
+        disabled_web_fetch_service(),
+        budget_config.clone(),
+    )
+    .get_runtime_capabilities(Parameters(capabilities_request("0.2", "capabilities-1")))
+    .await
+    .0;
 
     assert_eq!(envelope.schema_version, "0.2");
     assert_eq!(envelope.request_id, "capabilities-1");
@@ -355,6 +376,7 @@ async fn runtime_capabilities_returns_live_sorted_provider_names_and_limits() {
     let data = envelope.data.expect("capabilities data");
     assert_eq!(data.model_providers, ["alpha", "zeta"]);
     assert_eq!(data.search_providers, ["alpha-search", "zeta-search"]);
+    assert_eq!(data.aspect_tools, ["search"]);
     assert_eq!(data.operator_limits, budget_config);
     assert_eq!(model_calls.load(Ordering::SeqCst), 0);
     assert_eq!(search_calls.load(Ordering::SeqCst), 0);
@@ -365,6 +387,7 @@ async fn runtime_capabilities_empty_registries_are_successful() {
     let envelope = MoeResearchMcpServer::new(
         ModelService::new(),
         SearchService::new(),
+        disabled_web_fetch_service(),
         unlimited_budget_config(),
     )
     .get_runtime_capabilities(Parameters(capabilities_request(
@@ -381,7 +404,55 @@ async fn runtime_capabilities_empty_registries_are_successful() {
     let data = envelope.data.expect("capabilities data");
     assert!(data.model_providers.is_empty());
     assert!(data.search_providers.is_empty());
+    assert!(data.aspect_tools.is_empty());
     assert_eq!(data.operator_limits, unlimited_budget_config());
+}
+
+#[tokio::test]
+async fn runtime_capabilities_advertise_web_fetch_without_public_tool_expansion() {
+    let model_calls = Arc::new(AtomicUsize::new(0));
+    let mut web_model = ModelService::new();
+    web_model.register(NamedModelProvider {
+        name: "openai",
+        calls: model_calls.clone(),
+    });
+    let network = Arc::new(MockNetworkClient::new(std::iter::empty::<
+        JsonNetworkResponse,
+    >()));
+    let web_fetch = WebFetchService::new(
+        network,
+        web_model,
+        "openai",
+        WebFetchRuntimeConfig {
+            cache_ttl_ms: 900_000,
+            max_cache_entries: 8,
+            max_redirects: 3,
+            inactivity_timeout_ms: Some(5_000),
+        },
+    )
+    .expect("web_fetch service");
+    let server = MoeResearchMcpServer::new(
+        ModelService::new(),
+        SearchService::new(),
+        web_fetch,
+        unlimited_budget_config(),
+    );
+
+    let envelope = server
+        .get_runtime_capabilities(Parameters(capabilities_request(
+            "0.2",
+            "capabilities-web-fetch",
+        )))
+        .await
+        .0;
+
+    assert_eq!(envelope.status, ToolStatus::Ok);
+    assert_eq!(
+        envelope.data.expect("capabilities data").aspect_tools,
+        ["web_fetch"]
+    );
+    assert!(server.get_tool("web_fetch").is_none());
+    assert_eq!(model_calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

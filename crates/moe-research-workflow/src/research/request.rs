@@ -74,7 +74,7 @@ pub struct AspectRequest {
     /// non-empty string under `ASPECT_PROMPT_MAX_BYTES` (64 KiB) to guard
     /// against accidental payload bloat.
     pub instructions: String,
-    /// Tools the aspect agent is allowed to call (currently only `search`).
+    /// Internal logical tools the aspect agent is allowed to call.
     pub tools: Vec<ToolName>,
     /// Explicit model provider selection; must satisfy `ResearchPolicy.model`.
     pub model_provider: String,
@@ -129,5 +129,6 @@ pub struct RuntimeCapabilitiesRequest {
 pub struct RuntimeCapabilities {
     pub model_providers: Vec<String>,
     pub search_providers: Vec<String>,
+    pub aspect_tools: Vec<String>,
     pub operator_limits: BudgetConfig,
 }

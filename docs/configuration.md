@@ -145,7 +145,30 @@ Search provider configuration is infrastructure-only: endpoint URL, credentials,
 
 Do not configure search `depth`, `content_level`, `recency`, `category`, Exa-native request fields such as `type`, `contents`, `highlights`, `text`, or `maxAgeHours`, or Tavily-native request fields such as `search_depth`, `topic`, `time_range`, `include_answer`, or `include_raw_content` under `[search.providers.*]`; unknown fields fail configuration validation.
 
-## 5. Network settings
+## 5. Internal WebFetch
+
+`web_fetch` is an optional Layer 2 internal tool, not a top-level MCP tool. Its model endpoint is independent of `[model.providers.*]` and is never selected by an aspect request.
+
+```toml
+[web_fetch]
+enabled = true
+cache_ttl_ms = 900000
+max_cache_entries = 128
+max_redirects = 5
+
+[web_fetch.model]
+provider = "openai"
+base_url = "https://api.openai.com/v1"
+api_key_env = "WEB_FETCH_OPENAI_API_KEY"
+inactivity_timeout_ms = 120000
+model = "gpt-5.5-mini"
+```
+
+The endpoint must be absolute HTTPS without URL credentials. `WebFetchService` is always constructed alongside the model and search services; when WebFetch is disabled, its prompt processor remains disabled, its key environment variable is not required, and `aspect_tools` does not advertise `web_fetch`. Page and model traffic both use the shared `moe-research-net` client, including its timeout, retry, user-agent, and proxy settings. Public-document fetches reject private/reserved targets, credentials, sensitive query parameters, and unsafe DNS answers. Only same-host redirects are followed automatically. HTML, plain text, and Markdown are supported; JavaScript rendering, login state, PDF/OCR, images, audio, and video are not.
+
+`cache_ttl_ms = 0` disables caching and `max_redirects = 0` disables automatic same-host redirects. `max_cache_entries` must be greater than zero. Cache hits use a process-local `RwLock`, so multiple aspect agents can read cached documents concurrently. Concurrent misses for the same normalized URL are coalesced into one page fetch; different URLs are never serialized behind one network lock.
+
+## 6. Network settings
 
 ```toml
 [network]

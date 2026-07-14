@@ -39,7 +39,7 @@ pub(crate) struct EffectiveAspectPlan {
 pub(crate) struct WorkflowValidationContext<'a> {
     pub budget_config: &'a BudgetConfig,
     pub supported_schema_versions: &'a [&'a str],
-    pub supported_tool_name: &'a str,
+    pub supported_tool_names: &'a [&'a str],
 }
 
 impl RuntimeCapabilitiesRequest {
@@ -64,7 +64,9 @@ impl AspectResearchRequest {
         ensure_non_empty("request_id", &self.request_id)?;
         ensure_schema_version_supported(&self.schema_version, ctx.supported_schema_versions)?;
 
-        self.policy.search.validate_for_search()?;
+        if self.task.tools.iter().any(|tool| tool.0 == "search") {
+            self.policy.search.validate_for_search()?;
+        }
         Ok(EffectiveAspectPlan {
             schema_version: self.schema_version.clone(),
             request_id: self.request_id.clone(),
@@ -110,7 +112,14 @@ impl DeepResearchRequest {
             });
         }
 
-        self.policy.search.validate_for_search()?;
+        if self
+            .task
+            .aspects
+            .iter()
+            .any(|aspect| aspect.tools.iter().any(|tool| tool.0 == "search"))
+        {
+            self.policy.search.validate_for_search()?;
+        }
 
         let mut aspects = Vec::with_capacity(self.task.aspects.len());
         for aspect in &self.task.aspects {
@@ -151,9 +160,9 @@ fn normalize_aspect_request(
             message: format!("task.instructions exceeds {ASPECT_PROMPT_MAX_BYTES} bytes"),
         });
     }
-    ensure_runtime_tools_allowed(&aspect.tools, ctx.supported_tool_name)?;
+    ensure_runtime_tools_allowed(&aspect.tools, ctx.supported_tool_names)?;
     validate_explicit_model_provider(aspect, &policy.model)?;
-    validate_explicit_search_provider(aspect, &policy.search, ctx.supported_tool_name)?;
+    validate_explicit_search_provider(aspect, &policy.search, "search")?;
 
     let mut normalized = aspect.clone();
     normalized.limits = effective_agent_limits(&ctx.budget_config.per_agent, &aspect.limits);
@@ -304,12 +313,21 @@ fn validate_explicit_provider_name<'a>(
     Ok(provider)
 }
 
-fn ensure_runtime_tools_allowed(tools: &[ToolName], supported_tool_name: &str) -> Result<()> {
-    if let Some(tool) = tools.iter().find(|tool| tool.0 != supported_tool_name) {
-        return Err(Error::ToolPolicyDenied {
-            message: format!("unsupported tool for aspect runtime: {}", tool.0),
-            public: false,
-        });
+fn ensure_runtime_tools_allowed(tools: &[ToolName], supported_tool_names: &[&str]) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    for tool in tools {
+        if !supported_tool_names.contains(&tool.0.as_str()) {
+            return Err(Error::ToolPolicyDenied {
+                message: format!("unsupported tool for aspect runtime: {}", tool.0),
+                public: false,
+            });
+        }
+        if !seen.insert(tool.0.as_str()) {
+            return Err(Error::ToolPolicyDenied {
+                message: format!("duplicate tool for aspect runtime: {}", tool.0),
+                public: false,
+            });
+        }
     }
     Ok(())
 }

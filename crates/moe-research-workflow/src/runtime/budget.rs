@@ -61,9 +61,8 @@ impl AgentBudgetGuard {
         Ok(())
     }
 
-    pub fn consume_search_tool_call(&mut self) -> Result<()> {
+    pub fn consume_tool_call(&mut self) -> Result<()> {
         self.check_timeout()?;
-
         if !self
             .budget
             .max_tool_calls
@@ -74,7 +73,22 @@ impl AgentBudgetGuard {
                 self.budget.max_tool_calls,
             ));
         }
+        self.tool_calls_used += 1;
+        Ok(())
+    }
 
+    pub fn consume_search_tool_call(&mut self) -> Result<()> {
+        self.check_timeout()?;
+        if !self
+            .budget
+            .max_tool_calls
+            .permits_next(self.tool_calls_used)
+        {
+            return Err(budget_exceeded(
+                "max_tool_calls",
+                self.budget.max_tool_calls,
+            ));
+        }
         if !self
             .budget
             .max_search_calls

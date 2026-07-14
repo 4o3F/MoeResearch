@@ -182,6 +182,20 @@ api_key_env = {}
 inactivity_timeout_ms = {openai_timeout_ms}
 model = {}
 
+[web_fetch]
+enabled = false
+cache_ttl_ms = 900000
+max_cache_entries = 128
+max_redirects = 5
+
+# Required only when enabled = true. This endpoint is independent of [model.providers.*].
+# [web_fetch.model]
+# provider = "openai"
+# base_url = "https://api.openai.com/v1"
+# api_key_env = "WEB_FETCH_OPENAI_API_KEY"
+# inactivity_timeout_ms = {openai_timeout_ms}
+# model = "gpt-5.5-mini"
+
 [limits.research]
 max_agents = -1
 max_concurrent_agents = -1

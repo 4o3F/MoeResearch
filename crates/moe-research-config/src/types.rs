@@ -16,6 +16,7 @@ pub struct MoeResearchConfig {
     pub network: NetworkConfig,
     pub search: SearchProviderRegistry,
     pub model: ModelProviderRegistry,
+    pub web_fetch: WebFetchConfig,
     pub limits: LimitsConfig,
 }
 
@@ -48,14 +49,29 @@ impl MoeResearchConfig {
             })
         });
 
-        model_providers.chain(search_providers).collect()
+        let web_fetch = self
+            .web_fetch
+            .enabled
+            .then_some(self.web_fetch.model.as_ref())
+            .flatten()
+            .map(|model| EnabledProviderEnv {
+                kind: "web_fetch",
+                name: model.provider.as_str(),
+                api_key_env: Some(model.api_key_env.as_str()),
+            });
+
+        model_providers
+            .chain(search_providers)
+            .chain(web_fetch)
+            .collect()
     }
 
     fn validate_structure(&self) -> Result<()> {
         self.network.validate()?;
         self.limits.validate()?;
         self.search.validate_structure()?;
-        self.model.validate_structure()
+        self.model.validate_structure()?;
+        self.web_fetch.validate_structure()
     }
 
     fn validate_runtime_environment(&self) -> Result<()> {
@@ -161,6 +177,96 @@ impl NetworkConfig {
             proxy_url.validate()?;
         }
 
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct WebFetchConfig {
+    pub enabled: bool,
+    pub cache_ttl_ms: u64,
+    pub max_cache_entries: usize,
+    pub max_redirects: usize,
+    pub model: Option<WebFetchModelEndpoint>,
+}
+
+impl Default for WebFetchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            cache_ttl_ms: 900_000,
+            max_cache_entries: 128,
+            max_redirects: 5,
+            model: None,
+        }
+    }
+}
+
+impl WebFetchConfig {
+    fn validate_structure(&self) -> Result<()> {
+        if self.max_cache_entries == 0 {
+            return Err(Error::ConfigInvalid {
+                message: "web_fetch max_cache_entries must be greater than zero".to_owned(),
+            });
+        }
+        match (&self.model, self.enabled) {
+            (Some(model), _) => model.validate_structure(),
+            (None, true) => Err(Error::ConfigInvalid {
+                message: "web_fetch.model must be configured when web_fetch is enabled".to_owned(),
+            }),
+            (None, false) => Ok(()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebFetchModelEndpoint {
+    pub provider: String,
+    pub base_url: String,
+    pub api_key_env: String,
+    pub inactivity_timeout_ms: Option<u64>,
+    pub model: String,
+}
+
+impl WebFetchModelEndpoint {
+    fn validate_structure(&self) -> Result<()> {
+        if self.provider != "openai" {
+            return Err(Error::ConfigInvalid {
+                message: "web_fetch.model.provider must be `openai`".to_owned(),
+            });
+        }
+        let url = reqwest::Url::parse(&self.base_url).map_err(|_| Error::ConfigInvalid {
+            message: "web_fetch.model.base_url must be an absolute HTTPS URL".to_owned(),
+        })?;
+        if url.scheme() != "https"
+            || url.host().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            return Err(Error::ConfigInvalid {
+                message:
+                    "web_fetch.model.base_url must be an absolute HTTPS URL without credentials"
+                        .to_owned(),
+            });
+        }
+        if !is_valid_env_var_name(&self.api_key_env) {
+            return Err(Error::ConfigInvalid {
+                message: "web_fetch.model.api_key_env must be a valid environment variable name"
+                    .to_owned(),
+            });
+        }
+        if self.inactivity_timeout_ms == Some(0) {
+            return Err(Error::ConfigInvalid {
+                message: "web_fetch.model.inactivity_timeout_ms must not be zero".to_owned(),
+            });
+        }
+        if self.model.trim().is_empty() || self.model.trim() != self.model {
+            return Err(Error::ConfigInvalid {
+                message: "web_fetch.model.model must be a non-empty model name".to_owned(),
+            });
+        }
         Ok(())
     }
 }

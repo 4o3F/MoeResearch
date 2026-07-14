@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use eventsource_stream::Eventsource;
@@ -8,7 +9,10 @@ use tokio::sync::mpsc;
 
 use crate::client::NetworkClient;
 use crate::log_safe::{SafeText, SafeUrl, SafeWireBody};
-use crate::{Header, JsonNetworkResponse, NetworkRequest, SseEvent, SseNetworkStream};
+use crate::{
+    DocumentNetworkOutcome, DocumentNetworkRejection, DocumentNetworkResponse, Header,
+    JsonNetworkResponse, NetworkRequest, SseEvent, SseNetworkStream,
+};
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Method, Proxy, RequestBuilder, Response, Url};
 use uuid::Uuid;
@@ -63,7 +67,10 @@ impl ReqwestNetworkClient {
             HeaderValue::from_str(user_agent).map_err(|source| Error::ConfigInvalid {
                 message: format!("invalid network.user_agent header: {source}"),
             })?;
-        let mut builder = reqwest::Client::builder().user_agent(header_value);
+        let mut builder = reqwest::Client::builder()
+            .user_agent(header_value)
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never());
         if let Some(proxy_url) = proxy_url {
             let proxy = Proxy::all(proxy_url).map_err(|_| Error::ConfigInvalid {
                 message: "network.proxy_url is not accepted by the HTTP client".to_owned(),
@@ -284,6 +291,146 @@ impl ReqwestNetworkClient {
             headers,
             body,
         })
+    }
+
+    async fn send_document_once(
+        &self,
+        request: NetworkRequest,
+        attempt: u32,
+    ) -> Result<DocumentNetworkOutcome> {
+        let url = match Url::parse(&request.url) {
+            Ok(url) => url,
+            Err(_) => {
+                return Ok(DocumentNetworkOutcome::Rejected(
+                    DocumentNetworkRejection::UnsafeScheme,
+                ));
+            }
+        };
+        if url.scheme() != "https" {
+            return Ok(DocumentNetworkOutcome::Rejected(
+                DocumentNetworkRejection::UnsafeScheme,
+            ));
+        }
+        if !url.username().is_empty() || url.password().is_some() {
+            return Ok(DocumentNetworkOutcome::Rejected(
+                DocumentNetworkRejection::CredentialsPresent,
+            ));
+        }
+        let Some(host) = url.host_str() else {
+            return Ok(DocumentNetworkOutcome::Rejected(
+                DocumentNetworkRejection::UnsafeHost,
+            ));
+        };
+        if unsafe_document_hostname(host) {
+            return Ok(DocumentNetworkOutcome::Rejected(
+                DocumentNetworkRejection::UnsafeHost,
+            ));
+        }
+        let resolved_host = host.trim_start_matches('[').trim_end_matches(']');
+        let timeout_ms = request
+            .inactivity_timeout_ms
+            .unwrap_or(self.default_timeout_ms);
+        validate_timeout("request.inactivity_timeout_ms", timeout_ms)?;
+        let timeout = Duration::from_millis(timeout_ms);
+        let port = url.port_or_known_default().unwrap_or(443);
+        let addrs = if let Ok(ip) = resolved_host.parse::<IpAddr>() {
+            vec![SocketAddr::new(ip, port)]
+        } else {
+            match tokio::time::timeout(timeout, tokio::net::lookup_host((resolved_host, port)))
+                .await
+            {
+                Ok(Ok(addrs)) => addrs.collect::<Vec<_>>(),
+                Ok(Err(_)) | Err(_) => {
+                    return Ok(DocumentNetworkOutcome::Rejected(
+                        DocumentNetworkRejection::DnsResolutionFailed,
+                    ));
+                }
+            }
+        };
+        if addrs.is_empty() {
+            return Ok(DocumentNetworkOutcome::Rejected(
+                DocumentNetworkRejection::DnsResolutionFailed,
+            ));
+        }
+        if addrs.iter().any(|addr| !is_public_document_ip(addr.ip())) {
+            return Ok(DocumentNetworkOutcome::Rejected(
+                DocumentNetworkRejection::UnsafeResolvedAddress,
+            ));
+        }
+
+        let RequestAttempt {
+            builder,
+            attempt,
+            host,
+            path,
+            timeout_ms,
+            correlation_id,
+        } = self.prepare_request(request, attempt)?;
+        let context = TransportErrorLogContext {
+            phase: "send_request",
+            attempt,
+            correlation_id,
+            host: &host,
+            path: &path,
+            timeout_ms,
+        };
+        let started_at = Instant::now();
+        let response = send_request(builder, &context).await?;
+        let status = response.status().as_u16();
+        let headers = document_response_headers(&response);
+        let emit_metadata = |body_bytes| {
+            emit_inbound_binary_response_metadata(
+                correlation_id,
+                attempt,
+                &host,
+                &path,
+                status,
+                u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                body_bytes,
+            );
+        };
+
+        if response
+            .headers()
+            .get(reqwest::header::CONTENT_ENCODING)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| {
+                !value.trim().is_empty() && !value.eq_ignore_ascii_case("identity")
+            })
+        {
+            emit_metadata(0);
+            return Ok(DocumentNetworkOutcome::Rejected(
+                DocumentNetworkRejection::UnsupportedContentEncoding,
+            ));
+        }
+        if !(200..300).contains(&status) {
+            emit_metadata(0);
+            return Ok(DocumentNetworkOutcome::Response(DocumentNetworkResponse {
+                status,
+                headers,
+                body: Vec::new(),
+            }));
+        }
+
+        let body = read_response_bytes(
+            response,
+            &TransportErrorLogContext {
+                phase: "read_response_body",
+                attempt,
+                correlation_id,
+                host: &host,
+                path: &path,
+                timeout_ms,
+            },
+        )
+        .await?;
+        emit_metadata(body.len());
+
+        Ok(DocumentNetworkOutcome::Response(DocumentNetworkResponse {
+            status,
+            headers,
+            body,
+        }))
     }
 
     /// Sends one HTTP attempt and returns a lazy SSE event stream.
@@ -552,6 +699,50 @@ fn validate_accept_header(headers: &[Header], expected: &str) -> Result<()> {
     if !saw_expected {
         return Err(Error::InvalidInput {
             message: format!("request missing expected Accept {expected}"),
+        });
+    }
+    Ok(())
+}
+
+fn validate_document_request(request: &NetworkRequest) -> Result<()> {
+    if !request.method.eq_ignore_ascii_case("GET") {
+        return Err(Error::InvalidInput {
+            message: "document request method must be GET".to_owned(),
+        });
+    }
+    if request.body.is_some() {
+        return Err(Error::InvalidInput {
+            message: "document request body must be empty".to_owned(),
+        });
+    }
+
+    let mut accept = false;
+    let mut accept_encoding = false;
+    for header in &request.headers {
+        if header.name.eq_ignore_ascii_case("accept") {
+            if accept || header.value != "text/html,text/plain,text/markdown,application/xhtml+xml"
+            {
+                return Err(Error::InvalidInput {
+                    message: "document request Accept header is invalid".to_owned(),
+                });
+            }
+            accept = true;
+        } else if header.name.eq_ignore_ascii_case("accept-encoding") {
+            if accept_encoding || !header.value.eq_ignore_ascii_case("identity") {
+                return Err(Error::InvalidInput {
+                    message: "document request Accept-Encoding header must be identity".to_owned(),
+                });
+            }
+            accept_encoding = true;
+        } else {
+            return Err(Error::InvalidInput {
+                message: "document request contains an unsupported header".to_owned(),
+            });
+        }
+    }
+    if !accept || !accept_encoding {
+        return Err(Error::InvalidInput {
+            message: "document request requires Accept and Accept-Encoding headers".to_owned(),
         });
     }
     Ok(())
@@ -988,6 +1179,86 @@ fn validate_timeout(field: &str, timeout_ms: u64) -> Result<()> {
     Ok(())
 }
 
+fn unsafe_document_hostname(host: &str) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host.ends_with(".local")
+        || host.ends_with(".internal")
+        || host == "metadata.google.internal"
+}
+
+fn is_public_document_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => is_public_document_ipv4(ip),
+        IpAddr::V6(ip) => is_public_document_ipv6(ip),
+    }
+}
+
+fn is_public_document_ipv4(ip: Ipv4Addr) -> bool {
+    let [a, b, c, _] = ip.octets();
+    !matches!(
+        (a, b, c),
+        (0, _, _)
+            | (10, _, _)
+            | (100, 64..=127, _)
+            | (127, _, _)
+            | (169, 254, _)
+            | (172, 16..=31, _)
+            | (192, 0, _)
+            | (192, 168, _)
+            | (198, 18..=19, _)
+            | (198, 51, 100)
+            | (203, 0, 113)
+            | (224..=255, _, _)
+    )
+}
+
+fn is_public_document_ipv6(ip: Ipv6Addr) -> bool {
+    if let Some(ipv4) = ip.to_ipv4() {
+        return is_public_document_ipv4(ipv4);
+    }
+    let segments = ip.segments();
+    if ip.is_unspecified() || ip.is_loopback() || ip.is_multicast() {
+        return false;
+    }
+    if segments[0] & 0xfe00 == 0xfc00 || segments[0] & 0xffc0 == 0xfe80 {
+        return false;
+    }
+    if segments[0] == 0x0064 && segments[1] == 0xff9b {
+        return false;
+    }
+    if segments[0] == 0x0100 && segments[1..4] == [0, 0, 0] {
+        return false;
+    }
+    if segments[0] == 0x2001 && (segments[1] <= 0x01ff || segments[1] == 0x0db8) {
+        return false;
+    }
+    if segments[0] & 0xfff0 == 0x3ff0 || segments[0] == 0x5f00 {
+        return false;
+    }
+    true
+}
+
+fn document_response_headers(response: &Response) -> Vec<Header> {
+    [
+        reqwest::header::LOCATION,
+        reqwest::header::CONTENT_TYPE,
+        reqwest::header::CONTENT_LENGTH,
+        reqwest::header::CONTENT_ENCODING,
+    ]
+    .into_iter()
+    .filter_map(|name| {
+        response.headers().get(&name).and_then(|value| {
+            value.to_str().ok().map(|value| Header {
+                name: name.as_str().to_owned(),
+                value: value.to_owned(),
+            })
+        })
+    })
+    .collect()
+}
+
 #[async_trait::async_trait]
 impl NetworkClient for ReqwestNetworkClient {
     async fn send_json(&self, request: NetworkRequest) -> Result<JsonNetworkResponse> {
@@ -1057,6 +1328,76 @@ impl NetworkClient for ReqwestNetworkClient {
                     tokio::time::sleep(Duration::from_millis(self.retry_backoff_ms)).await;
                 }
             }
+        }
+
+        Err(last_error.unwrap_or_else(|| Error::NetworkFailed {
+            message: "request failed without an error".to_owned(),
+        }))
+    }
+
+    async fn send_document(&self, request: NetworkRequest) -> Result<DocumentNetworkOutcome> {
+        validate_document_request(&request)?;
+        let mut last_error = None;
+
+        for attempt in 0..=self.max_retries {
+            let attempt_u32 = u32::try_from(attempt).unwrap_or(u32::MAX);
+            match self.send_document_once(request.clone(), attempt_u32).await {
+                Ok(outcome) => {
+                    let retry_code = match &outcome {
+                        DocumentNetworkOutcome::Response(response)
+                            if is_retryable_status(response.status) =>
+                        {
+                            Some("http_status")
+                        }
+                        DocumentNetworkOutcome::Rejected(
+                            DocumentNetworkRejection::DnsResolutionFailed,
+                        ) => Some("dns_resolution_failed"),
+                        _ => None,
+                    };
+                    let Some(retry_code) = retry_code else {
+                        return Ok(outcome);
+                    };
+                    if attempt == self.max_retries {
+                        return Ok(outcome);
+                    }
+
+                    tracing::warn!(
+                        event = "outbound_request_retrying",
+                        status = "retrying",
+                        provider_kind = "network",
+                        response_kind = "document",
+                        attempt = attempt_u32,
+                        next_attempt = attempt_u32.saturating_add(1),
+                        max_retries = self.max_retries,
+                        backoff_ms = self.retry_backoff_ms,
+                        error_code = retry_code,
+                        retryable = true,
+                        "retrying outbound document request"
+                    );
+                }
+                Err(error) => {
+                    let retryable = is_retryable_error(&error);
+                    if !retryable || attempt == self.max_retries {
+                        return Err(error);
+                    }
+
+                    tracing::warn!(
+                        event = "outbound_request_retrying",
+                        status = "retrying",
+                        provider_kind = "network",
+                        response_kind = "document",
+                        attempt = attempt_u32,
+                        next_attempt = attempt_u32.saturating_add(1),
+                        max_retries = self.max_retries,
+                        backoff_ms = self.retry_backoff_ms,
+                        error_code = error.code().as_str(),
+                        retryable = error.retryable(),
+                        "retrying outbound document request"
+                    );
+                    last_error = Some(error);
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(self.retry_backoff_ms)).await;
         }
 
         Err(last_error.unwrap_or_else(|| Error::NetworkFailed {

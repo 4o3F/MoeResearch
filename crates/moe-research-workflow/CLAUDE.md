@@ -20,9 +20,9 @@
 
 - crate 入口：`src/lib.rs`
 - 对外主函数：
-  - `aspect_research(request, model_service, search_service, budget_config)`
-  - `deep_research(request, model_service, search_service, budget_config)`
-- 核心运行时：`src/runtime/agent.rs`（配套 `model_turn`、`search_tool`、`budget`、`deadline`）
+  - `aspect_research(request, model_service, search_service, web_fetch_service, budget_config)`
+  - `deep_research(request, model_service, search_service, web_fetch_service, budget_config)`
+- 核心运行时：`src/runtime/agent.rs`（agent loop 与 model turn）和 `src/runtime/tools/`（tool policy、Search/WebFetch 执行、evidence assembly），配套 `budget`、`deadline`、`model_turn`
 - 多 aspect 编排：`src/workflow/{aspect,deep,aggregation}.rs`
 - 请求/计划/prompt：`src/research/{request,plan,prompt}.rs`
 - 报告 + 校验：`src/report/{mod,validator}.rs`
@@ -40,9 +40,9 @@
 
 ## 关键依赖与配置
 
-- 依赖 `moe-research-model::ModelService` 与 `moe-research-search::SearchService`。
+- 依赖 `moe-research-model::ModelService`、`moe-research-search::SearchService` 与 `moe-research-web-fetch::WebFetchService`；三个 service 均作为必需运行时依赖注入。
 - `SUPPORTED_SCHEMA_VERSIONS = ["0.2"]`（定义于 `src/research/request.rs`）。
-- 当前模型可见工具只有 `search`。
+- 模型可见工具为按 aspect allowlist 暴露的 `search` 与 `web_fetch`；WebFetch 不属于顶层 MCP tool。
 - Deep research 并发由 normalized `limits.max_concurrent_agents` 控制。
 - 请求 limits 和 operator config limits 在 normalizer 中取更严格值；`Unlimited` 表示该层不加限制，不表示覆盖另一层有限值。
 
@@ -59,12 +59,12 @@ v0.2 request 形态：
 
 1. `AspectResearchRequest` / `DeepResearchRequest` 先经过 normalizer，完成 schema version、ID、provider、policy、limits、prompt 大小等校验。
 2. normalizer 将 request limits 与 operator config limits 取更严格值，生成 `EffectiveResearchPlan` / `EffectiveAspectPlan`。
-3. `AgentRuntime` 只消费 effective aspect plan；`instructions` 作为 system prompt，`AspectPromptInput` 作为 user prompt。
+3. `AgentRuntime` 只消费 effective aspect plan，并负责 agent loop、model turn 与统一 tool dispatch；tool policy、Search/WebFetch 执行和 evidence assembly 位于 `runtime/tools/`。`instructions` 作为 system prompt，`AspectPromptInput` 作为 user prompt。
 4. `AspectPromptInput` 只包含 aspect intent、context、可用工具和 evidence/output 要求，不包含 limits、provider allowlist、selected provider 或 execution policy。
-5. 模型如返回 tool call，`ToolPolicyGuard` 只接受 `query`、optional `max_results` 和 required semantic `intent`。
-6. 已选 `SearchProvider` 将 intent 与 `SearchPolicy::intent_constraints()` 解析成一个实际 `SearchRequest`；hard policy 冲突在 dispatch 前拒绝，绝不 fallback 或聚合。
-7. `AgentBudgetGuard` 与 `ResearchBudgetGuard` 在实际 provider dispatch 前消费运行时预算。
-8. 搜索结果被转成 host-owned candidate evidence，并将 `intent_resolution` 返回给模型。
+5. 模型如返回 tool call，`ToolPolicyGuard` 对 `search` 只接受 `query`、optional `max_results` 和 required semantic `intent`，对 `web_fetch` 只接受 required `url` 与 `prompt`。
+6. 已选 `SearchProvider` 将 intent 与 `SearchPolicy::intent_constraints()` 解析成一个实际 `SearchRequest`；hard policy 冲突在 dispatch 前拒绝，绝不 fallback 或聚合。WebFetch 经独立 service 抓取并由独立无工具模型处理。
+7. `AgentBudgetGuard` 与 `ResearchBudgetGuard` 在实际 provider dispatch 前消费运行时预算；WebFetch 消耗 generic tool 与研究模型预算，但不消耗 search budget。
+8. Search/WebFetch 成功结果被转成 host-owned candidate evidence；搜索还将 `intent_resolution` 返回给模型。
 9. 模型最终只输出同一 `AspectResearchResult` 的 projection：`aspect_report` + ID-only `selected_evidence`。
 10. `OutputValidator` rehydrate host evidence，检查报告字段、finding/evidence 引用、selected IDs，并推导 `supports_findings`。
 11. 失败会生成 host-owned `FailureDiagnostic`：稳定 `stage`，以及可选的一基 `model_turn` / `search_turn`；aspect identity 继续由外层 `aspect_id` 承载。
@@ -127,4 +127,5 @@ cargo test -p moe-research-tests schema
 - `src/research/{mod,request,plan,prompt}.rs`
 - `src/report/{mod,validator}.rs`
 - `src/workflow/{mod,aspect,deep,aggregation}.rs`
-- `src/runtime/{mod,agent,budget,deadline,model_turn,search_tool}.rs`
+- `src/runtime/{mod,agent,budget,deadline,model_turn}.rs`
+- `src/runtime/tools/{mod,policy,search,web_fetch}.rs`

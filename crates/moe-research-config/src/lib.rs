@@ -10,4 +10,5 @@ pub use types::{
     AgentLimitsConfig, EnabledProviderEnv, GrokReasoningEffort, LimitsConfig, LoggingConfig,
     ModelProviderEndpoint, ModelProviderRegistry, MoeResearchConfig, NetworkConfig,
     NetworkProxyUrl, ResearchLimitsConfig, SearchProviderEndpoint, SearchProviderRegistry,
+    WebFetchConfig, WebFetchModelEndpoint,
 };
