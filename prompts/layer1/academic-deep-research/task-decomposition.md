@@ -4,7 +4,9 @@
 
 Convert the user's academic research request into a valid `DeepResearchRequest`. Do not perform the research yourself and do not write the final report.
 
-Rust core never reads prompt files at runtime. For every search-enabled aspect, Layer 1 assembles `AspectRequest.instructions` as the selected Layer 2 Markdown, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding derived from that aspect and `policy.search`.
+Rust core never reads prompt files at runtime. Select tools only from `available_aspect_tools`, then assemble instructions by tool set: persona only for `[]`; persona → search contract → Run Binding for `[search]`; persona → WebFetch contract for `[web_fetch]`; persona → search contract → WebFetch contract → Run Binding for both.
+
+When both `search` and `web_fetch` are runtime-available, every evidence-producing aspect that uses search must select both tools. Search discovers candidate sources; WebFetch verifies the minimum set of load-bearing URLs before Layer 2 relies on them. Use search-only only when WebFetch is unavailable.
 
 ## Inputs
 
@@ -17,6 +19,7 @@ Rust core never reads prompt files at runtime. For every search-enabled aspect, 
   "language": "string",
   "available_model_providers": ["string"],
   "available_search_providers": ["string"],
+  "available_aspect_tools": ["search", "web_fetch"],
   "operator_limits": "BudgetConfig ceilings from get_runtime_capabilities; Skill-internal only",
   "limits_preset": "quick | standard | deep",
   "available_aspect_agent_prompts": {
@@ -87,7 +90,7 @@ For each aspect:
 - `scope` carries inclusion criteria, source classes, domain/time boundaries, and key terms for that aspect.
 - `boundaries` carries exclusion criteria and non-goals.
 - `success_criteria` must include the evidence bar: primary/source class preference, methodological appraisal, contradiction handling, and what to do when evidence is missing.
-- For a search-enabled aspect, `instructions` is the inline Markdown content of exactly one selected Layer 2 persona prompt, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding; it is never a path.
+- `instructions` is the inline Markdown content of exactly one selected Layer 2 persona prompt, then only the contracts required by selected tools; it is never a path.
 
 ## Step 5 — Limits and policies
 
@@ -121,14 +124,14 @@ Return only JSON matching `DeepResearchRequest`; no Markdown wrapper.
       "scope": ["string"],
       "boundaries": ["string"],
       "success_criteria": ["string"],
-      "instructions": "inline Layer 2 persona Markdown, then the common model-search tool contract, then a request-specific Run Binding",
-      "tools": ["search"],
+      "instructions": "inline Layer 2 persona Markdown, then the common model-search tool contract, then the model-web-fetch tool contract, then a request-specific Run Binding",
+      "tools": ["search", "web_fetch"],
       "model_provider": "selected provider",
       "search_provider": "selected provider",
-      "limits": {"max_turns": 10, "max_tool_calls": 12, "max_search_calls": 8, "timeout_ms": 600000}
+      "limits": {"max_turns": 10, "max_tool_calls": 16, "max_search_calls": 8, "timeout_ms": 600000}
     }]
   },
-  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 40, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
+  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 72, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
   "policy": {
     "model": {"allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true},
     "search": {"allowed_providers": ["string"], "max_results_per_query": 5, "freshness": null, "depth": null, "content_level": null, "recency": null, "category": "academic", "language": null, "region": null, "include_domains": [], "exclude_domains": []},
@@ -152,7 +155,7 @@ For a single-aspect Quick study, you may emit an `AspectResearchRequest` instead
 
 ## Run Binding assembly
 
-For every aspect whose `tools` includes `search`, the complete `instructions` value is:
+For every aspect whose `tools` is exactly `["search"]`, the complete `instructions` value is:
 
 ```text
 <selected persona Markdown>
@@ -162,6 +165,6 @@ For every aspect whose `tools` includes `search`, the complete `instructions` va
 <request-specific Run Binding>
 ```
 
-This three-part order is mandatory for every search-enabled aspect. Derive the Run Binding from this aspect and `policy.search` using `moe.run_binding.v1` from the common contract. It must project only compatible semantic `allowed_*` intent values, `safe_default_intent`, `required_aspect_id`, `required_aspect_name`, and evidence-closure hints. JSON-escape identity strings; do not put providers, budgets, runtime capabilities, `operator_limits`, host check output, domains, language, region, raw policy tool fields, or credentials into the binding. Runtime-confirmed provider lists and ceilings are Layer-1-only and must not enter Layer 2, `instructions`, or free-text `context`.
+For a search-only aspect, the mandatory three-part order is selected persona Markdown, then the common search contract, then a request-specific Run Binding. For a dual-tool aspect, insert `model-web-fetch-tool-contract.md` between the search contract and Run Binding. Derive the Run Binding from this aspect and `policy.search` using `moe.run_binding.v1` from the common contract. It must project only compatible semantic `allowed_*` intent values, `safe_default_intent`, `required_aspect_id`, `required_aspect_name`, and evidence-closure hints. JSON-escape identity strings; do not put providers, budgets, runtime capabilities, `operator_limits`, host check output, domains, language, region, raw policy tool fields, or credentials into the binding. Runtime-confirmed provider lists and ceilings are Layer-1-only and must not enter Layer 2, `instructions`, or free-text `context`.
 
 When `policy.search.category` is `academic`, the binding allows only `general` and `academic` for `source_focus`. When category is null, it allows the full source-focus vocabulary. Apply the same rank-compatible projection to coverage, detail, and timeliness. Do not replace a fixed category simply to avoid a model policy conflict.

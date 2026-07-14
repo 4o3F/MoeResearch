@@ -4,6 +4,7 @@ members = [
     "crates/moe-research-config",
     "crates/moe-research-net",
     "crates/moe-research-model",
+    "crates/moe-research-web-fetch",
     "crates/moe-research-search",
     "crates/moe-research-workflow",
     "crates/moe-research-mcp",
@@ -26,11 +27,14 @@ description = "Rust-based deep research MCP core service"
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 eventsource-stream = "0.2"
+dom_smoothie = "0.18.0"
+encoding_rs = "0.8.35"
 flate2 = "1"
 futures = "0.3"
+htmd = "0.5.4"
 inquire = { version = "0.9.4", default-features = false, features = ["crossterm"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "socks", "stream"] }
-rmcp = "1.8"
+rmcp = "2.2"
 schemars = { version = "1.2", features = ["uuid1"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -39,7 +43,7 @@ snafu = "0.9"
 tar = "0.4"
 tempfile = "3"
 time = { version = "0.3", features = ["formatting", "parsing", "serde"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 toml = "1.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

@@ -16,6 +16,7 @@ This guide contains repository layout and local development commands for contrib
 │   ├── moe-research-model/           # Model provider boundary and OpenAI adapter
 │   ├── moe-research-net/             # Network client, redaction, retry, and wire tracing
 │   ├── moe-research-search/          # Search provider boundary and Exa/Grok/Tavily adapters
+│   ├── moe-research-web-fetch/       # Restricted document retrieval and prompt processing
 │   ├── moe-research-workflow/        # Research workflow, policies, budgets, and reports
 │   └── moe-research-tests/           # Integration tests
 ├── docs/                      # Product and user documentation

@@ -2,17 +2,23 @@
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use moe_research_error::{Error, Result};
 use moe_research_net::client::NetworkClient;
-use moe_research_net::{JsonNetworkResponse, NetworkRequest, SseEvent, SseNetworkStream};
+use moe_research_net::{
+    DocumentNetworkOutcome, JsonNetworkResponse, NetworkRequest, SseEvent, SseNetworkStream,
+};
 
 #[derive(Clone, Default)]
 pub struct MockNetworkClient {
     responses: Arc<Mutex<VecDeque<JsonNetworkResponse>>>,
     sse_responses: Arc<Mutex<VecDeque<MockSseResponse>>>,
+    document_responses: Arc<Mutex<VecDeque<DocumentNetworkOutcome>>>,
+    document_delay: Option<Duration>,
     requests: Arc<Mutex<Vec<NetworkRequest>>>,
+    document_requests: Arc<Mutex<Vec<NetworkRequest>>>,
 }
 
 pub fn mock_completed_sse(body: serde_json::Value) -> Arc<MockNetworkClient> {
@@ -70,7 +76,10 @@ impl MockNetworkClient {
         Self {
             responses: Arc::new(Mutex::new(responses.into_iter().collect())),
             sse_responses: Arc::new(Mutex::new(VecDeque::new())),
+            document_responses: Arc::new(Mutex::new(VecDeque::new())),
+            document_delay: None,
             requests: Arc::new(Mutex::new(Vec::new())),
+            document_requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -78,12 +87,35 @@ impl MockNetworkClient {
         Self {
             responses: Arc::new(Mutex::new(VecDeque::new())),
             sse_responses: Arc::new(Mutex::new(responses.into_iter().collect())),
+            document_responses: Arc::new(Mutex::new(VecDeque::new())),
+            document_delay: None,
             requests: Arc::new(Mutex::new(Vec::new())),
+            document_requests: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    pub fn with_documents(
+        mut self,
+        responses: impl IntoIterator<Item = DocumentNetworkOutcome>,
+    ) -> Self {
+        self.document_responses = Arc::new(Mutex::new(responses.into_iter().collect()));
+        self
+    }
+
+    pub fn with_document_delay(mut self, delay: Duration) -> Self {
+        self.document_delay = Some(delay);
+        self
     }
 
     pub fn requests(&self) -> Vec<NetworkRequest> {
         self.requests.lock().expect("requests lock").clone()
+    }
+
+    pub fn document_requests(&self) -> Vec<NetworkRequest> {
+        self.document_requests
+            .lock()
+            .expect("document requests lock")
+            .clone()
     }
 }
 
@@ -125,5 +157,22 @@ impl NetworkClient for MockNetworkClient {
             response.headers,
             response.events,
         ))
+    }
+
+    async fn send_document(&self, request: NetworkRequest) -> Result<DocumentNetworkOutcome> {
+        self.document_requests
+            .lock()
+            .expect("document requests lock")
+            .push(request);
+        if let Some(delay) = self.document_delay {
+            tokio::time::sleep(delay).await;
+        }
+        self.document_responses
+            .lock()
+            .expect("document responses lock")
+            .pop_front()
+            .ok_or_else(|| Error::NetworkFailed {
+                message: "mock document response queue is empty".to_owned(),
+            })
     }
 }

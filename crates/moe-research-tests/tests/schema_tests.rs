@@ -184,6 +184,7 @@ fn runtime_capabilities_dtos_roundtrip_and_reject_unknown_fields() {
     let data = RuntimeCapabilities {
         model_providers: vec!["openai".to_owned()],
         search_providers: vec!["exa".to_owned()],
+        aspect_tools: vec!["search".to_owned(), "web_fetch".to_owned()],
         operator_limits: moe_research_workflow::BudgetConfig {
             research: ResearchLimits {
                 max_agents: Limit::limited(4),
@@ -240,8 +241,13 @@ fn runtime_capabilities_schema_contains_only_snapshot_fields() {
     let data_properties = data_schema["properties"]
         .as_object()
         .expect("data properties");
-    assert_eq!(data_properties.len(), 3);
-    for required in ["model_providers", "search_providers", "operator_limits"] {
+    assert_eq!(data_properties.len(), 4);
+    for required in [
+        "model_providers",
+        "search_providers",
+        "aspect_tools",
+        "operator_limits",
+    ] {
         assert!(data_properties.contains_key(required), "missing {required}");
     }
 

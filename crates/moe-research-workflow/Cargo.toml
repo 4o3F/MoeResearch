@@ -13,6 +13,7 @@ futures.workspace = true
 moe-research-error = { path = "../moe-research-error" }
 moe-research-model = { path = "../moe-research-model" }
 moe-research-search = { path = "../moe-research-search" }
+moe-research-web-fetch = { path = "../moe-research-web-fetch" }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

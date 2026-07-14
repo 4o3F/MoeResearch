@@ -118,6 +118,8 @@ pub enum FailureStage {
     SearchPolicy,
     SearchBudget,
     SearchDispatch,
+    WebFetchBudget,
+    WebFetchDispatch,
     OutputValidation,
     ResearchBudget,
     ResultAggregation,
@@ -127,6 +129,8 @@ pub enum FailureStage {
 ///
 /// Aspect identity remains on the containing `ToolError` or `AspectFailure`;
 /// turn numbers are one-based logical operation ordinals within that aspect.
+/// `search_turn` is retained for wire compatibility and counts every retrieval
+/// batch, including `web_fetch`.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Eq, Serialize)]
 pub struct FailureDiagnostic {
     pub stage: FailureStage,

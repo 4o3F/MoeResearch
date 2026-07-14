@@ -33,6 +33,7 @@ ReqwestNetworkClient::new(timeout_ms, max_retries, retry_backoff_ms, user_agent,
 
 - `send_json(NetworkRequest) -> JsonNetworkResponse`
 - `send_sse(NetworkRequest) -> SseNetworkStream`
+- `send_document(NetworkRequest) -> DocumentNetworkOutcome`
 - `ReqwestNetworkClient::send_bytes(NetworkRequest) -> Vec<u8>` for binary downloads
 
 辅助函数：
@@ -46,13 +47,15 @@ ReqwestNetworkClient::new(timeout_ms, max_retries, retry_backoff_ms, user_agent,
 - 外部依赖：`reqwest`, `eventsource-stream`, `futures`, `tokio`, `uuid`, `tracing`。
 - 网络配置来自 `moeresearch.toml`：`inactivity_timeout_ms`, `max_retries`, `retry_backoff_ms`, `user_agent`, 可选 `proxy_url`。显式代理支持 HTTP/HTTPS/SOCKS5/SOCKS5h，并覆盖环境代理发现。
 - JSON 请求要求 Accept JSON；SSE 请求要求 Accept `text/event-stream`。
-- 非 2xx 状态通过 `HttpStatus` 映射，429 与 5xx 可重试。
-- Wire trace body 有上限，超过时输出截断 marker。
+- 非 2xx JSON/SSE/bytes 状态通过 `HttpStatus` 映射，429 与 5xx 可重试。
+- Document 请求复用同一 Reqwest client、`NetworkRequest`、timeout 与 retry loop；额外执行 HTTPS-only、凭据拒绝、DNS 全地址安全校验和严格 document header 校验。自动重定向与 Reqwest 协议级重试在共享 client 上关闭，由 host 统一处理。
+- Wire trace body 有上限，超过时输出截断 marker；binary/document body 不写入 wire trace。
 
 ## 数据模型
 
 - `Header`: name/value，Debug 时敏感 header value 会脱敏。
 - `NetworkRequest`: method、url、headers、body、timeout_ms。
+- `DocumentNetworkOutcome`: `NetworkRequest` 的受限页面 response/rejection 结果。
 - `JsonNetworkResponse`: status、headers、body。
 - `SseEvent`: event、data。
 - `SseNetworkStream`: 异步事件流，drop 时 abort reader task。

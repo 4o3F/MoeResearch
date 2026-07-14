@@ -1,4 +1,8 @@
-use moe_research_net::{Header, JsonNetworkResponse, NetworkRequest, SseEvent};
+use moe_research_net::reqwest_client::ReqwestNetworkClient;
+use moe_research_net::{
+    DocumentNetworkOutcome, DocumentNetworkRejection, Header, JsonNetworkResponse, NetworkClient,
+    NetworkRequest, SseEvent,
+};
 use serde_json::json;
 
 #[test]
@@ -173,4 +177,85 @@ fn safe_debug_does_not_apply_hidden_preview_limit() {
     };
 
     assert!(format!("{header:?}").contains(&body));
+}
+
+fn document_request(url: &str) -> NetworkRequest {
+    NetworkRequest {
+        method: "GET".to_owned(),
+        url: url.to_owned(),
+        headers: vec![
+            Header {
+                name: "accept".to_owned(),
+                value: "text/html,text/plain,text/markdown,application/xhtml+xml".to_owned(),
+            },
+            Header {
+                name: "accept-encoding".to_owned(),
+                value: "identity".to_owned(),
+            },
+        ],
+        body: None,
+        inactivity_timeout_ms: Some(1_000),
+    }
+}
+
+#[tokio::test]
+async fn document_transport_rejects_unsafe_schemes_credentials_and_addresses() {
+    let client =
+        ReqwestNetworkClient::new(1_000, 0, 0, "moeresearch-test", None).expect("network client");
+    let cases = [
+        ("http://example.com", DocumentNetworkRejection::UnsafeScheme),
+        (
+            "https://user:secret@example.com",
+            DocumentNetworkRejection::CredentialsPresent,
+        ),
+        (
+            "https://127.0.0.1/",
+            DocumentNetworkRejection::UnsafeResolvedAddress,
+        ),
+        (
+            "https://10.0.0.1/",
+            DocumentNetworkRejection::UnsafeResolvedAddress,
+        ),
+        (
+            "https://192.0.2.1/",
+            DocumentNetworkRejection::UnsafeResolvedAddress,
+        ),
+        (
+            "https://[::1]/",
+            DocumentNetworkRejection::UnsafeResolvedAddress,
+        ),
+        (
+            "https://[::ffff:127.0.0.1]/",
+            DocumentNetworkRejection::UnsafeResolvedAddress,
+        ),
+    ];
+
+    for (url, expected) in cases {
+        let outcome = client
+            .send_document(document_request(url))
+            .await
+            .expect("typed rejection");
+        assert_eq!(outcome, DocumentNetworkOutcome::Rejected(expected), "{url}");
+    }
+}
+
+#[tokio::test]
+async fn document_transport_requires_get_without_body_and_restricted_headers() {
+    let client =
+        ReqwestNetworkClient::new(1_000, 0, 0, "moeresearch-test", None).expect("network client");
+
+    let mut post = document_request("https://example.com");
+    post.method = "POST".to_owned();
+    assert!(client.send_document(post).await.is_err());
+
+    let mut with_body = document_request("https://example.com");
+    with_body.body = Some(json!({"prompt": "ignored"}));
+    assert!(client.send_document(with_body).await.is_err());
+
+    let mut with_authorization = document_request("https://example.com");
+    with_authorization.headers.push(Header {
+        name: "authorization".to_owned(),
+        value: "Bearer secret".to_owned(),
+    });
+    assert!(client.send_document(with_authorization).await.is_err());
 }

@@ -24,6 +24,8 @@ const GENERIC_LAYER2_SEARCH_PLANNER: &str = "prompts/layer2/search-planner.md";
 const GENERIC_LAYER2_EVIDENCE_EXTRACTOR: &str = "prompts/layer2/evidence-extractor.md";
 const COMMON_PATH: &str = "prompts/layer1/common/evidence-postprocess.md";
 const MODEL_SEARCH_CONTRACT_PATH: &str = "prompts/layer1/common/model-search-tool-contract.md";
+const MODEL_WEB_FETCH_CONTRACT_PATH: &str =
+    "prompts/layer1/common/model-web-fetch-tool-contract.md";
 const TYPST_REPORT_CONTRACT_PATH: &str = "prompts/layer1/common/typst-report-contract.md";
 const ACADEMIC_REPORT_GUIDANCE_PATH: &str =
     "prompts/layer1/academic-deep-research/final-report-guidance.md";
@@ -54,6 +56,7 @@ const EXPECTED_FILES: &[&str] = &[
     GENERIC_LAYER2_EVIDENCE_EXTRACTOR,
     COMMON_PATH,
     MODEL_SEARCH_CONTRACT_PATH,
+    MODEL_WEB_FETCH_CONTRACT_PATH,
     TYPST_REPORT_CONTRACT_PATH,
     ACADEMIC_REPORT_GUIDANCE_PATH,
     ACADEMIC_EVIDENCE_OVERLAY_PATH,
@@ -241,17 +244,25 @@ fn prompt_assets_keep_budget_selection_and_user_prompt_priority_in_generic_skill
     let budget_tiers =
         fs::read_to_string(workspace().join("prompts/layer1/common/budget-tiers.md"))
             .expect("read budget tiers");
-    for deep_limit in [
+    for expected_limit in [
+        "max_total_model_calls` 72",
+        "max_tool_calls` 16",
         "max_total_model_calls` 180",
         "max_total_search_calls` 144",
         "total_timeout_ms` 3600000",
         "max_turns` 16",
-        "max_tool_calls` 20",
+        "max_tool_calls` 24",
         "max_search_calls` 12",
         "timeout_ms` 1200000",
     ] {
-        assert!(budget_tiers.contains(deep_limit), "missing {deep_limit}");
+        assert!(
+            budget_tiers.contains(expected_limit),
+            "missing {expected_limit}"
+        );
     }
+    assert!(budget_tiers.contains("2 search + 2 web_fetch"));
+    assert!(budget_tiers.contains("8 + 8"));
+    assert!(budget_tiers.contains("12 + 12"));
     assert!(budget_tiers.contains("operator ceiling > explicit user override > selected preset"));
     assert!(budget_tiers.contains("max_total_search_calls = -1"));
     assert!(budget_tiers.contains("Explicit user prompt constraints"));
@@ -887,6 +898,10 @@ fn fixture_content(path: &str) -> Vec<u8> {
         MODEL_SEARCH_CONTRACT_PATH => {
             include_bytes!("../../../prompts/layer1/common/model-search-tool-contract.md").to_vec()
         }
+        MODEL_WEB_FETCH_CONTRACT_PATH => {
+            include_bytes!("../../../prompts/layer1/common/model-web-fetch-tool-contract.md")
+                .to_vec()
+        }
         _ => format!("fixture prompt for {path}").into_bytes(),
     }
 }
@@ -1221,6 +1236,9 @@ base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
 inactivity_timeout_ms = 30000
 model = "gpt-5.5"
+
+[web_fetch]
+enabled = false
 
 [limits.research]
 max_agents = -1

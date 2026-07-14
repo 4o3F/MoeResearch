@@ -45,6 +45,21 @@ api_key_env = "OPENAI_API_KEY"
 inactivity_timeout_ms = 120000
 model = "gpt-5.5"
 
+[web_fetch]
+enabled = false
+cache_ttl_ms = 900000
+max_cache_entries = 128
+max_redirects = 5
+
+# Required only when web_fetch.enabled = true. This endpoint is independent of
+# [model.providers.*] and is never selectable by an aspect request.
+# [web_fetch.model]
+# provider = "openai"
+# base_url = "https://api.openai.com/v1"
+# api_key_env = "WEB_FETCH_OPENAI_API_KEY"
+# inactivity_timeout_ms = 120000
+# model = "gpt-5.5-mini"
+
 # Set any limit value to -1 to make that limit unlimited.
 [limits.research]
 max_agents = -1

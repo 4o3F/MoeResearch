@@ -9,8 +9,8 @@ use moe_research_error::{Error, Result};
 use tracing_subscriber::EnvFilter;
 
 use crate::compose::{
-    build_model_service, build_network_client, build_search_service, build_workflow_budget,
-    enabled_model_provider_names, enabled_search_provider_names,
+    build_model_service, build_network_client, build_search_service, build_web_fetch_service,
+    build_workflow_budget, enabled_model_provider_names, enabled_search_provider_names,
 };
 
 #[derive(Debug, Args)]
@@ -94,8 +94,15 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     let network = build_network_client(&config)?;
     let model_service = build_model_service(&config, &network)?;
     let search_service = build_search_service(&config, &network)?;
+    let web_fetch_service = build_web_fetch_service(&config, &network)?;
 
-    moe_research_mcp::serve_stdio(model_service, search_service, workflow_budget).await
+    moe_research_mcp::serve_stdio(
+        model_service,
+        search_service,
+        web_fetch_service,
+        workflow_budget,
+    )
+    .await
 }
 
 fn init_logging(format: LogFormat) -> Result<(String, &'static str)> {

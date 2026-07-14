@@ -20,6 +20,7 @@ use moe_research_search::{
     ExaSearchProvider, GrokReasoningEffort as SearchGrokReasoningEffort, GrokSearchProvider,
     SearchService, TavilySearchProvider,
 };
+use moe_research_web_fetch::{WebFetchRuntimeConfig, WebFetchService};
 use moe_research_workflow::{AgentLimits, BudgetConfig, Limit, ResearchLimits};
 
 /// Map operator config limit into workflow budget limit (dual types intentionally kept).
@@ -158,6 +159,52 @@ pub fn build_model_service(
     }
 
     Ok(service)
+}
+
+pub fn build_web_fetch_service(
+    config: &MoeResearchConfig,
+    network: &Arc<dyn NetworkClient>,
+) -> Result<WebFetchService> {
+    let runtime_config = |inactivity_timeout_ms| WebFetchRuntimeConfig {
+        cache_ttl_ms: config.web_fetch.cache_ttl_ms,
+        max_cache_entries: config.web_fetch.max_cache_entries,
+        max_redirects: config.web_fetch.max_redirects,
+        inactivity_timeout_ms,
+    };
+    if !config.web_fetch.enabled {
+        return WebFetchService::disabled(
+            network.clone(),
+            runtime_config(Some(config.network.inactivity_timeout_ms)),
+        );
+    }
+    let endpoint = config
+        .web_fetch
+        .model
+        .as_ref()
+        .ok_or_else(|| Error::ConfigInvalid {
+            message: "web_fetch.model must be configured when web_fetch is enabled".to_owned(),
+        })?;
+    let api_key = provider_api_key("web_fetch", &endpoint.provider, Some(&endpoint.api_key_env))?;
+    let mut model_service = ModelService::new();
+    model_service.register(OpenAiProvider::new(
+        network.clone(),
+        endpoint.base_url.clone(),
+        api_key,
+        endpoint
+            .inactivity_timeout_ms
+            .or(Some(config.network.inactivity_timeout_ms)),
+        endpoint.model.clone(),
+    ));
+    WebFetchService::new(
+        network.clone(),
+        model_service,
+        endpoint.provider.clone(),
+        runtime_config(
+            endpoint
+                .inactivity_timeout_ms
+                .or(Some(config.network.inactivity_timeout_ms)),
+        ),
+    )
 }
 
 pub fn build_search_service(

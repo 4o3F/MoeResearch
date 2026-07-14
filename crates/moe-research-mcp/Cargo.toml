@@ -12,6 +12,7 @@ path = "src/lib.rs"
 moe-research-error = { path = "../moe-research-error" }
 moe-research-model = { path = "../moe-research-model" }
 moe-research-search = { path = "../moe-research-search" }
+moe-research-web-fetch = { path = "../moe-research-web-fetch" }
 moe-research-workflow = { path = "../moe-research-workflow" }
 rmcp = { workspace = true, features = ["server", "transport-io", "schemars"] }
 schemars.workspace = true

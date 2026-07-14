@@ -7,11 +7,12 @@ use crate::research::{
     effective_research_limits,
 };
 use crate::runtime::{
-    AgentRuntimeFailure, AgentRuntimeOutput, ResearchBudgetGuard, SEARCH_TOOL_NAME,
+    AgentRuntimeFailure, AgentRuntimeOutput, ResearchBudgetGuard, SUPPORTED_ASPECT_TOOLS,
 };
 use moe_research_error::Error;
 use moe_research_model::ModelService;
 use moe_research_search::SearchService;
+use moe_research_web_fetch::WebFetchService;
 
 use super::deep::run_aspect_runtime;
 
@@ -70,6 +71,7 @@ pub async fn aspect_research(
     request: AspectResearchRequest,
     model_service: &ModelService,
     search_service: &SearchService,
+    web_fetch_service: &WebFetchService,
     budget_config: &BudgetConfig,
 ) -> std::result::Result<AspectResearchOutput, Box<AspectResearchFailure>> {
     let request_id = request.request_id.clone();
@@ -78,7 +80,7 @@ pub async fn aspect_research(
         .normalize_for_execution(&WorkflowValidationContext {
             budget_config,
             supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
-            supported_tool_name: SEARCH_TOOL_NAME,
+            supported_tool_names: SUPPORTED_ASPECT_TOOLS,
         })
         .map_err(AspectResearchFailure::top_level)?;
     tracing::debug!(
@@ -92,14 +94,20 @@ pub async fn aspect_research(
     let research_budget =
         ResearchBudgetGuard::new(effective_research_limits(&budget_config.research, None));
     research_budget.record_agent_started();
-    run_aspect_runtime(plan, model_service, search_service, research_budget)
-        .await
-        .map(AspectResearchOutput::from_runtime)
-        .map_err(|failure| {
-            let mut failure = AspectResearchFailure::from_runtime(failure);
-            if !allow_partial_results {
-                failure.partial_output = None;
-            }
-            failure
-        })
+    run_aspect_runtime(
+        plan,
+        model_service,
+        search_service,
+        web_fetch_service,
+        research_budget,
+    )
+    .await
+    .map(AspectResearchOutput::from_runtime)
+    .map_err(|failure| {
+        let mut failure = AspectResearchFailure::from_runtime(failure);
+        if !allow_partial_results {
+            failure.partial_output = None;
+        }
+        failure
+    })
 }

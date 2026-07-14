@@ -1,0 +1,23 @@
+[package]
+name = "moe-research-web-fetch"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "moe_research_web_fetch"
+path = "src/lib.rs"
+
+[dependencies]
+dom_smoothie.workspace = true
+encoding_rs.workspace = true
+htmd.workspace = true
+moe-research-error = { path = "../moe-research-error" }
+moe-research-model = { path = "../moe-research-model" }
+moe-research-net = { path = "../moe-research-net" }
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+tokio.workspace = true
+url.workspace = true

@@ -14,11 +14,13 @@ use crate::research::{
     WorkflowValidationContext,
 };
 use crate::runtime::{
-    AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput, ResearchBudgetGuard, SEARCH_TOOL_NAME,
+    AgentRuntime, AgentRuntimeFailure, AgentRuntimeOutput, ResearchBudgetGuard,
+    SUPPORTED_ASPECT_TOOLS,
 };
 use moe_research_error::{Error, Result};
 use moe_research_model::ModelService;
 use moe_research_search::SearchService;
+use moe_research_web_fetch::WebFetchService;
 
 use super::aggregation::{
     DeepResearchRun, aspect_failure, confidence_summary, order_failures_by_request,
@@ -66,13 +68,14 @@ pub async fn deep_research(
     request: DeepResearchRequest,
     model_service: &ModelService,
     search_service: &SearchService,
+    web_fetch_service: &WebFetchService,
     budget_config: &BudgetConfig,
 ) -> std::result::Result<DeepResearchResult, Box<DeepResearchFailure>> {
     let plan = request
         .normalize_for_execution(&WorkflowValidationContext {
             budget_config,
             supported_schema_versions: SUPPORTED_SCHEMA_VERSIONS,
-            supported_tool_name: SEARCH_TOOL_NAME,
+            supported_tool_names: SUPPORTED_ASPECT_TOOLS,
         })
         .map_err(DeepResearchFailure::top_level)?;
     if plan.limits != request.limits {
@@ -100,6 +103,7 @@ pub async fn deep_research(
         &plan,
         model_service,
         search_service,
+        web_fetch_service,
         research_budget.clone(),
     )
     .await;
@@ -193,6 +197,7 @@ pub(super) async fn execute_aspects(
     request: &EffectiveResearchPlan,
     model_service: &ModelService,
     search_service: &SearchService,
+    web_fetch_service: &WebFetchService,
     research_budget: Arc<ResearchBudgetGuard>,
 ) -> DeepResearchRun {
     let mut run = DeepResearchRun::new();
@@ -205,6 +210,7 @@ pub(super) async fn execute_aspects(
                 aspect_request,
                 model_service,
                 search_service,
+                web_fetch_service,
                 research_budget,
             )
             .await;
@@ -237,11 +243,18 @@ pub(super) async fn run_aspect_runtime(
     request: EffectiveAspectPlan,
     model_service: &ModelService,
     search_service: &SearchService,
+    web_fetch_service: &WebFetchService,
     research_budget: Arc<ResearchBudgetGuard>,
 ) -> Result<AgentRuntimeOutput, AgentRuntimeFailure> {
-    AgentRuntime::new(model_service, search_service, &request, research_budget)
-        .run()
-        .await
+    AgentRuntime::new(
+        model_service,
+        search_service,
+        web_fetch_service,
+        &request,
+        research_budget,
+    )
+    .run()
+    .await
 }
 
 pub(super) fn aspect_requests(request: &EffectiveResearchPlan) -> Vec<EffectiveAspectPlan> {

@@ -45,6 +45,8 @@ deep_research
 get_runtime_capabilities
 ```
 
+`web_fetch` remains an internal model-visible aspect tool and is never added to `tools/list`. Call `get_runtime_capabilities` and inspect `aspect_tools` before allocating `search` or `web_fetch`; the capability snapshot does not expose WebFetch endpoint, model, or credential metadata.
+
 All three tools use MoeResearch request schema version `0.2`:
 
 ```json
@@ -133,9 +135,9 @@ Fields:
 | `boundaries` | string[] | Yes | Out-of-scope boundaries. |
 | `success_criteria` | string[] | Yes | Criteria the result should satisfy. |
 | `instructions` | string | Yes | Inline Layer 2 prompt content. Rust core never reads prompt files. Must be non-empty and below 64 KiB. |
-| `tools` | string[] | Yes | Currently supports `"search"`. Use `[]` for no tool access. |
+| `tools` | string[] | Yes | Supports `"search"` and `"web_fetch"` when advertised by `get_runtime_capabilities.aspect_tools`; use `[]` for no tool access. |
 | `model_provider` | string | Yes | Explicit provider selected by the client. It must be allowed by `policy.model.allowed_providers`. |
-| `search_provider` | string or null | Conditional | Required when `tools` includes `"search"`; otherwise may be null. It must be allowed by `policy.search.allowed_providers`. |
+| `search_provider` | string or null | Conditional | Required only when `tools` includes `"search"`; fetch-only aspects use null. It must be allowed by `policy.search.allowed_providers`. |
 | `limits` | object | Yes | Per-aspect resource and timeout limits. |
 
 ### 5.3 `ResearchLimits` and `AgentLimits`
@@ -146,7 +148,7 @@ Top-level research limits (example = **standard** tier):
 {
   "max_agents": 4,
   "max_concurrent_agents": 2,
-  "max_total_model_calls": 40,
+  "max_total_model_calls": 72,
   "max_total_search_calls": 28,
   "total_timeout_ms": 600000,
   "max_tokens": -1
@@ -158,7 +160,7 @@ Per-aspect limits (example = **standard** tier):
 ```json
 {
   "max_turns": 10,
-  "max_tool_calls": 12,
+  "max_tool_calls": 16,
   "max_search_calls": 8,
   "timeout_ms": 600000
 }
@@ -173,8 +175,8 @@ Shipped skill source of truth: `prompts/layer1/common/budget-tiers.md` (installe
 | Tier | Top-level `limits` (`deep_research`) | Per-aspect `task.aspects[].limits` / `task.limits` |
 | --- | --- | --- |
 | `quick` | agents 2, concurrent 1, model calls 12, search calls 8, total_timeout_ms 300000, max_tokens -1 | turns 4, tool_calls 4, search_calls 2, timeout_ms 180000 |
-| `standard` | agents 4, concurrent 2, model calls 40, search calls 28, total_timeout_ms 600000, max_tokens -1 | turns 10, tool_calls 12, search_calls 8, timeout_ms 600000 |
-| `deep` | agents 6, concurrent 3, model calls 180, search calls 144, total_timeout_ms 3600000, max_tokens -1 | turns 16, tool_calls 20, search_calls 12, timeout_ms 1200000 |
+| `standard` | agents 4, concurrent 2, model calls 72, search calls 28, total_timeout_ms 600000, max_tokens -1 | turns 10, tool_calls 16, search_calls 8, timeout_ms 600000 |
+| `deep` | agents 6, concurrent 3, model calls 180, search calls 144, total_timeout_ms 3600000, max_tokens -1 | turns 16, tool_calls 24, search_calls 12, timeout_ms 1200000 |
 
 `skills/deep-research.md` selects `quick`, `standard`, or `deep` once. During Layer-1 request assembly, explicit resource constraints in the user prompt take precedence over the selected tier before limits are tightened against operator ceilings. An explicit user no-cap request may set request search dimensions to `-1`, but never bypasses finite operator ceilings.
 
@@ -318,7 +320,7 @@ Pass this direct payload:
 }
 ```
 
-A successful `ToolEnvelope` has `run_id: null`, `status: "ok"`, `error: null`, and `data` containing exactly `model_providers`, `search_providers`, and `operator_limits`. Provider arrays are live registry keys in stable lexical order; their order is not preference or fallback. Empty arrays are successful snapshots. `operator_limits` is the server `BudgetConfig` ceiling using the existing `-1` / `null` unlimited wire format. The tool never returns `partial`.
+A successful `ToolEnvelope` has `run_id: null`, `status: "ok"`, `error: null`, and `data` containing exactly `model_providers`, `search_providers`, `aspect_tools`, and `operator_limits`. Provider arrays are live registry keys in stable lexical order; their order is not preference or fallback. `aspect_tools` lists the internal tools that Layer 1 may allocate, currently `search` and `web_fetch` when their runtime dependencies are available. Empty arrays are successful snapshots. `operator_limits` is the server `BudgetConfig` ceiling using the existing `-1` / `null` unlimited wire format. The tool never returns `partial`.
 
 ```json
 {
@@ -329,6 +331,7 @@ A successful `ToolEnvelope` has `run_id: null`, `status: "ok"`, `error: null`, a
   "data": {
     "model_providers": ["openai"],
     "search_providers": ["exa", "grok"],
+    "aspect_tools": ["search", "web_fetch"],
     "operator_limits": {
       "research": {
         "max_agents": 4,
@@ -375,18 +378,18 @@ Use `deep_research` for a multi-aspect plan.
         "scope": ["tokio", "async-std", "smol", "embassy"],
         "boundaries": ["exclude std-only abstractions"],
         "success_criteria": ["list 3-5 runtimes with primary use cases"],
-        "instructions": "# Aspect Agent\n\nReturn evidence-backed findings in aspect_report plus ID-only selected_evidence; do not return evidence objects.",
-        "tools": ["search"],
+        "instructions": "# Aspect Agent\n\nUse search for discovery and web_fetch to verify load-bearing source pages, then return evidence-backed findings in aspect_report plus ID-only selected_evidence; do not return evidence objects.",
+        "tools": ["search", "web_fetch"],
         "model_provider": "openai",
         "search_provider": "grok",
-        "limits": {"max_turns": 10, "max_tool_calls": 12, "max_search_calls": 8, "timeout_ms": 600000}
+        "limits": {"max_turns": 10, "max_tool_calls": 16, "max_search_calls": 8, "timeout_ms": 600000}
       }
     ]
   },
   "limits": {
     "max_agents": 4,
     "max_concurrent_agents": 2,
-    "max_total_model_calls": 40,
+    "max_total_model_calls": 72,
     "max_total_search_calls": 28,
     "total_timeout_ms": 600000,
     "max_tokens": -1
@@ -535,12 +538,17 @@ host-owned structured execution context:
 
 - `stage` identifies the failed boundary (`request_validation`, `model_turn`,
   `tool_validation`, `search_intent_resolution`, `search_policy`,
-  `search_budget`, `search_dispatch`, `output_validation`, `research_budget`,
-  or `result_aggregation`).
+  `search_budget`, `search_dispatch`, `web_fetch_budget`,
+  `web_fetch_dispatch`, `output_validation`, `research_budget`, or
+  `result_aggregation`).
 - `model_turn` and `search_turn` are optional one-based logical operation
   ordinals within the aspect. They are omitted when the failure occurs before
-  that operation begins.
-- `search_budget` identifies the current aspect's local tool/search limit;
+  that operation begins. `search_turn` is retained for wire compatibility and
+  counts every retrieval batch, including `web_fetch`.
+- `search_budget` identifies the current aspect's local Search tool/search
+  limit. `web_fetch_budget` identifies the current aspect's local generic tool
+  limit before WebFetch dispatch. `web_fetch_dispatch` covers document
+  retrieval and the independent WebFetch prompt-processing call.
   `research_budget` identifies the shared research-level guard, including the
   operator research cap used by standalone `aspect_research`.
 - Each deep-research `AspectFailure` carries the same `aspect_id` plus

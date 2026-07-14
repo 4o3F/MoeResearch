@@ -18,12 +18,18 @@
 - server：`src/server.rs`
 - tools：`src/tools.rs`
 - envelope：`src/envelope.rs`
-- 启动函数：`serve_stdio(model_service, search_service, budget_config)`
+- 启动函数：`serve_stdio(model_service, search_service, web_fetch_service, budget_config)`
 
 CLI `serve` 会构造依赖并调用：
 
 ```rust
-moe_research_mcp::serve_stdio(model_service, search_service, budget_config).await
+moe_research_mcp::serve_stdio(
+    model_service,
+    search_service,
+    web_fetch_service,
+    budget_config,
+)
+.await
 ```
 
 ## 对外接口
@@ -49,8 +55,9 @@ Envelope 字段：
 
 - 依赖 `rmcp` 的 server、stdio transport 与 schema 支持。
 - 依赖 `moe-research-workflow` 执行核心逻辑。
-- 依赖 `moe-research-model` 与 `moe-research-search` 的 service 实例。
-- `MoeResearchMcpServer` 持有 `Arc<ModelService>`、`Arc<SearchService>` 与 `BudgetConfig`。
+- 依赖 `moe-research-model`、`moe-research-search` 与可选 `moe-research-web-fetch` service 实例。
+- `MoeResearchMcpServer` 持有 `Arc<ModelService>`、`Arc<SearchService>`、`Arc<WebFetchService>` 与 `BudgetConfig`；WebFetch service 始终存在，内部启用状态决定 capability 是否广告该工具。
+- `web_fetch` 仅通过 `get_runtime_capabilities.aspect_tools` 广告，不进入顶层 MCP tool catalog。
 
 ## 数据模型
 

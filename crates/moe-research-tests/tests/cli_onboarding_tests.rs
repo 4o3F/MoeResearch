@@ -40,6 +40,9 @@ api_key_env = "OPENAI_API_KEY"
 inactivity_timeout_ms = 120000
 model = "gpt-5.5"
 
+[web_fetch]
+enabled = false
+
 [limits.research]
 max_agents = -1
 max_concurrent_agents = -1

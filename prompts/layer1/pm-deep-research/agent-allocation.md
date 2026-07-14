@@ -4,7 +4,7 @@
 
 ## Two personas (each supplies one persona portion of `instructions`)
 
-MoeResearch has no persona concept; a persona is realised as the selected inline prompt within `task.aspects[].instructions`. For every search-enabled aspect, Layer 1 assembles the selected persona prompt, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding. There are exactly two persona prompts, both carrying the cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability):
+MoeResearch has no persona concept; a persona is realised as the selected inline prompt within `task.aspects[].instructions`. Task decomposition appends the search contract and Run Binding when `search` is selected, the WebFetch contract when `web_fetch` is selected, and both contracts in that order when both tools are selected. There are exactly two persona prompts, both carrying the cross-cutting quality gates TM-4 (epistemic tagging) + TM-11 (falsifiability):
 
 | key | file | angle | owns dims | TM |
 |---|---|---|---|---|
@@ -51,7 +51,7 @@ Apply explicit resource constraints in the user prompt in preference to the sele
 
 ## Invariants
 
-1. Each search-enabled aspect → exactly one persona prompt, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding, passed inline (non-empty, < 64 KiB).
+1. Each aspect → exactly one persona prompt, then only the contracts required by selected tools (search contract + Run Binding; WebFetch contract; or both contracts + Run Binding), passed inline (non-empty, < 64 KiB). When both tools are runtime-available, evidence-producing search aspects select both.
 2. Aspects are MECE across the spine — no dimension covered twice.
 3. `success_criteria` carries the dimension's evidence standard so the engine enforces our evidence bar.
 4. `decision_intent` lives in `context.summary` (the aspect agents read it there).
@@ -59,6 +59,6 @@ Apply explicit resource constraints in the user prompt in preference to the sele
 
 ## Run Binding handoff
 
-For every search-enabled aspect, persona selection is followed by the complete inline assembly order: selected persona Markdown, then `prompts/layer1/common/model-search-tool-contract.md`, then the request-specific Run Binding. The binding is derived from that aspect and `policy.search` according to `moe.run_binding.v1`; it carries only semantic `allowed_*` intent choices, safe defaults, literal aspect ID/name anchors, and evidence-closure hints. It must not expose provider routing, budgets, domains, raw policy tool fields, or credentials.
+For every search-only aspect, persona selection is followed by the complete inline assembly order: selected persona Markdown, then `prompts/layer1/common/model-search-tool-contract.md`, then the request-specific Run Binding. The binding is derived from that aspect and `policy.search` according to `moe.run_binding.v1`; it carries only semantic `allowed_*` intent choices, safe defaults, literal aspect ID/name anchors, and evidence-closure hints. It must not expose provider routing, budgets, domains, raw policy tool fields, or credentials.
 
-This three-part order is mandatory for every search-enabled aspect. The fixed-category rule is profile-neutral: fixed `academic` permits `general` or `academic`; an unset category permits the full source-focus vocabulary.
+For a search-only aspect, the mandatory order is selected persona Markdown, then the common search contract, then a request-specific Run Binding. For a dual-tool aspect, insert the WebFetch contract before the Run Binding. The fixed-category rule is profile-neutral: fixed `academic` permits `general` or `academic`; an unset category permits the full source-focus vocabulary.

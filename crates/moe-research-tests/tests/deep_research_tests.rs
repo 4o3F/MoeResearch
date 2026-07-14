@@ -5,11 +5,11 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use moe_research_error::Error;
-use moe_research_workflow::deep_research;
 use moe_research_workflow::{AgentLimits, BudgetConfig, ResearchLimits};
 use moe_research_workflow::{FailureStage, Limit};
 use support::research::{
-    deep_request, services, services_with_delay, services_with_token_usage, unlimited_budget_config,
+    deep_request, deep_research, services, services_with_delay, services_with_token_usage,
+    unlimited_budget_config,
 };
 
 #[tokio::test]
@@ -21,6 +21,7 @@ async fn completes_three_aspects_with_bounded_concurrency() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -66,6 +67,7 @@ async fn returns_partial_result_after_single_aspect_failure() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -94,6 +96,7 @@ async fn all_aspects_failed_with_partial_evidence_returns_partial_result() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -124,6 +127,7 @@ async fn all_aspects_failed_with_partial_evidence_and_partials_disabled_returns_
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -145,6 +149,7 @@ async fn partial_results_disabled_returns_error() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -166,6 +171,7 @@ async fn fail_fast_stops_before_scheduling_remaining_aspects() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -192,6 +198,7 @@ async fn all_agent_budget_failures_preserve_failed_aspects() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -229,6 +236,7 @@ async fn rejects_plan_exceeding_max_agents() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -251,7 +259,7 @@ async fn rejects_plan_when_effective_max_agents_cannot_cover_aspects() {
         per_agent: AgentLimits::unlimited(),
     };
 
-    let failure = deep_research(request, &services.model, &services.search, &limits)
+    let failure = deep_research(request, &services.model, &services.search, None, &limits)
         .await
         .expect_err("effective max_agents cannot cover requested aspects");
 
@@ -273,7 +281,7 @@ async fn research_concurrency_above_configured_limits_is_clamped() {
         per_agent: AgentLimits::unlimited(),
     };
 
-    let result = deep_research(request, &services.model, &services.search, &limits)
+    let result = deep_research(request, &services.model, &services.search, None, &limits)
         .await
         .expect("configured concurrency should cap request concurrency");
 
@@ -296,7 +304,7 @@ async fn configured_agent_turn_limit_caps_request_runtime() {
         },
     };
 
-    let failure = deep_research(request, &services.model, &services.search, &limits)
+    let failure = deep_research(request, &services.model, &services.search, None, &limits)
         .await
         .expect_err("configured agent turns should cap request runtime");
 
@@ -321,6 +329,7 @@ async fn global_search_budget_blocks_further_calls() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -353,6 +362,7 @@ async fn global_model_budget_stops_before_extra_model_call() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -386,7 +396,7 @@ async fn request_unlimited_model_budget_inherits_config_cap() {
         per_agent: AgentLimits::unlimited(),
     };
 
-    let failure = deep_research(request, &services.model, &services.search, &limits)
+    let failure = deep_research(request, &services.model, &services.search, None, &limits)
         .await
         .expect_err("configured model budget should cap unlimited request");
 
@@ -411,7 +421,7 @@ async fn config_model_budget_wins_when_request_budget_is_higher() {
         per_agent: AgentLimits::unlimited(),
     };
 
-    let failure = deep_research(request, &services.model, &services.search, &limits)
+    let failure = deep_research(request, &services.model, &services.search, None, &limits)
         .await
         .expect_err("configured model budget should be stricter");
 
@@ -441,6 +451,7 @@ async fn global_token_budget_stops_when_total_exceeds_max() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -471,6 +482,7 @@ async fn global_token_budget_falls_back_to_input_plus_output() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -525,6 +537,7 @@ async fn global_token_budget_blocks_dispatch_after_cap_is_reached() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await;
@@ -560,7 +573,7 @@ async fn request_budget_max_tokens_is_clamped_to_config_cap() {
         per_agent: AgentLimits::unlimited(),
     };
 
-    let result = deep_research(request, &services.model, &services.search, &limits)
+    let result = deep_research(request, &services.model, &services.search, None, &limits)
         .await
         .expect("partial result");
 
@@ -586,6 +599,7 @@ async fn post_run_timeout_preserves_completed_aspect_when_partial_allowed() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -624,6 +638,7 @@ async fn post_run_timeout_preserves_failed_aspect_evidence_when_none_completed()
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await
@@ -652,6 +667,7 @@ async fn concurrent_aspects_share_global_budget_guard() {
         request,
         &services.model,
         &services.search,
+        None,
         &unlimited_budget_config(),
     )
     .await

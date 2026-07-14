@@ -741,3 +741,48 @@ fn rejects_grok_search_tuning_in_config() {
         "unexpected error: {err}"
     );
 }
+
+#[test]
+fn web_fetch_defaults_disabled_when_section_is_omitted() {
+    let config = load_config_from_test_str(VALID_CONFIG).expect("config");
+    assert!(!config.web_fetch.enabled);
+    assert_eq!(config.web_fetch.cache_ttl_ms, 900_000);
+}
+
+#[test]
+fn enabled_web_fetch_requires_independent_model_endpoint() {
+    let input = VALID_CONFIG.replace(
+        "[limits.research]",
+        "[web_fetch]\nenabled = true\n\n[limits.research]",
+    );
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(err.to_string().contains("web_fetch.model"));
+}
+
+#[test]
+fn accepts_enabled_web_fetch_with_https_endpoint() {
+    let input = VALID_CONFIG.replace(
+        "[limits.research]",
+        "[web_fetch]\nenabled = true\n\n[web_fetch.model]\nprovider = \"openai\"\nbase_url = \"https://api.openai.com/v1\"\napi_key_env = \"PATH\"\ninactivity_timeout_ms = 30000\nmodel = \"gpt-5.5-mini\"\n\n[limits.research]",
+    );
+    let config = load_config_from_test_str(&input).expect("config");
+    assert!(config.web_fetch.enabled);
+    assert_eq!(
+        config
+            .enabled_provider_envs()
+            .last()
+            .expect("web fetch")
+            .kind,
+        "web_fetch"
+    );
+}
+
+#[test]
+fn rejects_web_fetch_http_model_endpoint() {
+    let input = VALID_CONFIG.replace(
+        "[limits.research]",
+        "[web_fetch]\nenabled = true\n\n[web_fetch.model]\nprovider = \"openai\"\nbase_url = \"http://api.openai.com/v1\"\napi_key_env = \"PATH\"\nmodel = \"gpt-5.5-mini\"\n\n[limits.research]",
+    );
+    let err = load_config_from_test_str(&input).unwrap_err();
+    assert!(err.to_string().contains("absolute HTTPS URL"));
+}
