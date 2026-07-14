@@ -51,7 +51,7 @@ Do not use for a single trivial lookup unless the user explicitly requests a str
    | `product-requirements` | `../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md` | `../prompts/layer1/pm-deep-research/agent-allocation-product-requirements.md` | `../prompts/layer1/pm-deep-research/final-report-product-requirements.md` |
 
    Pass the supplied `limits_preset` and `operator_limits` into the selected decomposition prompt, then run profile skeleton → aspect decomposition. Apply explicit resource constraints in the user prompt in preference to the selected tier. For **Build/Not Build** in `competitive`, add a version-history aspect for build-cost (迭代节奏与建设成本); in `product-capability`, 段6 already carries build-cost via the build-intent overlay.
-5. **Persona assembly** for each search-enabled aspect: inline the selected Layer 2 persona, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific Run Binding projected from that aspect and `policy.search`:
+5. **Persona assembly** by selected tools: persona only for `[]`; persona → `../prompts/layer1/common/model-search-tool-contract.md` → request-specific `moe.run_binding.v1` Run Binding for `[search]`; persona → `../prompts/layer1/common/model-web-fetch-tool-contract.md` for `[web_fetch]`; persona → search contract → WebFetch contract → Run Binding for `[search, web_fetch]` (Claude install paths use `./prompts/layer1/common/...`). When both tools are runtime-available, every evidence-producing search aspect must select both; search-only is the fallback when WebFetch is unavailable. Choose one persona:
    - `../prompts/layer2/pm-deep-research/persona-experience-analyst.md` — capability matrix / Kano / experience paths.
    - `../prompts/layer2/pm-deep-research/persona-strategist.md` — real competitive set / ODI / positioning / threat / build-cost.
    (MoeResearch has no persona concept — **persona = prompt**.)
@@ -73,7 +73,7 @@ Provider API keys, Authorization headers, base URLs, cookies, JWTs, and provider
 PM runtime reminders:
 
 - Use `deep_research` for multi-aspect PM research; use `aspect_research` only for a single targeted retry.
-- For search-enabled aspects, `instructions` is the selected Layer 2 persona, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a Run Binding projected from the aspect and `policy.search`.
+- Assemble `instructions` by selected tools: persona only for `[]`; persona → search contract → request-specific `moe.run_binding.v1` Run Binding for `[search]`; persona → WebFetch contract for `[web_fetch]`; persona → search contract → WebFetch contract → Run Binding for both. When both tools are runtime-available, evidence-producing search aspects select both.
 
 ## Direct MCP payloads
 
@@ -107,7 +107,8 @@ These are Skill-layer synthesis modules, not MoeResearch aspects and not Rust sc
 - `../prompts/layer1/pm-deep-research/task-decomposition-product-capability.md` · `agent-allocation-product-capability.md` · `final-report-product-capability.md` — product-capability variant.
 - `../prompts/layer1/pm-deep-research/task-decomposition-innovation-direction.md` · `agent-allocation-innovation-direction.md` · `final-report-innovation-direction.md` — innovation-direction variant.
 - `../prompts/layer1/pm-deep-research/task-decomposition-product-requirements.md` · `agent-allocation-product-requirements.md` · `final-report-product-requirements.md` — product-requirements variant (8-section PR-FAQ template).
-- `../prompts/layer1/common/model-search-tool-contract.md` — appended after every selected Layer 2 persona and before that aspect's request-specific Run Binding; defines the model-only `query` + optional `max_results` + required semantic `intent` search protocol and host-owned evidence selection rules.
+- `../prompts/layer1/common/model-search-tool-contract.md` — appended after the selected Layer 2 persona when `tools` includes `search`, and before the request-specific Run Binding; defines the model-only `query` + optional `max_results` + required semantic `intent` search protocol and host-owned evidence selection rules.
+- `../prompts/layer1/common/model-web-fetch-tool-contract.md` — appended when `tools` includes `web_fetch`; for dual-tool aspects it sits after the search contract and before the Run Binding.
 - `../prompts/layer1/common/evidence-postprocess.md` — shared evidence step (4-tier mapping / visual-evidence assembly / CiteEval). Domain-neutral only.
 - `../prompts/layer1/common/claim-ledger.md` — shared claim audit module. Domain-neutral only.
 - `../prompts/layer1/common/host-verification-backfill.md` — shared bounded host WebSearch/WebFetch verification/backfill contract; keeps host sources separate from MoeResearch evidence.
@@ -127,7 +128,7 @@ Layer 2 personas are shared across all four capabilities.
 
 - Layer 1 may plan, allocate, validate, synthesize; it must not call Exa/Grok/model APIs directly when MoeResearch MCP is available.
 - Host-native WebSearch/WebFetch is allowed only for bounded post-MoeResearch verification/backfill under `../prompts/layer1/common/host-verification-backfill.md`; it is not an alternate research engine and must be disclosed separately.
-- Rust never reads prompt files at runtime; Layer 1 loads the chosen Layer 2 prompt Markdown, appends the common search-tool contract, then appends a request-specific `moe.run_binding.v1` Run Binding for each search-enabled aspect and passes the combined content inline as `AspectRequest.instructions` (non-empty, <64 KiB).
+- Rust never reads prompt files at runtime; Layer 1 assembles the selected persona and only the contracts required by `tools`, then passes the combined content inline as `AspectRequest.instructions` (non-empty, <64 KiB).
 - Default PM `policy.search.category` is null. If a study fixes a category or another intent ceiling, use the same profile-neutral Run Binding projection; do not create a PM-specific exception.
 - `SearchPolicy.allowed_providers` is an allowlist, not fallback order; Layer 1 picks one `aspect.search_provider`.
 - Provider keys/base URLs/operator limits/raw DTOs stay behind MoeResearch config.

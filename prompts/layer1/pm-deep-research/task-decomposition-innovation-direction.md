@@ -10,6 +10,8 @@ This variant is **Strategist-heavy / EA-light**: 7 of 8 aspects owned by `strate
 
 Rust core never reads prompt files at runtime. Select tools only from `available_aspect_tools`, then assemble instructions by tool set: persona only for `[]`; persona → search contract → Run Binding for `[search]`; persona → WebFetch contract for `[web_fetch]`; persona → search contract → WebFetch contract → Run Binding for both.
 
+When both `search` and `web_fetch` are runtime-available, every evidence-producing aspect that uses search must select both tools. Search discovers candidate sources; WebFetch verifies the minimum set of load-bearing URLs before Layer 2 relies on them. Use search-only only when WebFetch is unavailable.
+
 ## Inputs
 
 ```json
@@ -79,7 +81,7 @@ Write the chosen intent + one-line justification into `context.summary`. Carry s
 
 For each aspect, set:
 
-- For a search-enabled aspect, `instructions` is inline Markdown content of exactly one chosen persona file, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding; it is non-empty and < 64 KiB.
+- `instructions` is inline Markdown content of exactly one chosen persona file, then only the contracts required by selected tools; it is non-empty and < 64 KiB.
 - `role`: `product strategist` or `product experience analyst`.
 - `question`: one narrow question anchored to `decision_intent` + `subject_domain` + `time_window_months`.
 - `scope` / `boundaries`: from the segment method + subject_domain + time window.
@@ -113,14 +115,14 @@ Return only JSON matching this shape (no Markdown wrapper):
       "scope": ["string"],
       "boundaries": ["string"],
       "success_criteria": ["string"],
-      "instructions": "<inline chosen persona Markdown, then the model-search tool contract, then a request-specific Run Binding>",
-      "tools": ["search"],
+      "instructions": "<inline chosen persona Markdown, then the model-search tool contract, then the model-web-fetch tool contract, then a request-specific Run Binding>",
+      "tools": ["search", "web_fetch"],
       "model_provider": "string",
       "search_provider": "string",
-      "limits": {"max_turns": 10, "max_tool_calls": 12, "max_search_calls": 8, "timeout_ms": 600000}
+      "limits": {"max_turns": 10, "max_tool_calls": 16, "max_search_calls": 8, "timeout_ms": 600000}
     }]
   },
-  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 40, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
+  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 72, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
   "policy": {
     "model": {"allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true},
     "search": {"allowed_providers": ["string"], "max_results_per_query": 5, "freshness": null, "depth": null, "content_level": null, "recency": "fresh", "category": null, "language": "string | null", "region": "string | null", "include_domains": [], "exclude_domains": []},
@@ -138,7 +140,7 @@ MoeResearch `schema_version` is `0.2`. Timeouts belong only in `limits.total_tim
 
 1. Infer `decision_intent` first; every aspect's `question` must anchor to it + subject_domain + time window.
 2. Use the tier → aspect-count subset from `agent-allocation-innovation-direction.md`.
-3. Each search-enabled aspect's `instructions` is one persona file's inline content, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding; never a path.
+3. Each aspect's `instructions` is one persona file's inline content, then only the contracts required by selected tools; never a path.
 4. Provider names are logical config names, not vendor DTOs; do not emit provider-native request fields.
 5. Domain filters only via `policy.search.include_domains` / `exclude_domains`.
 6. Evidence source type and evidence-level confidence are host-owned after candidate selection; report post-processing may consume returned values but model prompts must not emit them.
@@ -147,7 +149,7 @@ MoeResearch `schema_version` is `0.2`. Timeouts belong only in `limits.total_tim
 
 Pass the MoeResearch request object directly to the Claude Code MCP tool. Do not include a JSON-RPC `tools/call` wrapper, and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
 
-For every search-enabled aspect, persona prompt content, `prompts/layer1/common/model-search-tool-contract.md`, and a request-specific Run Binding are inline in that order: Layer 1 reads the persona and contract assets, derives the binding from the aspect and `policy.search`, and passes the three-part content as `AspectRequest.instructions`; Rust core never reads prompt files.
+Persona prompt content and only the contracts required by selected tools are assembled inline: Layer 1 reads the persona and contract assets, derives any Run Binding from the aspect and `policy.search`, and passes the assembled content as `AspectRequest.instructions`; Rust core never reads prompt files.
 
 For a single-aspect Quick retry with `aspect_research`, emit one `AspectResearchRequest`: use one top-level `task` field (`AspectRequest`) with the same `policy` and `context`, and keep resource controls under `task.limits`.
 

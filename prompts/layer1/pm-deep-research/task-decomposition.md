@@ -8,6 +8,8 @@ You are the PM DeepResearch Layer 1 planner. Convert a competitive-research requ
 
 Rust core never reads prompt files at runtime. Select tools only from `available_aspect_tools`, then assemble instructions by tool set: persona only for `[]`; persona → search contract → Run Binding for `[search]`; persona → WebFetch contract for `[web_fetch]`; persona → search contract → WebFetch contract → Run Binding for both.
 
+When both `search` and `web_fetch` are runtime-available, every evidence-producing aspect that uses search must select both tools. Search discovers candidate sources; WebFetch verifies the minimum set of load-bearing URLs before Layer 2 relies on them. Use search-only only when WebFetch is unavailable.
+
 ## Inputs
 
 ```json
@@ -78,7 +80,7 @@ Follow the mapping in [`agent-allocation.md`](agent-allocation.md). Summary of t
 
 For each aspect, set:
 
-- For a search-enabled aspect, `instructions` is the **inline Markdown content** of the chosen persona file from `available_aspect_agent_prompts` (`experience-analyst` or `strategist`), then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding. Pass the three-part Markdown inline, non-empty, under 64 KiB. MoeResearch has no persona concept — **persona = prompt**.
+- `instructions` is the **inline Markdown content** of the chosen persona file from `available_aspect_agent_prompts` (`experience-analyst` or `strategist`), then only the contracts required by selected tools. Pass the assembled Markdown inline, non-empty, under 64 KiB. MoeResearch has no persona concept — **persona = prompt**.
 - `role`: `product strategist` or `product experience analyst` (matches the persona).
 - `question`: one narrow question anchored to `decision_intent`.
 - `scope` / `boundaries`: from the dimension's method + the target product / audience.
@@ -114,15 +116,15 @@ Return only JSON matching this shape (no Markdown wrapper):
         "scope": ["string"],
         "boundaries": ["string"],
         "success_criteria": ["string"],
-        "instructions": "<inline chosen persona Markdown, then the model-search tool contract, then a request-specific Run Binding>",
-        "tools": ["search"],
+        "instructions": "<inline chosen persona Markdown, then the model-search tool contract, then the model-web-fetch tool contract, then a request-specific Run Binding>",
+        "tools": ["search", "web_fetch"],
         "model_provider": "string",
         "search_provider": "string",
-        "limits": {"max_turns": 10, "max_tool_calls": 12, "max_search_calls": 8, "timeout_ms": 600000}
+        "limits": {"max_turns": 10, "max_tool_calls": 16, "max_search_calls": 8, "timeout_ms": 600000}
       }
     ]
   },
-  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 40, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
+  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 72, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
   "policy": {
     "model": {"allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true},
     "search": {
@@ -158,7 +160,7 @@ Return only JSON matching this shape (no Markdown wrapper):
 1. Infer `decision_intent` first; every aspect's `question` must be anchored to it.
 2. Use the tier → aspect-count subset from `agent-allocation.md`; do not exceed it.
 3. Aspects must be MECE across the five-dim spine — no two aspects cover the same dimension.
-4. Each search-enabled aspect's `instructions` is the **inline content** of exactly one persona file, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding; never a path, never empty, < 64 KiB.
+4. Each aspect's `instructions` is the **inline content** of exactly one persona file, then only the contracts required by selected tools; never a path, never empty, < 64 KiB.
 5. `success_criteria` carries the dimension's evidence standard — that is how the engine enforces our evidence bar.
 6. Provider names are logical config names, not vendor DTOs. Do not emit provider-native request fields.
 7. `policy.*.allowed_providers` are allowlists only; each aspect sets exactly one `model_provider` + one `search_provider` from them.
@@ -170,7 +172,7 @@ Return only JSON matching this shape (no Markdown wrapper):
 
 Pass the MoeResearch request object directly to the Claude Code MCP tool. Do not include a JSON-RPC `tools/call` wrapper, and do not wrap the request under `params`, `arguments`, `request`, `input`, or `tool_input`.
 
-For every search-enabled aspect, set `task.aspects[].instructions` to the chosen persona prompt **content**, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding. Layer 1 reads the persona and contract assets from disk, derives the binding from the aspect and `policy.search`, and passes the three-part content. Rust core never performs prompt file IO; Layer 1 owns prompt selection, version pinning, binding projection, and substitution.
+Set `task.aspects[].instructions` to the chosen persona prompt **content**, then only the contracts required by selected tools. Layer 1 reads the persona and contract assets from disk, derives any Run Binding from the aspect and `policy.search`, and passes the assembled content. Rust core never performs prompt file IO; Layer 1 owns prompt selection, version pinning, binding projection, and substitution.
 
 For a single-aspect Quick study you may instead emit one `AspectResearchRequest` and call `aspect_research`: use one top-level `task` field (`AspectRequest`) with the same `policy` and `context`; keep resource controls under `task.limits`.
 

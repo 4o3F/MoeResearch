@@ -41,7 +41,7 @@ All Technical routes load `evidence-modules-overlay.md`, `../common/typst-report
 2. Call `get_runtime_capabilities` once with schema `0.2`, fail closed on a failed envelope or empty model list, and keep the snapshot Layer-1-only. On an old server, require the documented operator-confirmed fallback rather than guessing.
 3. Pass the runtime-confirmed provider lists, supplied `limits_preset`, and Skill-internal `operator_limits` into `../prompts/layer1/technical-evaluation/task-decomposition.md`. Apply explicit resource constraints in the user prompt in preference to the selected tier, then tighten against operator limits when producing the `DeepResearchRequest`.
 4. Use `../prompts/layer1/technical-evaluation/agent-allocation.md` to assign personas.
-5. For each search-enabled aspect, assemble `AspectRequest.instructions` as selected persona Markdown, then `../prompts/layer1/common/model-search-tool-contract.md` (Claude install: `./prompts/layer1/common/model-search-tool-contract.md`), then a request-specific `moe.run_binding.v1` Run Binding projected from that aspect and `policy.search`.
+5. Assemble `AspectRequest.instructions` by selected tools: persona only for `[]`; persona → `../prompts/layer1/common/model-search-tool-contract.md` → request-specific `moe.run_binding.v1` Run Binding for `[search]`; persona → `../prompts/layer1/common/model-web-fetch-tool-contract.md` for `[web_fetch]`; persona → search contract → WebFetch contract → Run Binding for `[search, web_fetch]` (Claude install paths use `./prompts/layer1/common/...`). When both tools are runtime-available, every evidence-producing search aspect must select both; search-only is the fallback when WebFetch is unavailable.
 6. Call `deep_research` for multi-aspect evaluation or `aspect_research` for one focused retry.
 7. Apply `evidence-postprocess.md`, this profile's `evidence-modules-overlay.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, and `report-annex.md` in that order.
 8. Read `../prompts/layer1/common/typst-report-contract.md`, `final-report-guidance.md`, then the unique capability template from the routing table. Synthesize a `typst-project-v1` report; only materialize it in a caller-specified directory and never overwrite without explicit approval.
@@ -49,7 +49,7 @@ All Technical routes load `evidence-modules-overlay.md`, `../common/typst-report
 
 ## Policy boundaries
 
-- Rust never reads prompt files at runtime; Layer 1 reads prompt assets, appends the common search-tool contract after persona content, then appends a Run Binding for each search-enabled aspect and passes the combined Markdown inline.
+- Rust never reads prompt files at runtime; Layer 1 assembles the selected persona and only the contracts required by `tools`, then passes the combined Markdown inline.
 - Default technical `policy.search.category` is null, but the same profile-neutral binding projection must constrain semantic intent if a category or other intent ceiling is fixed later.
 - Do not add `technical`, `research_type`, or provider-native fields to MCP requests.
 - Model search calls use `query`, optional `max_results`, and the required semantic `intent` defined by the common contract; runtime applies `policy.search` constraints and selected-provider routing.
@@ -75,7 +75,7 @@ Technical profile uses the shared frozen host contract: `../prompts/layer1/commo
 
 Layer 1 (profile): `../prompts/layer1/technical-evaluation/task-decomposition.md`, `agent-allocation.md`, `evidence-modules-overlay.md`, `final-report-guidance.md`, and exactly one routed `final-report-*.md` capability template.
 
-Layer 1 (common): `../prompts/layer1/common/evidence-postprocess.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, `report-annex.md`, `typst-report-contract.md`, `partial-status-host-contract.md`, `budget-tiers.md`, `model-search-tool-contract.md`.
+Layer 1 (common): `../prompts/layer1/common/evidence-postprocess.md`, `claim-ledger.md`, `host-verification-backfill.md`, `evidence-verifier.md`, `report-annex.md`, `typst-report-contract.md`, `partial-status-host-contract.md`, `budget-tiers.md`, `model-search-tool-contract.md`, `model-web-fetch-tool-contract.md`.
 
 Layer 2: `../prompts/layer2/technical-evaluation/` persona prompts for the selected capability.
 

@@ -51,11 +51,11 @@ Return only JSON matching this `DeepResearchRequest` shape; do not wrap it in Ma
         "tools": ["search", "web_fetch"],
         "model_provider": "string",
         "search_provider": "string",
-        "limits": {"max_turns": 10, "max_tool_calls": 12, "max_search_calls": 8, "timeout_ms": 600000}
+        "limits": {"max_turns": 10, "max_tool_calls": 16, "max_search_calls": 8, "timeout_ms": 600000}
       }
     ]
   },
-  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 40, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
+  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 72, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
   "policy": {
     "model": {
       "allowed_providers": ["string"],
@@ -105,7 +105,7 @@ Return only JSON matching this `DeepResearchRequest` shape; do not wrap it in Ma
 6. Provider names are logical names from configuration, not vendor DTOs.
 7. `policy.model.allowed_providers` is an allowlist only; every aspect must set `model_provider` from `available_model_providers` and `policy.model.allowed_providers`.
 8. `policy.search.allowed_providers` is an allowlist only; it does not express execution order or fallback.
-9. Select only tools present in `available_aspect_tools`. Every aspect that allows `search` must set exactly one `search_provider` from `available_search_providers` and `policy.search.allowed_providers`; fetch-only and tool-free aspects set `search_provider` to `null`.
+9. Select only tools present in `available_aspect_tools`. When both `search` and `web_fetch` are available, every evidence-producing aspect that uses search must select both tools so Layer 2 can verify load-bearing URLs after discovery; use search-only only when WebFetch is not runtime-available. Every aspect that allows `search` must set exactly one `search_provider` from `available_search_providers` and `policy.search.allowed_providers`; fetch-only and tool-free aspects set `search_provider` to `null`.
 10. Domain filters must be represented only in `policy.search.include_domains` and `policy.search.exclude_domains`.
 11. Do not include provider-native request fields from Exa, Grok, Tavily, OpenAI, Anthropic, HTTP, or SDK DTOs.
 12. The Model Retrieval Intent Contract defines model-only `search` arguments. The WebFetch contract defines exactly `url` and `prompt`. Neither tool's arguments belong in this public MCP request or `policy.search`.

@@ -6,6 +6,8 @@ Convert the user's academic research request into a valid `DeepResearchRequest`.
 
 Rust core never reads prompt files at runtime. Select tools only from `available_aspect_tools`, then assemble instructions by tool set: persona only for `[]`; persona → search contract → Run Binding for `[search]`; persona → WebFetch contract for `[web_fetch]`; persona → search contract → WebFetch contract → Run Binding for both.
 
+When both `search` and `web_fetch` are runtime-available, every evidence-producing aspect that uses search must select both tools. Search discovers candidate sources; WebFetch verifies the minimum set of load-bearing URLs before Layer 2 relies on them. Use search-only only when WebFetch is unavailable.
+
 ## Inputs
 
 ```json
@@ -88,7 +90,7 @@ For each aspect:
 - `scope` carries inclusion criteria, source classes, domain/time boundaries, and key terms for that aspect.
 - `boundaries` carries exclusion criteria and non-goals.
 - `success_criteria` must include the evidence bar: primary/source class preference, methodological appraisal, contradiction handling, and what to do when evidence is missing.
-- For a search-enabled aspect, `instructions` is the inline Markdown content of exactly one selected Layer 2 persona prompt, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding; it is never a path.
+- `instructions` is the inline Markdown content of exactly one selected Layer 2 persona prompt, then only the contracts required by selected tools; it is never a path.
 
 ## Step 5 — Limits and policies
 
@@ -122,14 +124,14 @@ Return only JSON matching `DeepResearchRequest`; no Markdown wrapper.
       "scope": ["string"],
       "boundaries": ["string"],
       "success_criteria": ["string"],
-      "instructions": "inline Layer 2 persona Markdown, then the common model-search tool contract, then a request-specific Run Binding",
-      "tools": ["search"],
+      "instructions": "inline Layer 2 persona Markdown, then the common model-search tool contract, then the model-web-fetch tool contract, then a request-specific Run Binding",
+      "tools": ["search", "web_fetch"],
       "model_provider": "selected provider",
       "search_provider": "selected provider",
-      "limits": {"max_turns": 10, "max_tool_calls": 12, "max_search_calls": 8, "timeout_ms": 600000}
+      "limits": {"max_turns": 10, "max_tool_calls": 16, "max_search_calls": 8, "timeout_ms": 600000}
     }]
   },
-  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 40, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
+  "limits": {"max_agents": 4, "max_concurrent_agents": 2, "max_total_model_calls": 72, "max_total_search_calls": 28, "total_timeout_ms": 600000, "max_tokens": -1},
   "policy": {
     "model": {"allowed_providers": ["string"], "temperature": 0.2, "max_tokens": null, "require_tool_call_support": true},
     "search": {"allowed_providers": ["string"], "max_results_per_query": 5, "freshness": null, "depth": null, "content_level": null, "recency": null, "category": "academic", "language": null, "region": null, "include_domains": [], "exclude_domains": []},

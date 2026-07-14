@@ -16,6 +16,7 @@ pub struct MoeResearchConfig {
     pub network: NetworkConfig,
     pub search: SearchProviderRegistry,
     pub model: ModelProviderRegistry,
+    #[serde(default)]
     pub web_fetch: WebFetchConfig,
     pub limits: LimitsConfig,
 }

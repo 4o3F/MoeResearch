@@ -244,17 +244,25 @@ fn prompt_assets_keep_budget_selection_and_user_prompt_priority_in_generic_skill
     let budget_tiers =
         fs::read_to_string(workspace().join("prompts/layer1/common/budget-tiers.md"))
             .expect("read budget tiers");
-    for deep_limit in [
+    for expected_limit in [
+        "max_total_model_calls` 72",
+        "max_tool_calls` 16",
         "max_total_model_calls` 180",
         "max_total_search_calls` 144",
         "total_timeout_ms` 3600000",
         "max_turns` 16",
-        "max_tool_calls` 20",
+        "max_tool_calls` 24",
         "max_search_calls` 12",
         "timeout_ms` 1200000",
     ] {
-        assert!(budget_tiers.contains(deep_limit), "missing {deep_limit}");
+        assert!(
+            budget_tiers.contains(expected_limit),
+            "missing {expected_limit}"
+        );
     }
+    assert!(budget_tiers.contains("2 search + 2 web_fetch"));
+    assert!(budget_tiers.contains("8 + 8"));
+    assert!(budget_tiers.contains("12 + 12"));
     assert!(budget_tiers.contains("operator ceiling > explicit user override > selected preset"));
     assert!(budget_tiers.contains("max_total_search_calls = -1"));
     assert!(budget_tiers.contains("Explicit user prompt constraints"));

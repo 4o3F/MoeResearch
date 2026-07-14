@@ -148,7 +148,7 @@ Top-level research limits (example = **standard** tier):
 {
   "max_agents": 4,
   "max_concurrent_agents": 2,
-  "max_total_model_calls": 40,
+  "max_total_model_calls": 72,
   "max_total_search_calls": 28,
   "total_timeout_ms": 600000,
   "max_tokens": -1
@@ -160,7 +160,7 @@ Per-aspect limits (example = **standard** tier):
 ```json
 {
   "max_turns": 10,
-  "max_tool_calls": 12,
+  "max_tool_calls": 16,
   "max_search_calls": 8,
   "timeout_ms": 600000
 }
@@ -175,8 +175,8 @@ Shipped skill source of truth: `prompts/layer1/common/budget-tiers.md` (installe
 | Tier | Top-level `limits` (`deep_research`) | Per-aspect `task.aspects[].limits` / `task.limits` |
 | --- | --- | --- |
 | `quick` | agents 2, concurrent 1, model calls 12, search calls 8, total_timeout_ms 300000, max_tokens -1 | turns 4, tool_calls 4, search_calls 2, timeout_ms 180000 |
-| `standard` | agents 4, concurrent 2, model calls 40, search calls 28, total_timeout_ms 600000, max_tokens -1 | turns 10, tool_calls 12, search_calls 8, timeout_ms 600000 |
-| `deep` | agents 6, concurrent 3, model calls 180, search calls 144, total_timeout_ms 3600000, max_tokens -1 | turns 16, tool_calls 20, search_calls 12, timeout_ms 1200000 |
+| `standard` | agents 4, concurrent 2, model calls 72, search calls 28, total_timeout_ms 600000, max_tokens -1 | turns 10, tool_calls 16, search_calls 8, timeout_ms 600000 |
+| `deep` | agents 6, concurrent 3, model calls 180, search calls 144, total_timeout_ms 3600000, max_tokens -1 | turns 16, tool_calls 24, search_calls 12, timeout_ms 1200000 |
 
 `skills/deep-research.md` selects `quick`, `standard`, or `deep` once. During Layer-1 request assembly, explicit resource constraints in the user prompt take precedence over the selected tier before limits are tightened against operator ceilings. An explicit user no-cap request may set request search dimensions to `-1`, but never bypasses finite operator ceilings.
 
@@ -378,18 +378,18 @@ Use `deep_research` for a multi-aspect plan.
         "scope": ["tokio", "async-std", "smol", "embassy"],
         "boundaries": ["exclude std-only abstractions"],
         "success_criteria": ["list 3-5 runtimes with primary use cases"],
-        "instructions": "# Aspect Agent\n\nReturn evidence-backed findings in aspect_report plus ID-only selected_evidence; do not return evidence objects.",
-        "tools": ["search"],
+        "instructions": "# Aspect Agent\n\nUse search for discovery and web_fetch to verify load-bearing source pages, then return evidence-backed findings in aspect_report plus ID-only selected_evidence; do not return evidence objects.",
+        "tools": ["search", "web_fetch"],
         "model_provider": "openai",
         "search_provider": "grok",
-        "limits": {"max_turns": 10, "max_tool_calls": 12, "max_search_calls": 8, "timeout_ms": 600000}
+        "limits": {"max_turns": 10, "max_tool_calls": 16, "max_search_calls": 8, "timeout_ms": 600000}
       }
     ]
   },
   "limits": {
     "max_agents": 4,
     "max_concurrent_agents": 2,
-    "max_total_model_calls": 40,
+    "max_total_model_calls": 72,
     "max_total_search_calls": 28,
     "total_timeout_ms": 600000,
     "max_tokens": -1

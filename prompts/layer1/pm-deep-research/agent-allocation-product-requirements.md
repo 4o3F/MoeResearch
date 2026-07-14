@@ -101,7 +101,7 @@ Apply explicit resource constraints in the user prompt in preference to the sele
 
 ## Invariants
 
-1. 每 search-enabled aspect → exactly one persona prompt, then `prompts/layer1/common/model-search-tool-contract.md`, then a request-specific Run Binding, inline (non-empty, < 64 KiB).
+1. 每 aspect → exactly one persona prompt, then only the contracts required by selected tools (search contract + Run Binding; WebFetch contract; or both contracts + Run Binding), inline (non-empty, < 64 KiB). When both tools are runtime-available, evidence-producing search aspects select both.
 2. Aspects MECE across the 8 段 — 不重叠。
 3. `success_criteria` 携带段的 evidence 标准→ 引擎据此 enforce 证据 bar.
 4. `decision_intent` + `subject` + audience 写在 `context.summary` (aspect agents 读 it).
